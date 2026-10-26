@@ -1,0 +1,17 @@
+{
+  "name": "jarvis-by-khan",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "codespaces": "node scripts/codespaces.js",
+    "codespaces:ollama": "node scripts/codespaces.js --ollama",
+    "icons:generate": "node scripts/generate-pwa-icons.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check public/app.js && node --check public/service-worker.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

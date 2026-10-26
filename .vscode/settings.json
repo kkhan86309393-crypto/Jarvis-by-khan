@@ -1,0 +1,10 @@
+{
+  "remote.autoForwardPorts": true,
+  "remote.portsAttributes": {
+    "4173": {
+      "label": "J.A.R.V.I.S. HTTPS",
+      "onAutoForward": "openBrowser",
+      "visibility": "private"
+    }
+  }
+}

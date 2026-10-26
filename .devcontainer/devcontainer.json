@@ -1,0 +1,11 @@
+{
+  "name": "J.A.R.V.I.S. Codespace",
+  "forwardPorts": [4173],
+  "portsAttributes": {
+    "4173": {
+      "label": "J.A.R.V.I.S. HTTPS",
+      "onAutoForward": "openBrowser",
+      "visibility": "private"
+    }
+  }
+}
