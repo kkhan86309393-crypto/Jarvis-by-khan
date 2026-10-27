@@ -107,6 +107,25 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .avatar-frame { width: 87%; height: 98%; position: absolute; z-index: 1; overflow: hidden; border: 2px solid rgba(114, 217, 255, .9); border-radius: 46% 46% 34% 34% / 36% 36% 24% 24%; background: radial-gradient(ellipse at 50% 35%, #234674, #06142e 76%); box-shadow: 0 0 45px rgba(39, 139, 241, .48), 0 0 95px rgba(22, 102, 246, .22), inset 0 0 28px rgba(71, 172, 255, .22); }
 .avatar-frame::after { position: absolute; inset: 0; border: 1px solid rgba(179, 237, 255, .29); border-radius: inherit; background: linear-gradient(180deg, rgba(32, 136, 246, .12), rgba(5, 14, 34, .14) 62%, rgba(5, 14, 34, .67)); content: ""; pointer-events: none; }
 .ai-avatar { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center 36%; opacity: .96; filter: saturate(1.06) brightness(.88) contrast(1.08); mix-blend-mode: normal; }
+.ai-avatar.is-unavailable { display: none; }
+.portrait-mouth { width: 20%; height: 28px; position: absolute; z-index: 2; top: 61%; left: 50%; border: 1px solid rgba(110, 30, 53, .58); border-radius: 48% 48% 54% 54%; background: linear-gradient(180deg, #481724 0 42%, #210d18 43% 100%); box-shadow: 0 0 5px rgba(8, 15, 35, .55); opacity: .74; transform: translateX(-50%) scaleY(var(--mouth-open, .06)); transform-origin: center; transition: transform 110ms ease-out, border-radius 150ms ease, opacity 150ms ease; pointer-events: none; }
+.portrait-mouth::after { width: 72%; height: 22%; position: absolute; top: 2px; left: 14%; border-radius: 0 0 50% 50%; background: rgba(255, 227, 219, .7); content: ""; opacity: .76; }
+.holo-stage.is-happy .portrait-mouth { border-radius: 18% 18% 55% 55%; transform: translateX(-50%) scaleY(.16) rotate(2deg); }
+.holo-stage.is-speech-paused .portrait-mouth { transform: translateX(-50%) scaleY(.04); }
+.avatar-fallback { position: absolute; z-index: 2; top: 48%; left: 50%; color: #b9f4ff; font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; text-shadow: 0 0 14px #278bf1; transform: translate(-50%, -50%); }
+.avatar-canvas { width: 100%; height: 100%; position: absolute; z-index: 2; inset: 0; display: block; }
+.avatar-canvas[hidden] { display: none; }
+.ai-avatar.is-3d-hidden { display: none; }
+.avatar-frame.is-3d-active .portrait-mouth { display: none; }
+.avatar-model-controls { width: min(100%, 520px); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px 9px; margin: 5px 0 8px; }
+.avatar-model-button { min-height: 30px; padding: 0 11px; border: 1px solid rgba(102, 178, 255, .4); border-radius: 3px; background: rgba(8, 28, 57, .8); color: #b9f4ff; font-size: 10px; cursor: pointer; }
+.avatar-model-button:hover, .avatar-model-button:focus-visible { border-color: var(--mint); box-shadow: 0 0 12px rgba(39, 139, 241, .25); }
+.avatar-model-controls > p { flex-basis: 100%; max-width: 100%; margin: 0; color: var(--faint); font-size: 9px; line-height: 1.45; }
+.avatar-model-controls > p[data-state="loading"]::before { width: 9px; height: 9px; display: inline-block; margin-right: 7px; border: 1px solid rgba(131, 232, 255, .35); border-top-color: var(--mint); border-radius: 50%; content: ""; vertical-align: -1px; animation: avatar-spin .8s linear infinite; }
+.avatar-model-guide { width: 100%; color: var(--faint); text-align: left; font-size: 9px; line-height: 1.5; }
+.avatar-model-guide summary { width: fit-content; margin: 0 auto; color: var(--mint); cursor: pointer; }
+.avatar-model-guide ol { max-width: 440px; display: grid; gap: 4px; margin: 7px auto 0; padding-left: 18px; text-align: left; }
+.avatar-model-guide strong { color: var(--muted); }
 .portrait-scanline { position: absolute; z-index: 1; top: 4%; left: 2%; width: 96%; height: 1px; background: rgba(124, 208, 255, .72); box-shadow: 0 0 9px rgba(64, 169, 255, .95); animation: scan-portrait 5s linear infinite; pointer-events: none; }
 .playback-indicator { width: 54px; height: 3px; position: absolute; z-index: 4; bottom: 11%; left: 50%; border-radius: 50%; background: #c9faff; box-shadow: 0 0 5px 2px #49cfff, 0 0 16px 5px rgba(46, 156, 255, .72); opacity: 0; transform: translateX(-50%) scaleX(.55); transition: opacity .15s ease; }
 .holo-stage.is-speaking .playback-indicator { opacity: .9; animation: playback-pulse .7s ease-in-out alternate infinite; }
@@ -298,6 +317,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 @keyframes scan-portrait { from { transform: translateY(0); opacity: .15; } 12% { opacity: .65; } to { transform: translateY(460px); opacity: .08; } }
 @keyframes portrait-think { to { transform: translateY(-3px) scale(1.012); } }
 @keyframes particle-rise { 0%, 100% { opacity: .16; transform: translate3d(0, 8px, 0) scale(.75); } 50% { opacity: .75; transform: translate3d(3px, -11px, 0) scale(1.2); } }
+@keyframes avatar-spin { to { transform: rotate(360deg); } }
 
 @media (min-width: 1400px) {
   .workspace { gap: 24px; }
@@ -473,6 +493,11 @@ body {
 .provider-field input, .provider-field select { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #0b1c38; color: var(--text); }
 .provider-help { margin: 10px 0 0; color: var(--faint); font-size: 10px; line-height: 1.55; }
 .ai-provider-settings .setting-actions { padding-top: 13px; }
+.share-settings { padding: 17px 0 19px; border-bottom: 1px solid var(--line); }
+.share-settings .provider-settings-heading h3 { margin-top: 5px; }
+.share-settings .settings-disclaimer { margin-top: 8px; }
+.share-status { margin-top: 10px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.share-settings button:disabled { opacity: .48; cursor: not-allowed; }
 
 @media (min-width: 781px) and (max-width: 1100px) {
   .main-frame { grid-template-columns: 150px minmax(0, 1fr); gap: 16px; }
@@ -503,7 +528,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .holo-stage::before, .holo-stage::after, .orbit, .holo-particles i, .portrait-scanline, .core-halo { animation: none !important; }
+  .holo-stage::before, .holo-stage::after, .orbit, .holo-particles i, .portrait-scanline, .core-halo, .avatar-model-controls > p[data-state="loading"]::before { animation: none !important; }
 }
 
 .dashboard-layout {

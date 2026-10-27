@@ -2,16 +2,60 @@
   "name": "jarvis-by-khan",
   "version": "1.0.0",
   "private": true,
+  "description": "A cross-platform J.A.R.V.I.S. assistant with browser, PWA, and Windows desktop support.",
   "type": "module",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",
+    "desktop": "electron .",
+    "desktop:dist": "electron-builder --win nsis",
+    "predesktop": "npm run build:avatar",
+    "predesktop:dist": "npm run build:avatar",
+    "prestart": "npm run build:avatar",
+    "precodespaces": "npm run build:avatar",
     "codespaces": "node scripts/codespaces.js",
+    "precodespaces:ollama": "npm run build:avatar",
     "codespaces:ollama": "node scripts/codespaces.js --ollama",
     "icons:generate": "node scripts/generate-pwa-icons.js",
+    "build": "npm run build:avatar",
+    "build:avatar": "esbuild public/avatar3d.js --bundle --format=esm --minify --legal-comments=inline --outfile=public/avatar3d.bundle.js",
+    "pretest": "npm run build:avatar",
     "test": "node --test",
-    "check": "node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check public/app.js && node --check public/interface-switcher.js && node --check public/device-monitor.js && node --check public/diagnostics.js && node --check public/service-worker.js"
+    "check": "npm run build:avatar && node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check desktop/main.js && node --check public/app.js && node --check public/avatar3d.js && node --check public/interface-switcher.js && node --check public/device-monitor.js && node --check public/diagnostics.js && node --check public/service-worker.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.5",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2"
+  },
+  "build": {
+    "appId": "com.jarvisbykhan.assistant",
+    "productName": "J.A.R.V.I.S.",
+    "asar": true,
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "desktop/main.js",
+      "server.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

@@ -145,6 +145,28 @@ function getOpenAIChatCompletionsUrl(baseUrl) {
     : `${normalizedBaseUrl}/chat/completions`;
 }
 
+function getUpstreamRequestError(error) {
+  const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+  return Object.assign(
+    new Error(isTimeout
+      ? 'The AI provider timed out. Check the provider/model and retry.'
+      : 'Could not connect to the AI provider. Check the server network connection and provider URL.'),
+    { status: isTimeout ? 504 : 502, code: isTimeout ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE' },
+  );
+}
+
+async function readUpstreamJson(upstream, provider) {
+  try {
+    return await upstream.json();
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw getUpstreamRequestError(error);
+    throw Object.assign(new Error(`${provider} returned an invalid response. Check the selected model and provider configuration.`), {
+      status: 502,
+      code: 'INVALID_UPSTREAM_RESPONSE',
+    });
+  }
+}
+
 function getSafeProviderErrorCode(value, status) {
   if (Number.isInteger(value) && value >= 100 && value <= 599) return String(value);
   if (typeof value === 'string') {
@@ -316,15 +338,22 @@ async function handleChat(request, response) {
         signal: AbortSignal.timeout(60_000),
       });
     } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw Object.assign(new Error('Local Ollama timed out. Check that the model is loaded and the server has enough resources, then retry.'), {
+          status: 504,
+          code: 'UPSTREAM_TIMEOUT',
+        });
+      }
       throw Object.assign(new Error('Local Ollama is unavailable. Start Ollama on the server host and confirm it listens on port 11434.'), {
-        status: error.name === 'TimeoutError' ? 504 : 503,
+        status: 503,
+        code: 'UPSTREAM_UNAVAILABLE',
       });
     }
 
     if (!upstream.ok) {
       throw Object.assign(new Error(`Local Ollama returned HTTP ${upstream.status}. Check that the model is installed and running.`), { status: 502 });
     }
-    const data = await upstream.json();
+    const data = await readUpstreamJson(upstream, 'Local Ollama');
     const content = data.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       throw Object.assign(new Error('Local model returned an empty response.'), { status: 502 });
@@ -334,7 +363,9 @@ async function handleChat(request, response) {
   }
 
   if (config?.provider === 'openai-compatible') {
-    const upstream = await fetch(getOpenAIChatCompletionsUrl(config.baseUrl), {
+    let upstream;
+    try {
+      upstream = await fetch(getOpenAIChatCompletionsUrl(config.baseUrl), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${config.apiKey}`,
@@ -345,13 +376,23 @@ async function handleChat(request, response) {
         messages: [systemMessage, ...messages],
       }),
       signal: AbortSignal.timeout(25_000),
-    });
+      });
+    } catch (error) {
+      throw getUpstreamRequestError(error);
+    }
 
     if (!upstream.ok) {
       const providerError = await getSafeProviderError(upstream, config.apiKey);
-      throw Object.assign(new Error(providerError.message), { status: 502, code: providerError.code });
+      const guidance = upstream.status === 401 || upstream.status === 403
+        ? ' Check that the API key is valid and has permission to use this model in Settings.'
+        : upstream.status === 429
+          ? ' Check the provider quota or rate limit, then retry.'
+          : upstream.status === 404
+            ? ' Check the model name and provider base URL in Settings.'
+            : '';
+      throw Object.assign(new Error(`${providerError.message}${guidance}`), { status: 502, code: providerError.code });
     }
-    const data = await upstream.json();
+    const data = await readUpstreamJson(upstream, 'AI provider');
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       throw Object.assign(new Error('AI provider returned an empty response.'), { status: 502 });
@@ -534,7 +575,7 @@ async function serveStatic(url, response) {
 }
 
 export function createAppServer() {
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
     response.setHeader('x-frame-options', 'DENY');
@@ -625,6 +666,9 @@ export function createAppServer() {
       });
     }
   });
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 35_000;
+  return server;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

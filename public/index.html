@@ -7,7 +7,7 @@
     <meta name="description" content="A private, browser-based J.A.R.V.I.S. assistant with optional local AI, voice, and web search.">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?hud=22">
+    <link rel="stylesheet" href="/styles.css?hud=26">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -88,6 +88,9 @@
               <div class="holo-particles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
               <div class="avatar-frame">
                 <img class="ai-avatar is-normal" id="ai-avatar" src="/ai-avatar.jpg" alt="Photographic female assistant avatar under blue holographic light" width="720" height="940" fetchpriority="high" draggable="false">
+                <span class="portrait-mouth" id="portrait-mouth" aria-hidden="true"></span>
+                <span class="avatar-fallback" id="avatar-fallback" hidden>J.A.R.V.I.S.</span>
+                <canvas class="avatar-canvas" id="avatar-canvas" aria-hidden="true" hidden></canvas>
                 <span class="portrait-scanline"></span>
               </div>
               <span class="playback-indicator" aria-hidden="true"></span>
@@ -104,6 +107,22 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 13a7 7 0 0 0 0-2l2-1-2-4-2 1a7 7 0 0 0-2-1l-.3-2h-4L10 6a7 7 0 0 0-2 1L6 6l-2 4 2 1a7 7 0 0 0 0 2l-2 1 2 4 2-1a7 7 0 0 0 2 1l.7 2h4L15 18a7 7 0 0 0 2-1l2 1 2-4-2-1Z"/></svg><span>Settings</span>
               </button>
             </nav>
+          </div>
+          <div class="avatar-model-controls">
+            <button type="button" class="avatar-model-button" id="avatar-model-button">Load local 3D avatar</button>
+            <button type="button" class="avatar-model-button" id="avatar-audio-sync-button" aria-pressed="false">Sync mouth to tab audio</button>
+            <input id="avatar-model-input" type="file" accept=".glb,.vrm,model/gltf-binary" hidden>
+            <p id="avatar-model-status" role="status" aria-live="polite">No 3D model is bundled. Load a licensed, self-contained VRM or GLB; it stays local and must be selected again after a reload.</p>
+            <p id="avatar-audio-sync-status" role="status" aria-live="polite">Optional audio sync asks you to share this browser tab's audio. Audio is analyzed locally and is not recorded or uploaded.</p>
+            <details class="avatar-model-guide">
+              <summary>Female model requirements and import steps</summary>
+              <ol>
+                <li>Browse <a href="https://sketchfab.com/search?features=downloadable&amp;type=models&amp;q=realistic%20female%20human%20face" target="_blank" rel="noopener noreferrer">Sketchfab downloadable models</a>. Filter to CC0 or CC Attribution (CC BY); verify the exact model page grants your intended use and note any attribution requirement.</li>
+                <li>Choose an adult, human-realistic female model with dark hair, natural skin, and brown eyes. Before downloading, verify it has a rig and facial controls for mouth/jaw, blink, and eye look; listing the word “rigged” alone does not guarantee these.</li>
+                <li>Download its glTF package and extract it. In Blender, use <strong>File → Import → glTF 2.0</strong>, check that textures and facial shape keys/bones are present, then <strong>File → Export → glTF 2.0</strong> and choose <strong>.glb</strong> so geometry and textures are embedded. Do not remove the license/attribution information.</li>
+                <li>Choose <strong>Load local 3D avatar</strong> and select the exported self-contained GLB (or a compatible VRM). Files up to 20 MB are parsed in this browser; this app does not download, save, or upload them, so select the file again after a reload. Unsupported models leave the portrait active.</li>
+              </ol>
+            </details>
           </div>
           <div class="presence-copy">
             <p class="eyebrow" id="assistant-state">SYSTEM STANDBY</p>
@@ -160,9 +179,10 @@
               <span data-expression="listening">Listening</span>
               <span data-expression="speaking">Speaking</span>
               <span data-expression="thinking">Thinking</span>
+              <span data-expression="happy">Happy</span>
               <span data-expression="error">Error / offline</span>
             </div>
-            <p class="briefing-note">Status follows chat and browser speech events. The bundled portrait is static and has no facial animation or lip-sync.</p>
+            <p class="briefing-note">Optional shared-tab audio drives mouth opening from live audio amplitude; word-boundary visemes remain an approximate fallback. Neither method provides phoneme-accurate lip sync.</p>
           </section>
           <section class="dashboard-panel system-panel" id="system-panel" aria-labelledby="system-title">
             <div class="panel-heading"><div><span class="eyebrow">LIVE STATUS</span><h2 id="system-title">System monitor</h2></div><i class="status-pulse"></i></div>
@@ -312,6 +332,12 @@
             <div class="setting-actions"><button class="secondary-button" id="ai-settings-save" type="submit">Save provider</button><button class="secondary-button" id="ai-settings-environment" type="button">Use server environment</button></div>
           </form>
         </section>
+        <section class="share-settings" aria-labelledby="share-title">
+          <div class="provider-settings-heading"><span class="eyebrow">J.A.R.V.I.S.</span><h3 id="share-title">Share JARVIS</h3></div>
+          <p class="settings-disclaimer">Share copies only this app's public address. API keys, access keys, chat history, and preferences are never added to the link. A public app shares its server: configure APP_ACCESS_TOKEN before exposing it. Recipients then need that access key separately; never put it in the link.</p>
+          <div class="setting-actions"><button class="secondary-button" id="share-link-button" type="button">Share Link</button><button class="secondary-button" id="copy-link-button" type="button">Copy Link</button></div>
+          <p class="share-status" id="share-status" role="status" aria-live="polite"></p>
+        </section>
         <label class="setting-row access-row" for="access-token"><span><strong>Server access key</strong><small>Only needed when the server administrator enabled access protection. Kept in memory until this tab closes.</small></span><input id="access-token" type="password" autocomplete="off" spellcheck="false" placeholder="Optional access key"></label>
         <label class="setting-row" for="language-select"><span><strong>Conversation language</strong><small>Used for AI replies and voice recognition</small></span><select id="language-select"><option value="en">English</option><option value="hi">Hindi</option></select></label>
         <label class="setting-row" for="voice-select"><span><strong>Speech voice</strong><small id="voice-support">Available voices depend on your device</small></span><select id="voice-select"><option value="">System default</option></select></label>
@@ -324,7 +350,7 @@
     </dialog>
     <dialog class="settings-dialog install-dialog" id="install-help" aria-labelledby="install-title">
       <form method="dialog" class="settings-head"><div><span class="eyebrow">INSTALL J.A.R.V.I.S.</span><h2 id="install-title">Add to your device</h2></div><button class="icon-button subtle" aria-label="Close installation help" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
-      <div class="settings-content"><p class="install-instructions" id="install-instructions"></p><p class="settings-disclaimer">Installation is available only when this app is opened from a secure HTTPS URL (or localhost). Your Codespaces port remains private.</p></div>
+      <div class="settings-content"><p class="install-instructions" id="install-instructions"></p><p class="settings-disclaimer">PWA installation needs HTTPS (or localhost). On iPhone/iPad, use Safari's Share menu and choose Add to Home Screen. Windows users can also install the separate desktop app using the instructions in the project README.</p></div>
     </dialog>
     <dialog class="settings-dialog" id="file-search-dialog" aria-labelledby="file-search-title">
       <form method="dialog" class="settings-head"><div><span class="eyebrow">LOCAL ATTACHMENTS</span><h2 id="file-search-title">Search files</h2></div><button class="icon-button subtle" aria-label="Close file search" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
@@ -353,7 +379,7 @@
       </div>
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
-    <script src="/diagnostics.js?hud=22"></script>
-    <script src="/app.js?hud=22" type="module"></script>
+    <script src="/diagnostics.js?hud=26"></script>
+    <script src="/app.js?hud=26" type="module"></script>
   </body>
 </html>

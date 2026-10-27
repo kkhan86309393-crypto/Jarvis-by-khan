@@ -1,5 +1,7 @@
 import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './interface-switcher.js';
 import { detectDeviceProfile } from './device-monitor.js';
+import { applySpeechBoundaryCue, estimateAudioMouthOpening, initializeAvatar3d } from './avatar3d.bundle.js';
+import { getPublicShareUrl } from './share-link.js';
 
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
@@ -24,6 +26,14 @@ const elements = {
   mic: document.querySelector('#mic-button'),
   stage: document.querySelector('#holo-stage'),
   avatar: document.querySelector('#ai-avatar'),
+  avatarFrame: document.querySelector('.avatar-frame'),
+  avatarFallback: document.querySelector('#avatar-fallback'),
+  avatarCanvas: document.querySelector('#avatar-canvas'),
+  avatarModelButton: document.querySelector('#avatar-model-button'),
+  avatarModelInput: document.querySelector('#avatar-model-input'),
+  avatarModelStatus: document.querySelector('#avatar-model-status'),
+  avatarAudioSyncButton: document.querySelector('#avatar-audio-sync-button'),
+  avatarAudioSyncStatus: document.querySelector('#avatar-audio-sync-status'),
   dashboardLayout: document.querySelector('#dashboard-layout'),
   dashboardChatPanel: document.querySelector('.dashboard-chat-panel'),
   conversationView: document.querySelector('#conversation-view'),
@@ -38,6 +48,9 @@ const elements = {
   providerNote: document.querySelector('#provider-note'),
   connection: document.querySelector('#connection-status'),
   settings: document.querySelector('#settings-dialog'),
+  shareLinkButton: document.querySelector('#share-link-button'),
+  copyLinkButton: document.querySelector('#copy-link-button'),
+  shareStatus: document.querySelector('#share-status'),
   aiSettingsForm: document.querySelector('#ai-settings-form'),
   aiProvider: document.querySelector('#ai-provider-select'),
   aiModel: document.querySelector('#ai-model-input'),
@@ -183,14 +196,31 @@ const state = {
   speechPlaybackId: 0,
   workspaceView: loadWorkspaceView(),
   displayStream: null,
+  audioLipSyncStream: null,
+  audioLipSyncContext: null,
+  audioLipSyncAnalyser: null,
+  audioLipSyncBuffer: null,
+  audioLipSyncTimer: null,
+  audioLipSyncStarting: false,
   focusRemaining: 25 * 60,
   focusTimerId: null,
   captureObjectUrl: null,
   assistantMode: 'normal',
+  avatarMoodTimer: null,
   microphonePermission: 'unknown',
   lastChatFailure: null,
   aiSettingsLoaded: false,
 };
+
+const avatar3d = initializeAvatar3d({
+  frame: elements.avatarFrame,
+  canvas: elements.avatarCanvas,
+  image: elements.avatar,
+  mouthOverlay: document.querySelector('#portrait-mouth'),
+  fileInput: elements.avatarModelInput,
+  modelButton: elements.avatarModelButton,
+  status: elements.avatarModelStatus,
+});
 
 function loadHistory() {
   if (!state.preferences.memoryEnabled) return [];
@@ -248,7 +278,9 @@ function syncFullAccess() {
 }
 
 function setAssistantState(mode, label) {
-  const supportedModes = ['normal', 'listening', 'speaking', 'thinking', 'error', 'offline'];
+  window.clearTimeout(state.avatarMoodTimer);
+  state.avatarMoodTimer = null;
+  const supportedModes = ['normal', 'listening', 'speaking', 'thinking', 'happy', 'error', 'offline'];
   state.assistantMode = supportedModes.includes(mode) ? mode : 'normal';
   elements.stage.classList.remove(...supportedModes.filter((item) => item !== 'normal').map((item) => `is-${item}`));
   if (state.assistantMode !== 'normal') elements.stage.classList.add(`is-${state.assistantMode}`);
@@ -275,10 +307,11 @@ function setAssistantState(mode, label) {
     offline: 'Assistant connection unavailable',
   })[state.assistantMode] || 'Voice channel idle');
   updateAvatarExpression(state.assistantMode);
+  avatar3d.setState(state.assistantMode);
 }
 
 function updateAvatarExpression(expression) {
-  const supportedState = ['normal', 'listening', 'thinking', 'speaking', 'error', 'offline'].includes(expression)
+  const supportedState = ['normal', 'listening', 'thinking', 'speaking', 'happy', 'error', 'offline'].includes(expression)
     ? expression
     : 'normal';
   const activeState = supportedState === 'offline' ? 'error' : supportedState;
@@ -287,6 +320,7 @@ function updateAvatarExpression(expression) {
     listening: 'LISTENING',
     thinking: 'THINKING',
     speaking: 'SPEAKING',
+    happy: 'HAPPY',
     error: 'ERROR / OFFLINE',
   })[activeState];
   elements.avatarExpressionReadout.textContent = stateLabel;
@@ -399,6 +433,16 @@ async function readApiResponse(response) {
   return data;
 }
 
+function getRequestErrorMessage(error, action = 'request') {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    return `The ${action} timed out. Check your connection or AI provider, then try again.`;
+  }
+  if (error instanceof TypeError && /fetch|network/i.test(error.message)) {
+    return 'J.A.R.V.I.S. could not reach its server. Check your internet connection and that the server is running.';
+  }
+  return error?.message || `The ${action} failed. Please try again.`;
+}
+
 function apiHeaders(json = false) {
   const headers = {};
   if (json) headers['content-type'] = 'application/json';
@@ -434,13 +478,19 @@ async function sendChat(text, { retry = false } = {}) {
     elements.leftAiStatus.textContent = 'AI RESPONDED';
     elements.leftAiDetail.textContent = `Most recent successful reply came from ${data.provider}.`;
     logActivity('Assistant reply received');
+    setAssistantState('happy', 'RESPONSE READY');
+    state.avatarMoodTimer = window.setTimeout(() => {
+      if (state.assistantMode === 'happy') setAssistantState('', 'SYSTEM STANDBY');
+    }, 1400);
     if (state.preferences.voiceEnabled) speak(data.reply);
   } catch (error) {
-    addMessage({ role: 'assistant', content: error.message });
-    state.lastChatFailure = { text, message: error.message };
-    setDashboardChatState('error', error.message, true);
+    const message = getRequestErrorMessage(error, 'AI request');
+    showFeedback(message);
+    addMessage({ role: 'assistant', content: message });
+    state.lastChatFailure = { text, message };
+    setDashboardChatState('error', message, true);
     elements.leftAiStatus.textContent = 'REQUEST FAILED';
-    elements.leftAiDetail.textContent = error.message;
+    elements.leftAiDetail.textContent = message;
     logActivity('Chat request unavailable');
     setAssistantState('error', 'REQUEST FAILED');
   } finally {
@@ -483,8 +533,10 @@ async function searchWeb(query) {
     elements.providerNote.textContent = `Retrieved results from ${data.source}. Results are shown as retrieved; no AI summary is implied.`;
     logActivity(`Web lookup: ${data.results.length} result${data.results.length === 1 ? '' : 's'}`);
   } catch (error) {
-    addMessage({ role: 'assistant', content: error.message });
-    setDashboardChatState('error', error.message);
+    const message = getRequestErrorMessage(error, 'web search');
+    showFeedback(message);
+    addMessage({ role: 'assistant', content: message });
+    setDashboardChatState('error', message);
     setAssistantState('error', 'SEARCH UNAVAILABLE');
   } finally {
     state.pending = false;
@@ -535,6 +587,9 @@ function selectedVoice() {
 function speak(text) {
   if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return;
   const playbackId = ++state.speechPlaybackId;
+  setAvatarMouth(0);
+  elements.stage.classList.remove('is-speech-paused');
+  if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = state.preferences.language === 'hi' ? 'hi-IN' : 'en-US';
@@ -545,15 +600,37 @@ function speak(text) {
     setAssistantState('speaking', 'VOICE OUTPUT');
     logActivity('Voice response started');
   };
+  utterance.onboundary = (event) => {
+    if (playbackId !== state.speechPlaybackId || (event.name && event.name !== 'word')) return;
+    applySpeechBoundaryCue(text, event, (opening, viseme) => {
+      if (state.audioLipSyncAnalyser) avatar3d.setViseme(viseme);
+      else setAvatarMouth(opening, viseme);
+    });
+  };
+  utterance.onpause = () => {
+    if (playbackId !== state.speechPlaybackId) return;
+    setAvatarMouth(0);
+    elements.stage.classList.add('is-speech-paused');
+    setAssistantState('', 'VOICE PAUSED');
+  };
+  utterance.onresume = () => {
+    if (playbackId !== state.speechPlaybackId) return;
+    elements.stage.classList.remove('is-speech-paused');
+    setAssistantState('speaking', 'VOICE OUTPUT');
+  };
   utterance.onend = () => {
     if (playbackId !== state.speechPlaybackId) return;
     state.speechPlaybackId += 1;
+    setAvatarMouth(0);
+    elements.stage.classList.remove('is-speech-paused');
     setAssistantState('', 'SYSTEM STANDBY');
     logActivity('Voice response complete');
   };
   utterance.onerror = (event) => {
     if (playbackId !== state.speechPlaybackId) return;
     state.speechPlaybackId += 1;
+    setAvatarMouth(0);
+    elements.stage.classList.remove('is-speech-paused');
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback(event.error === 'canceled' || event.error === 'interrupted'
       ? ''
@@ -563,16 +640,129 @@ function speak(text) {
     window.speechSynthesis.speak(utterance);
   } catch {
     state.speechPlaybackId += 1;
+    setAvatarMouth(0);
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
   }
 }
 
+function setAvatarMouth(opening, viseme = 'aa') {
+  elements.avatarFrame.style.setProperty('--mouth-open', String(opening));
+  avatar3d.setMouth(opening);
+  avatar3d.setViseme(viseme);
+}
+
 function stopSpeechOutput() {
   state.speechPlaybackId += 1;
   window.speechSynthesis.cancel();
+  setAvatarMouth(0);
+  elements.stage.classList.remove('is-speech-paused');
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
 }
+
+function stopAudioLipSync(message = 'Audio lip-sync is off. Browser word-boundary cues are used when available.') {
+  const stream = state.audioLipSyncStream;
+  const audioContext = state.audioLipSyncContext;
+  if (state.audioLipSyncTimer) window.clearInterval(state.audioLipSyncTimer);
+  state.audioLipSyncTimer = null;
+  state.audioLipSyncStream = null;
+  state.audioLipSyncContext = null;
+  state.audioLipSyncAnalyser = null;
+  state.audioLipSyncBuffer = null;
+  stream?.getTracks().forEach((track) => track.stop());
+  if (audioContext && audioContext.state !== 'closed') {
+    audioContext.close().catch((error) => {
+      elements.avatarAudioSyncStatus.textContent = `Audio processing could not close cleanly: ${error.message}`;
+    });
+  }
+  elements.avatarAudioSyncButton.setAttribute('aria-pressed', 'false');
+  elements.avatarAudioSyncButton.textContent = 'Sync mouth to tab audio';
+  elements.avatarAudioSyncStatus.textContent = message;
+  setAvatarMouth(0);
+}
+
+async function toggleAudioLipSync() {
+  if (state.audioLipSyncStream) {
+    stopAudioLipSync();
+    return;
+  }
+  if (state.displayStream) {
+    elements.avatarAudioSyncStatus.textContent = 'Stop the current screen-capture session before enabling audio lip-sync.';
+    return;
+  }
+  if (state.audioLipSyncStarting) return;
+  if (!navigator.mediaDevices?.getDisplayMedia || !window.AudioContext) {
+    elements.avatarAudioSyncStatus.textContent = 'Tab-audio capture is unavailable in this browser. Word-boundary cues remain available when provided by the voice.';
+    return;
+  }
+
+  elements.avatarAudioSyncButton.disabled = true;
+  state.audioLipSyncStarting = true;
+  elements.avatarAudioSyncStatus.textContent = 'Choose this J.A.R.V.I.S. browser tab and enable its audio in the browser sharing prompt.';
+  let stream;
+  let audioContext;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      audio: true,
+      video: true,
+      preferCurrentTab: true,
+    });
+    const [audioTrack] = stream.getAudioTracks();
+    if (!audioTrack) {
+      throw new Error('No tab-audio track was shared. Choose this browser tab and enable Share tab audio.');
+    }
+
+    audioContext = new window.AudioContext();
+    await audioContext.resume();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.58;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    stream.getVideoTracks().forEach((track) => track.stop());
+
+    state.audioLipSyncStream = stream;
+    state.audioLipSyncContext = audioContext;
+    state.audioLipSyncAnalyser = analyser;
+    state.audioLipSyncBuffer = new Float32Array(analyser.fftSize);
+    state.audioLipSyncTimer = window.setInterval(() => {
+      if (!state.audioLipSyncAnalyser || state.assistantMode !== 'speaking') {
+        setAvatarMouth(0);
+        return;
+      }
+      state.audioLipSyncAnalyser.getFloatTimeDomainData(state.audioLipSyncBuffer);
+      setAvatarMouth(estimateAudioMouthOpening(state.audioLipSyncBuffer));
+    }, 30);
+    audioTrack.addEventListener('ended', () => {
+      if (state.audioLipSyncStream === stream) {
+        stopAudioLipSync('Shared-tab audio ended. Word-boundary cues are used again when available.');
+      }
+    }, { once: true });
+    elements.avatarAudioSyncButton.textContent = 'Stop audio lip-sync';
+    elements.avatarAudioSyncButton.setAttribute('aria-pressed', 'true');
+    elements.avatarAudioSyncStatus.textContent = 'Using live tab-audio amplitude locally while J.A.R.V.I.S. speaks. This controls mouth opening, not phoneme timing.';
+  } catch (error) {
+    stream?.getTracks().forEach((track) => track.stop());
+    if (audioContext && audioContext.state !== 'closed') {
+      await audioContext.close().catch((closeError) => {
+        elements.avatarAudioSyncStatus.textContent = `Audio processing could not close cleanly: ${closeError.message}`;
+      });
+    }
+    if (!elements.avatarAudioSyncStatus.textContent.startsWith('Audio processing could not close cleanly:')) {
+      elements.avatarAudioSyncStatus.textContent = error.name === 'NotAllowedError'
+        ? 'Audio sharing was cancelled or denied. No audio was captured.'
+        : error.message || 'Tab audio could not be connected.';
+    }
+  } finally {
+    state.audioLipSyncStarting = false;
+    elements.avatarAudioSyncButton.disabled = false;
+  }
+}
+
+elements.avatarAudioSyncButton.addEventListener('click', toggleAudioLipSync);
+elements.avatar.addEventListener('error', () => {
+  elements.avatar.classList.add('is-unavailable');
+  elements.avatarFallback.hidden = false;
+});
 
 function updateVoiceList() {
   if (!('speechSynthesis' in window)) {
@@ -964,7 +1154,7 @@ async function saveAISettings(provider = elements.aiProvider.value) {
     }
     await checkServer();
   } catch (error) {
-    elements.aiSetupStatus.textContent = error.message;
+    elements.aiSetupStatus.textContent = getRequestErrorMessage(error, 'provider settings request');
   } finally {
     elements.aiSettingsSave.disabled = false;
     elements.aiSettingsEnvironment.disabled = false;
@@ -1102,6 +1292,10 @@ function toggleFocusTimer() {
 }
 
 async function startScreenCapture() {
+  if (state.audioLipSyncStream || state.audioLipSyncStarting) {
+    elements.captureStatus.textContent = 'Stop audio lip-sync before starting screen capture.';
+    return;
+  }
   if (!navigator.mediaDevices?.getDisplayMedia) {
     elements.captureStatus.textContent = 'Screen capture is not supported in this browser.';
     return;
@@ -1314,6 +1508,63 @@ function updateClock() {
 
 document.querySelector('#settings-button').addEventListener('click', () => elements.settings.showModal());
 elements.dashboardSettingsButton.addEventListener('click', () => elements.settings.showModal());
+const publicShareUrl = getPublicShareUrl(window.location);
+if (publicShareUrl) {
+  elements.shareStatus.textContent = 'HTTPS link ready. Confirm your host marks it Public before sharing; J.A.R.V.I.S. cannot verify access from other networks.';
+} else {
+  elements.shareStatus.textContent = 'This address is local or not secure, so it cannot be shared. In a Codespace, run npm run codespaces, set port 4173 visibility to Public in the Ports tab, then reopen JARVIS using its HTTPS forwarded URL.';
+  elements.shareLinkButton.disabled = true;
+  elements.copyLinkButton.disabled = true;
+}
+
+async function copyPublicLink() {
+  if (!publicShareUrl) return;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(publicShareUrl);
+      elements.shareStatus.textContent = 'Public JARVIS link copied. No keys or private settings were included.';
+      return;
+    } catch {
+      // Try the browser's legacy clipboard API below.
+    }
+  }
+  const input = document.createElement('textarea');
+  input.value = publicShareUrl;
+  input.setAttribute('readonly', '');
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.append(input);
+  input.select();
+  const copied = document.execCommand('copy');
+  input.remove();
+  if (!copied) throw new Error('Clipboard access was denied. Copy the HTTPS address from the browser address bar instead.');
+  elements.shareStatus.textContent = 'Public JARVIS link copied. No keys or private settings were included.';
+}
+
+elements.copyLinkButton.addEventListener('click', () => {
+  copyPublicLink().catch((error) => {
+    elements.shareStatus.textContent = error.message;
+  });
+});
+elements.shareLinkButton.addEventListener('click', async () => {
+  if (!publicShareUrl) return;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'J.A.R.V.I.S.', text: 'Open J.A.R.V.I.S.', url: publicShareUrl });
+      elements.shareStatus.textContent = 'J.A.R.V.I.S. link shared.';
+      return;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      elements.shareStatus.textContent = `Sharing failed: ${error.message}`;
+      return;
+    }
+  }
+  try {
+    await copyPublicLink();
+  } catch (error) {
+    elements.shareStatus.textContent = error.message;
+  }
+});
 document.querySelector('#new-interface-button').addEventListener('click', () => setWorkspaceView('dashboard'));
 document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
 document.querySelector('#more-tools-button').addEventListener('click', () => {
@@ -1543,7 +1794,7 @@ function isInstalledApp() {
 }
 
 function updateInstallButton() {
-  elements.install.hidden = isInstalledApp();
+  elements.install.hidden = isInstalledApp() || new URLSearchParams(location.search).has('desktop-app');
 }
 
 function showInstallInstructions() {
@@ -1598,7 +1849,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=22', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=26', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }
