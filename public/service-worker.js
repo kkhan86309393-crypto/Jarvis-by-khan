@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jarvis-shell-v26';
-const APP_SHELL = ['/', '/styles.css?hud=26', '/diagnostics.js?hud=26', '/app.js?hud=26', '/avatar3d.bundle.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png', '/ai-avatar.jpg'];
+const CACHE_NAME = 'jarvis-shell-v27';
+const APP_SHELL = ['/', '/styles.css?hud=26', '/diagnostics.js?hud=26', '/app.js?hud=26', '/avatar-cues.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png', '/ai-avatar.jpg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

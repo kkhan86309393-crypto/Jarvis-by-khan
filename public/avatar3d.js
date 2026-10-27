@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { estimateMouthCue } from './avatar-cues.js';
+
+export { applySpeechBoundaryCue, estimateAudioMouthOpening, estimateMouthCue } from './avatar-cues.js';
 
 const MAX_MODEL_BYTES = 20 * 1024 * 1024;
 const MOUTH_PATTERN = /(?:jaw[\s._-]*open|mouth[\s._-]*open|viseme[\s._-]*(?:aa|a|ee|ih|oh|ou))/i;
@@ -148,50 +151,6 @@ export function applyVrmExpressions(expressions, {
   if (expressions.getExpression('relaxed')) expressions.setValue('relaxed', Math.max(attentive, thinking));
 }
 
-export function estimateMouthCue(word) {
-  const normalized = word.toLocaleLowerCase().replace(/[^\p{L}\p{M}\p{N}]/gu, '');
-  if (!normalized) return { opening: 0, viseme: 'aa' };
-  if (!/^\p{Script=Latin}+$/u.test(normalized.replace(/\p{M}/gu, ''))) {
-    const viseme = /[उऊुू]/u.test(normalized) ? 'ou'
-      : /[ओऔोौ]/u.test(normalized) ? 'oh'
-        : /[इईिी]/u.test(normalized) ? 'ih'
-          : /[एऐेै]/u.test(normalized) ? 'ee' : 'aa';
-    return { opening: /[मबप]/.test(normalized[0]) ? 0.08 : 0.55, viseme };
-  }
-  if (/[mbp]/.test(normalized[0])) return { opening: 0.08, viseme: 'aa' };
-    const firstVowel = normalized.match(/[aeiou]/)?.[0];
-    if (firstVowel === 'u') return { opening: 0.5, viseme: 'ou' };
-    if (firstVowel === 'o') return { opening: 0.58, viseme: 'oh' };
-    if (firstVowel === 'i') return { opening: 0.28, viseme: 'ih' };
-    if (firstVowel === 'e') return { opening: 0.36, viseme: 'ee' };
-    if (firstVowel === 'a') return { opening: 0.72, viseme: 'aa' };
-  return { opening: 0.16, viseme: 'aa' };
-}
-
-export function applySpeechBoundaryCue(text, event, onCue) {
-  if (!event || (event.name && event.name !== 'word') || typeof onCue !== 'function') return;
-  const start = Number.isInteger(event.charIndex) ? event.charIndex : 0;
-  const word = text.slice(start, start + (event.charLength || 0))
-    || text.slice(start).match(/^[\p{L}\p{N}']+/u)?.[0]
-    || '';
-  const { opening, viseme } = estimateMouthCue(word);
-  onCue(opening, viseme);
-}
-
-export function estimateAudioMouthOpening(samples) {
-  if (!samples?.length) return 0;
-  let sum = 0;
-  let count = 0;
-  for (const sample of samples) {
-    if (!Number.isFinite(sample)) continue;
-    sum += sample * sample;
-    count += 1;
-  }
-  if (!count) return 0;
-  const rms = Math.sqrt(sum / count);
-  return THREE.MathUtils.clamp((rms - 0.015) * 4, 0, 0.9);
-}
-
 export function frameAvatarPortrait(camera, root, focusNode) {
   root.updateWorldMatrix(true, true);
   const bounds = new THREE.Box3().setFromObject(root);
@@ -210,6 +169,175 @@ export function applyHeadMotion(head, baseRotation, seconds, tilt) {
   head.rotation.x = baseRotation.x + tilt + Math.sin(seconds * 0.8) * 0.012;
   head.rotation.y = baseRotation.y + Math.sin(seconds * 0.55) * 0.025;
   head.rotation.z = baseRotation.z + Math.sin(seconds * 0.35) * 0.008;
+}
+
+function addSphere(parent, name, material, position, scale) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), material);
+  mesh.name = name;
+  mesh.position.set(...position);
+  mesh.scale.set(...scale);
+  parent.add(mesh);
+  return mesh;
+}
+
+function addCurve(parent, name, material, points, radius = 0.012) {
+  const curve = new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)));
+  const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, radius, 5, false), material);
+  mesh.name = name;
+  parent.add(mesh);
+  return mesh;
+}
+
+export function animateBuiltInAvatar(rig, {
+  blinkValue = 0,
+  mouthValue = 0,
+  mouthViseme = 'aa',
+  happy = 0,
+  attentive = 0,
+  thinking = 0,
+  frown = 0,
+} = {}) {
+  if (!rig) return;
+  const eyeOpen = 1 - THREE.MathUtils.clamp(blinkValue, 0, 1);
+  for (const lid of rig.lids) {
+    lid.scale.y = 0.015 + eyeOpen * 0.1;
+    lid.position.y = 0.075 - (1 - eyeOpen) * 0.045;
+  }
+  for (const pupil of rig.pupils) {
+    pupil.position.x = pupil.userData.baseX + Math.sin(rig.seconds * 0.31) * 0.012;
+    pupil.position.y = pupil.userData.baseY + Math.sin(rig.seconds * 0.23) * 0.008;
+  }
+  const visemeScale = mouthViseme === 'oh' || mouthViseme === 'ou' ? 0.78 : mouthViseme === 'ee' ? 0.72 : 1;
+  rig.mouth.scale.y = 0.018 + Math.max(mouthValue, happy * 0.3) * 0.12;
+  rig.mouth.scale.x = 0.105 * (visemeScale + happy * 0.22);
+  rig.mouth.position.y = -0.2 + happy * 0.012 - frown * 0.008;
+  rig.brows.forEach((brow, index) => {
+    const side = index === 0 ? 1 : -1;
+    brow.position.y = 0.19 + thinking * 0.018 - frown * 0.01;
+    brow.rotation.z = side * (0.08 + happy * 0.12 - thinking * 0.08);
+  });
+  rig.head.rotation.z = Math.sin(rig.seconds * 0.35) * 0.008
+    + attentive * 0.025 - thinking * 0.018;
+}
+
+export function createBuiltInAvatar() {
+  const root = new THREE.Group();
+  root.name = 'jarvis-holographic-avatar';
+  const skin = new THREE.MeshStandardMaterial({
+    color: 0x78cfff,
+    emissive: 0x1268a8,
+    emissiveIntensity: 0.34,
+    metalness: 0.28,
+    roughness: 0.36,
+    transparent: true,
+    opacity: 0.82,
+  });
+  const hair = new THREE.MeshStandardMaterial({
+    color: 0x092b65,
+    emissive: 0x0879d8,
+    emissiveIntensity: 0.52,
+    metalness: 0.55,
+    roughness: 0.29,
+    transparent: true,
+    opacity: 0.88,
+  });
+  const edge = new THREE.MeshStandardMaterial({
+    color: 0x9ceeff,
+    emissive: 0x46caff,
+    emissiveIntensity: 1.15,
+    metalness: 0.3,
+    roughness: 0.24,
+  });
+  const eyeWhite = new THREE.MeshStandardMaterial({
+    color: 0xc8f6ff,
+    emissive: 0x55caff,
+    emissiveIntensity: 0.6,
+  });
+  const irisMaterial = new THREE.MeshStandardMaterial({
+    color: 0x148bff,
+    emissive: 0x20bfff,
+    emissiveIntensity: 1.2,
+  });
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x031329,
+    emissive: 0x06385c,
+    emissiveIntensity: 0.3,
+  });
+
+  addSphere(root, 'shoulders', hair, [0, -0.48, 0], [0.58, 0.3, 0.28]);
+  addSphere(root, 'upper-chest', skin, [0, -0.69, 0.015], [0.4, 0.3, 0.24]);
+  addSphere(root, 'neck', skin, [0, -0.12, 0], [0.17, 0.31, 0.17]);
+  addSphere(root, 'collar', edge, [0, -0.4, 0.22], [0.35, 0.045, 0.035]);
+  const head = new THREE.Group();
+  head.name = 'head';
+  head.position.y = 0.45;
+  root.add(head);
+  addSphere(head, 'face', skin, [0, 0, 0], [0.38, 0.52, 0.32]);
+  addSphere(head, 'hair-cap', hair, [0, 0.22, -0.025], [0.42, 0.39, 0.36]);
+  addSphere(head, 'left-side-hair', hair, [-0.36, -0.11, -0.005], [0.11, 0.46, 0.26]);
+  addSphere(head, 'right-side-hair', hair, [0.36, -0.11, -0.005], [0.11, 0.46, 0.26]);
+
+  for (const side of [-1, 1]) {
+    addCurve(head, `bang-${side}`, edge, [
+      [side * 0.04, 0.48, 0.18],
+      [side * 0.18, 0.39, 0.285],
+      [side * 0.3, 0.22, 0.22],
+      [side * 0.27, 0.08, 0.2],
+    ], 0.018);
+    addCurve(head, `hair-lock-${side}`, hair, [
+      [side * 0.31, 0.2, 0.04],
+      [side * 0.43, -0.05, 0.03],
+      [side * 0.39, -0.42, 0.04],
+      [side * 0.3, -0.76, 0.06],
+    ], 0.045);
+  }
+
+  const eyes = [];
+  const lids = [];
+  const pupils = [];
+  const brows = [];
+  for (const side of [-1, 1]) {
+    const eye = addSphere(head, `eye-${side}`, eyeWhite, [side * 0.16, 0.075, 0.285], [0.105, 0.052, 0.035]);
+    eyes.push(eye);
+    const pupil = addSphere(head, `pupil-${side}`, irisMaterial, [side * 0.16, 0.075, 0.32], [0.038, 0.039, 0.018]);
+    pupil.userData.baseX = pupil.position.x;
+    pupil.userData.baseY = pupil.position.y;
+    pupils.push(pupil);
+    addSphere(head, `iris-core-${side}`, dark, [side * 0.16, 0.075, 0.338], [0.017, 0.024, 0.008]);
+    const lid = addSphere(head, `eyelid-${side}`, skin, [side * 0.16, 0.075, 0.325], [0.11, 0.11, 0.025]);
+    lids.push(lid);
+    const brow = addCurve(head, `brow-${side}`, edge, [
+      [side * 0.28, 0.19, 0.3],
+      [side * 0.17, 0.22, 0.32],
+      [side * 0.06, 0.19, 0.3],
+    ], 0.014);
+    brows.push(brow);
+  }
+
+  addSphere(head, 'nose-bridge', skin, [0, -0.045, 0.32], [0.048, 0.13, 0.065]);
+  addSphere(head, 'nose-tip', edge, [0, -0.13, 0.36], [0.07, 0.038, 0.05]);
+  addSphere(head, 'mouth', dark, [0, -0.2, 0.316], [0.105, 0.018, 0.025]);
+  addCurve(head, 'upper-lip', edge, [
+    [-0.115, -0.19, 0.328],
+    [-0.045, -0.18, 0.343],
+    [0, -0.193, 0.346],
+    [0.045, -0.18, 0.343],
+    [0.115, -0.19, 0.328],
+  ], 0.009);
+  addSphere(head, 'ear-left', skin, [-0.37, -0.02, 0], [0.055, 0.105, 0.07]);
+  addSphere(head, 'ear-right', skin, [0.37, -0.02, 0], [0.055, 0.105, 0.07]);
+  return {
+    root,
+    rig: {
+      head,
+      eyes,
+      lids,
+      pupils,
+      brows,
+      mouth: head.getObjectByName('mouth'),
+      seconds: 0,
+    },
+  };
 }
 
 export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInput, modelButton, status, parseModel = parseAvatarGlb }) {
@@ -238,6 +366,7 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
   let attentiveTargets = [];
   let thinkTargets = [];
   let frownTargets = [];
+  let builtInRig = null;
   let activeVrm = null;
   let mouthViseme = 'aa';
   let lastFrameTime = 0;
@@ -307,6 +436,7 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
     attentiveTargets = [];
     thinkTargets = [];
     frownTargets = [];
+    builtInRig = null;
     if (renderer) {
       renderer.dispose();
       renderer = null;
@@ -320,8 +450,14 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
   }
 
   function configureRenderer() {
-    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    const lowPowerDevice = navigator.hardwareConcurrency <= 4 || navigator.connection?.saveData;
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: !lowPowerDevice,
+      powerPreference: 'low-power',
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowPowerDevice ? 1 : 1.35));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(33, 1, 0.01, 100);
@@ -359,6 +495,7 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
   function animate(now) {
     animationFrame = requestAnimationFrame(animate);
     if (!modelRoot || !renderer || !scene || !camera) return;
+    if (lastFrameTime && now - lastFrameTime < 30) return;
 
     const seconds = now / 1000;
     const deltaTime = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 1 / 60;
@@ -369,6 +506,18 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
     const attentive = avatarState === 'listening' ? 0.2 : 0;
     const thinking = avatarState === 'thinking' ? 0.18 : 0;
     const frown = avatarState === 'error' ? 0.16 : 0;
+    if (builtInRig) {
+      builtInRig.seconds = seconds;
+      animateBuiltInAvatar(builtInRig, {
+        blinkValue,
+        mouthValue,
+        mouthViseme,
+        happy,
+        attentive,
+        thinking,
+        frown,
+      });
+    }
 
     if (now >= nextBlinkAt && !blinkStartedAt) {
       blinkStartedAt = now;
@@ -511,6 +660,7 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
       attentiveTargets = rig.attentiveTargets;
       thinkTargets = rig.thinkTargets;
       frownTargets = rig.frownTargets;
+      builtInRig = null;
       canvas.hidden = false;
       if (image) image.classList.add('is-3d-hidden');
       if (mouthOverlay) mouthOverlay.hidden = true;
@@ -530,12 +680,41 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
     }
   }
 
-  fileInput.addEventListener('change', () => {
+  function loadBuiltInAvatar() {
+    try {
+      const { root, rig } = createBuiltInAvatar();
+      const bounds = new THREE.Box3().setFromObject(root);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      disposeModel();
+      configureRenderer();
+      modelRoot = root;
+      builtInRig = rig;
+      root.position.set(-center.x, -center.y, -center.z);
+      modelBasePosition.copy(root.position);
+      scene.add(modelRoot);
+      headNode = rig.head;
+      headBaseRotation.copy(headNode.rotation);
+      frameAvatarPortrait(camera, modelRoot, headNode);
+      canvas.hidden = false;
+      if (image) image.classList.add('is-3d-hidden');
+      if (mouthOverlay) mouthOverlay.hidden = true;
+      frame.classList.add('is-3d-active');
+      resize();
+      report('Built-in holographic avatar ready. Facial animation follows J.A.R.V.I.S. voice and assistant state.', 'ready');
+      animationFrame = requestAnimationFrame(animate);
+    } catch (error) {
+      disposeModel();
+      report(`Could not create the built-in avatar: ${error.message || 'WebGL is unavailable'}. The portrait remains active.`, 'error');
+    }
+  }
+
+  fileInput?.addEventListener('change', () => {
     const [file] = fileInput.files || [];
     loadModel(file);
     fileInput.value = '';
   });
-  modelButton.addEventListener('click', () => fileInput.click());
+  modelButton?.addEventListener('click', () => fileInput.click());
   window.addEventListener('jarvis:avatar-state', (event) => setState(event.detail?.state));
   window.addEventListener('jarvis:avatar-mouth', (event) => setMouth(event.detail?.value));
   canvas.addEventListener('webglcontextlost', (event) => {
@@ -550,5 +729,5 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
     disposeModel();
   }
 
-  return { loadModel, setState, setMouth, setViseme, unload: unloadModel };
+  return { loadModel, loadBuiltInAvatar, setState, setMouth, setViseme, unload: unloadModel };
 }

@@ -109,10 +109,11 @@
             </nav>
           </div>
           <div class="avatar-model-controls">
-            <button type="button" class="avatar-model-button" id="avatar-model-button">Load local 3D avatar</button>
+            <button type="button" class="avatar-model-button" id="built-in-avatar-button">Activate holographic avatar</button>
+            <button type="button" class="avatar-model-button" id="avatar-model-button">Load local 3D model</button>
             <button type="button" class="avatar-model-button" id="avatar-audio-sync-button" aria-pressed="false">Sync mouth to tab audio</button>
             <input id="avatar-model-input" type="file" accept=".glb,.vrm,model/gltf-binary" hidden>
-            <p id="avatar-model-status" role="status" aria-live="polite">No 3D model is bundled. Load a licensed, self-contained VRM or GLB; it stays local and must be selected again after a reload.</p>
+            <p id="avatar-model-status" role="status" aria-live="polite">Activate the built-in holographic avatar, or load a licensed, self-contained VRM or GLB locally.</p>
             <p id="avatar-audio-sync-status" role="status" aria-live="polite">Optional audio sync asks you to share this browser tab's audio. Audio is analyzed locally and is not recorded or uploaded.</p>
             <details class="avatar-model-guide">
               <summary>Female model requirements and import steps</summary>

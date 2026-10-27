@@ -7,6 +7,8 @@ import {
   applyVrmExpressions,
   applySpeechBoundaryCue,
   applyHeadMotion,
+  animateBuiltInAvatar,
+  createBuiltInAvatar,
   estimateAudioMouthOpening,
   estimateMouthCue,
   frameAvatarPortrait,
@@ -169,6 +171,28 @@ test('adds subtle head movement without discarding the model rest pose', () => {
   assert.equal(head.rotation.x, baseRotation.x + 0.045 + Math.sin(0.8) * 0.012);
   assert.equal(head.rotation.y, baseRotation.y + Math.sin(0.55) * 0.025);
   assert.equal(head.rotation.z, baseRotation.z + Math.sin(0.35) * 0.008);
+});
+
+test('creates a built-in holographic avatar with facial controls and animation', () => {
+  const { root, rig } = createBuiltInAvatar();
+  assert.equal(root.name, 'jarvis-holographic-avatar');
+  for (const name of ['face', 'hair-cap', 'eye-1', 'eye--1', 'mouth', 'shoulders']) {
+    assert.ok(root.getObjectByName(name), `expected built-in avatar part ${name}`);
+  }
+
+  animateBuiltInAvatar(rig, { blinkValue: 0, mouthValue: 0 });
+  const openLidScale = rig.lids[0].scale.y;
+  const closedMouthScale = rig.mouth.scale.y;
+  animateBuiltInAvatar(rig, { blinkValue: 1, mouthValue: 0.8, mouthViseme: 'aa', happy: 0.4, attentive: 1 });
+  assert.ok(rig.lids[0].scale.y < openLidScale);
+  assert.ok(rig.mouth.scale.y > closedMouthScale);
+  assert.ok(rig.mouth.scale.x > 0.105);
+  assert.ok(rig.head.rotation.z > 0);
+
+  root.traverse((object) => {
+    object.geometry?.dispose();
+    object.material?.dispose();
+  });
 });
 
 test('speech word boundaries forward English and Hindi approximate viseme cues', () => {

@@ -85,6 +85,10 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const worker = await (await fetch(`${baseUrl}/service-worker.js`)).text();
   const styles = await (await fetch(`${baseUrl}/styles.css`)).text();
   assert.match(client, /^import \{/);
+  assert.match(client, /import\('\.\/avatar3d\.bundle\.js'\)/);
+  assert.doesNotMatch(client, /from '\.\/avatar3d\.bundle\.js'/);
+  assert.doesNotMatch(worker, /avatar3d\.bundle\.js/);
+  assert.match(worker, /avatar-cues\.js/);
   const selectedIds = [...client.matchAll(/querySelector\('#([\w-]+)'\)/g)].map((match) => match[1]);
   const missingIds = [...new Set(selectedIds)].filter((id) => !html.includes(`id="${id}"`));
   assert.deepEqual(missingIds, []);
@@ -92,14 +96,16 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="ai-avatar is-normal" id="ai-avatar"/);
   assert.match(html, /id="portrait-mouth"/);
   assert.match(html, /id="avatar-model-button"/);
+  assert.match(html, /id="built-in-avatar-button">Activate holographic avatar</);
   assert.match(html, /id="avatar-canvas"/);
   assert.match(avatarRuntime, /This model has no recognized mouth-open or speech viseme morph/);
   assert.match(avatarRuntime, /webglcontextlost/);
+  assert.match(avatarRuntime, /Built-in holographic avatar ready/);
   assert.match(client, /utterance\.onboundary/);
   assert.match(client, /utterance\.onpause/);
   assert.match(client, /utterance\.onresume/);
   assert.match(client, /function setAvatarMouth\(opening, viseme/);
-  assert.match(client, /avatar3d\.setViseme\(viseme\)/);
+  assert.match(client, /avatar3d\?\.setViseme\(viseme\)/);
   assert.match(avatarRuntime, /Script=Latin/);
   assert.match(html, /id="hud-build-tag">J\.A\.R\.V\.I\.S\. · HOLOGRAPHIC CORE</);
   assert.match(html, /<img class="ai-avatar is-normal" id="ai-avatar" src="\/ai-avatar\.jpg"/);
@@ -263,7 +269,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(diagnostics, /JavaScript errors:/);
   assert.match(diagnostics, /get\('diagnostics'\) === '1'/);
-  assert.match(worker, /jarvis-shell-v26/);
+  assert.match(worker, /jarvis-shell-v27/);
   assert.match(worker, /styles\.css\?hud=26/);
   assert.match(worker, /diagnostics\.js\?hud=26/);
   assert.match(worker, /app\.js\?hud=26/);

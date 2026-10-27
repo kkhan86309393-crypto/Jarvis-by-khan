@@ -1,6 +1,6 @@
 import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './interface-switcher.js';
 import { detectDeviceProfile } from './device-monitor.js';
-import { applySpeechBoundaryCue, estimateAudioMouthOpening, initializeAvatar3d } from './avatar3d.bundle.js';
+import { applySpeechBoundaryCue, estimateAudioMouthOpening } from './avatar-cues.js';
 import { getPublicShareUrl } from './share-link.js';
 
 const HISTORY_KEY = 'jarvis.history.v1';
@@ -29,6 +29,7 @@ const elements = {
   avatarFrame: document.querySelector('.avatar-frame'),
   avatarFallback: document.querySelector('#avatar-fallback'),
   avatarCanvas: document.querySelector('#avatar-canvas'),
+  builtInAvatarButton: document.querySelector('#built-in-avatar-button'),
   avatarModelButton: document.querySelector('#avatar-model-button'),
   avatarModelInput: document.querySelector('#avatar-model-input'),
   avatarModelStatus: document.querySelector('#avatar-model-status'),
@@ -212,15 +213,8 @@ const state = {
   aiSettingsLoaded: false,
 };
 
-const avatar3d = initializeAvatar3d({
-  frame: elements.avatarFrame,
-  canvas: elements.avatarCanvas,
-  image: elements.avatar,
-  mouthOverlay: document.querySelector('#portrait-mouth'),
-  fileInput: elements.avatarModelInput,
-  modelButton: elements.avatarModelButton,
-  status: elements.avatarModelStatus,
-});
+let avatar3d = null;
+let avatar3dLoading = false;
 
 function loadHistory() {
   if (!state.preferences.memoryEnabled) return [];
@@ -307,7 +301,7 @@ function setAssistantState(mode, label) {
     offline: 'Assistant connection unavailable',
   })[state.assistantMode] || 'Voice channel idle');
   updateAvatarExpression(state.assistantMode);
-  avatar3d.setState(state.assistantMode);
+  avatar3d?.setState(state.assistantMode);
 }
 
 function updateAvatarExpression(expression) {
@@ -603,7 +597,7 @@ function speak(text) {
   utterance.onboundary = (event) => {
     if (playbackId !== state.speechPlaybackId || (event.name && event.name !== 'word')) return;
     applySpeechBoundaryCue(text, event, (opening, viseme) => {
-      if (state.audioLipSyncAnalyser) avatar3d.setViseme(viseme);
+      if (state.audioLipSyncAnalyser) avatar3d?.setViseme(viseme);
       else setAvatarMouth(opening, viseme);
     });
   };
@@ -648,9 +642,58 @@ function speak(text) {
 
 function setAvatarMouth(opening, viseme = 'aa') {
   elements.avatarFrame.style.setProperty('--mouth-open', String(opening));
-  avatar3d.setMouth(opening);
-  avatar3d.setViseme(viseme);
+  avatar3d?.setMouth(opening);
+  avatar3d?.setViseme(viseme);
 }
+
+async function loadAvatarEngine() {
+  if (avatar3d) return avatar3d;
+  if (avatar3dLoading) return null;
+  avatar3dLoading = true;
+  elements.avatarModelButton.disabled = true;
+  elements.builtInAvatarButton.disabled = true;
+  elements.avatarModelStatus.textContent = 'Loading the optional 3D avatar engine…';
+  try {
+    const { initializeAvatar3d } = await import('./avatar3d.bundle.js');
+    avatar3d = initializeAvatar3d({
+      frame: elements.avatarFrame,
+      canvas: elements.avatarCanvas,
+      image: elements.avatar,
+      mouthOverlay: document.querySelector('#portrait-mouth'),
+      fileInput: null,
+      status: elements.avatarModelStatus,
+    });
+    avatar3d.setState(state.assistantMode);
+    elements.avatarModelButton.textContent = 'Load a local 3D model';
+    return avatar3d;
+  } catch (error) {
+    elements.avatarModelStatus.textContent = `The optional 3D avatar engine could not load: ${error.message || 'unknown error'}. The portrait remains active.`;
+    return null;
+  } finally {
+    avatar3dLoading = false;
+    elements.avatarModelButton.disabled = false;
+    elements.builtInAvatarButton.disabled = false;
+  }
+}
+
+elements.avatarModelButton.addEventListener('click', () => elements.avatarModelInput.click());
+
+elements.avatarModelInput.addEventListener('change', async () => {
+  const [file] = elements.avatarModelInput.files || [];
+  if (!file) return;
+  const engine = await loadAvatarEngine();
+  if (engine) await engine.loadModel(file);
+  elements.avatarModelInput.value = '';
+});
+
+elements.builtInAvatarButton.addEventListener('click', async () => {
+  const engine = await loadAvatarEngine();
+  if (!engine) return;
+  elements.builtInAvatarButton.disabled = true;
+  elements.avatarModelStatus.textContent = 'Building the holographic avatar…';
+  engine.loadBuiltInAvatar();
+  elements.builtInAvatarButton.disabled = false;
+});
 
 function stopSpeechOutput() {
   state.speechPlaybackId += 1;
