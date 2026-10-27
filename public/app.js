@@ -1,6 +1,8 @@
+import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './interface-switcher.js';
+import { detectDeviceProfile } from './device-monitor.js';
+
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
-const INTERFACE_MODE_KEY = 'jarvis.interface.mode.v4';
 const historyLimit = 80;
 const defaults = {
   language: 'en',
@@ -23,12 +25,30 @@ const elements = {
   stage: document.querySelector('#holo-stage'),
   avatar: document.querySelector('#ai-avatar'),
   dashboardLayout: document.querySelector('#dashboard-layout'),
+  dashboardChatPanel: document.querySelector('.dashboard-chat-panel'),
   conversationView: document.querySelector('#conversation-view'),
+  dashboardTranscript: document.querySelector('#dashboard-transcript'),
+  dashboardFeedback: document.querySelector('#dashboard-feedback'),
   assistantState: document.querySelector('#assistant-state'),
   presenceTitle: document.querySelector('#presence-title'),
+  presenceAiStatus: document.querySelector('#presence-ai-status'),
+  presenceMicStatus: document.querySelector('#presence-mic-status'),
+  presenceMemoryStatus: document.querySelector('#presence-memory-status'),
+  avatarExpressionReadout: document.querySelector('#avatar-expression-readout'),
   providerNote: document.querySelector('#provider-note'),
   connection: document.querySelector('#connection-status'),
   settings: document.querySelector('#settings-dialog'),
+  aiSettingsForm: document.querySelector('#ai-settings-form'),
+  aiProvider: document.querySelector('#ai-provider-select'),
+  aiModel: document.querySelector('#ai-model-input'),
+  aiBaseUrl: document.querySelector('#ai-base-url'),
+  aiBaseUrlField: document.querySelector('#ai-base-url-field'),
+  aiApiKey: document.querySelector('#ai-api-key'),
+  aiKeyField: document.querySelector('#ai-key-field'),
+  aiProviderHelp: document.querySelector('#ai-provider-help'),
+  aiSetupStatus: document.querySelector('#ai-setup-status'),
+  aiSettingsSave: document.querySelector('#ai-settings-save'),
+  aiSettingsEnvironment: document.querySelector('#ai-settings-environment'),
   language: document.querySelector('#language-select'),
   voice: document.querySelector('#voice-select'),
   voiceSupport: document.querySelector('#voice-support'),
@@ -47,8 +67,14 @@ const elements = {
   activityLog: document.querySelector('#activity-log'),
   networkValue: document.querySelector('#network-value'),
   voiceValue: document.querySelector('#voice-value'),
+  voiceOutputValue: document.querySelector('#voice-output-value'),
+  backendConnectionValue: document.querySelector('#backend-connection-value'),
   memoryValue: document.querySelector('#memory-value'),
   modelValue: document.querySelector('#model-value'),
+  deviceTypeValue: document.querySelector('#device-type-value'),
+  platformValue: document.querySelector('#platform-value'),
+  batteryValue: document.querySelector('#battery-value'),
+  browserMemoryValue: document.querySelector('#browser-memory-value'),
   fileInput: document.querySelector('#file-input'),
   attachButton: document.querySelector('#attach-button'),
   attachmentNote: document.querySelector('#attachment-note'),
@@ -67,15 +93,29 @@ const elements = {
   dashboardFileStatus: document.querySelector('#dashboard-file-status'),
   dashboardCommandForm: document.querySelector('#dashboard-command-form'),
   dashboardMessage: document.querySelector('#dashboard-message'),
+  dashboardSend: document.querySelector('#dashboard-command-form button[type="submit"]'),
+  dashboardChatState: document.querySelector('#dashboard-chat-state'),
+  dashboardChatStateLabel: document.querySelector('#dashboard-chat-state-label'),
+  dashboardRetryButton: document.querySelector('#dashboard-retry-button'),
+  voiceWaveform: document.querySelector('#voice-waveform'),
   leftMicStatus: document.querySelector('#left-mic-status'),
   leftModeStatus: document.querySelector('#left-mode-status'),
   leftLanguageStatus: document.querySelector('#left-language-status'),
   studyIndicator: document.querySelector('#study-mode-indicator'),
   studyQuickIndicator: document.querySelector('#study-quick-indicator'),
   cpuValue: document.querySelector('#cpu-value'),
+  cpuMeter: document.querySelector('#cpu-meter'),
+  cpuMeterTrack: document.querySelector('#cpu-meter-track'),
   ramValue: document.querySelector('#ram-value'),
+  ramMeter: document.querySelector('#ram-meter'),
+  ramMeterTrack: document.querySelector('#ram-meter-track'),
   diskValue: document.querySelector('#disk-value'),
+  diskMeter: document.querySelector('#disk-meter'),
+  diskMeterTrack: document.querySelector('#disk-meter-track'),
   monitorContext: document.querySelector('#monitor-context'),
+  cpuLabel: document.querySelector('#cpu-label'),
+  ramLabel: document.querySelector('#ram-label'),
+  diskLabel: document.querySelector('#disk-label'),
   fileSearchDialog: document.querySelector('#file-search-dialog'),
   fileSearchQuery: document.querySelector('#file-search-query'),
   fileSearchResults: document.querySelector('#file-search-results'),
@@ -120,6 +160,14 @@ function loadPreferences() {
   };
 }
 
+function loadWorkspaceView() {
+  try {
+    return readWorkspaceView(localStorage);
+  } catch {
+    return 'chat';
+  }
+}
+
 const state = {
   preferences: loadPreferences(),
   messages: [],
@@ -132,13 +180,16 @@ const state = {
   accessRequired: false,
   accessToken: '',
   pendingAttachment: null,
-  voiceMotionTimer: null,
-  voiceMotionInterval: null,
-  workspaceView: 'dashboard',
+  speechPlaybackId: 0,
+  workspaceView: loadWorkspaceView(),
   displayStream: null,
   focusRemaining: 25 * 60,
   focusTimerId: null,
   captureObjectUrl: null,
+  assistantMode: 'normal',
+  microphonePermission: 'unknown',
+  lastChatFailure: null,
+  aiSettingsLoaded: false,
 };
 
 function loadHistory() {
@@ -169,6 +220,7 @@ function saveHistory() {
 
 function showFeedback(message = '') {
   elements.feedback.textContent = message;
+  elements.dashboardFeedback.textContent = message;
 }
 
 function logActivity(message) {
@@ -196,11 +248,59 @@ function syncFullAccess() {
 }
 
 function setAssistantState(mode, label) {
-  elements.stage.classList.remove('is-listening', 'is-speaking', 'is-thinking');
-  if (mode) elements.stage.classList.add(`is-${mode}`);
+  const supportedModes = ['normal', 'listening', 'speaking', 'thinking', 'error', 'offline'];
+  state.assistantMode = supportedModes.includes(mode) ? mode : 'normal';
+  elements.stage.classList.remove(...supportedModes.filter((item) => item !== 'normal').map((item) => `is-${item}`));
+  if (state.assistantMode !== 'normal') elements.stage.classList.add(`is-${state.assistantMode}`);
   elements.assistantState.textContent = label;
-  elements.presenceTitle.textContent = mode === 'listening' ? "I'm listening." : mode === 'thinking' ? 'One moment.' : mode === 'speaking' ? 'Speaking.' : 'At your service.';
+  elements.presenceTitle.textContent = ({
+    listening: "I'm listening.",
+    thinking: 'One moment.',
+    speaking: 'Speaking.',
+    error: 'I could not complete that request.',
+    offline: 'Connection unavailable.',
+  })[state.assistantMode] || 'At your service.';
   elements.voiceConsoleStatus.textContent = label;
+  renderMicrophoneStatus();
+  elements.voiceOutputValue.textContent = state.assistantMode === 'speaking'
+    ? 'Speaking'
+    : 'speechSynthesis' in window ? state.preferences.voiceEnabled ? 'Ready' : 'Off' : 'Not available';
+  elements.voiceWaveform.classList.toggle('is-active', ['listening', 'speaking'].includes(state.assistantMode));
+  elements.voiceWaveform.classList.toggle('is-listening', state.assistantMode === 'listening');
+  elements.voiceWaveform.setAttribute('aria-label', ({
+    listening: 'Listening for speech',
+    speaking: 'Assistant voice playing',
+    thinking: 'Assistant is thinking',
+    error: 'Assistant request failed',
+    offline: 'Assistant connection unavailable',
+  })[state.assistantMode] || 'Voice channel idle');
+  updateAvatarExpression(state.assistantMode);
+}
+
+function updateAvatarExpression(expression) {
+  const supportedState = ['normal', 'listening', 'thinking', 'speaking', 'error', 'offline'].includes(expression)
+    ? expression
+    : 'normal';
+  const activeState = supportedState === 'offline' ? 'error' : supportedState;
+  const stateLabel = ({
+    normal: 'IDLE',
+    listening: 'LISTENING',
+    thinking: 'THINKING',
+    speaking: 'SPEAKING',
+    error: 'ERROR / OFFLINE',
+  })[activeState];
+  elements.avatarExpressionReadout.textContent = stateLabel;
+  document.querySelectorAll('[data-expression]').forEach((item) => {
+    item.classList.toggle('is-current', item.dataset.expression === activeState);
+  });
+}
+
+function setDashboardChatState(mode, message = '', canRetry = false) {
+  elements.dashboardChatState.hidden = !message;
+  elements.dashboardChatState.dataset.state = mode;
+  elements.dashboardChatStateLabel.textContent = message;
+  elements.dashboardRetryButton.hidden = !canRetry;
+  elements.dashboardRetryButton.disabled = state.pending;
 }
 
 function messageElement(message) {
@@ -259,21 +359,26 @@ function messageElement(message) {
 }
 
 function renderMessages() {
-  elements.transcript.replaceChildren();
+  const transcripts = [elements.transcript, elements.dashboardTranscript];
+  for (const transcript of transcripts) transcript.replaceChildren();
   if (!state.messages.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    const title = document.createElement('strong');
-    title.textContent = 'Your session begins here.';
-    const description = document.createElement('span');
-    description.textContent = 'Ask a question, start a voice conversation, or search for a source-backed answer.';
-    empty.append(title, description);
-    elements.transcript.append(empty);
+    for (const transcript of transcripts) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      const title = document.createElement('strong');
+      title.textContent = 'Your session begins here.';
+      const description = document.createElement('span');
+      description.textContent = 'Ask a question, start a voice conversation, or search for a source-backed answer.';
+      empty.append(title, description);
+      transcript.append(empty);
+    }
     return;
   }
 
-  for (const message of state.messages) elements.transcript.append(messageElement(message));
-  elements.transcript.scrollTop = elements.transcript.scrollHeight;
+  for (const transcript of transcripts) {
+    for (const message of state.messages) transcript.append(messageElement(message));
+    transcript.scrollTop = transcript.scrollHeight;
+  }
 }
 
 function addMessage(message) {
@@ -301,11 +406,13 @@ function apiHeaders(json = false) {
   return headers;
 }
 
-async function sendChat(text) {
+async function sendChat(text, { retry = false } = {}) {
   const context = state.messages
     .filter((message) => !message.kind && ['user', 'assistant'].includes(message.role))
     .slice(-20)
     .map(({ role, content }) => ({ role, content }));
+  if (!retry) state.lastChatFailure = null;
+  setDashboardChatState('thinking', 'J.A.R.V.I.S. is processing your message.');
   setAssistantState('thinking', 'PROCESSING REQUEST');
   try {
     const response = await fetch('/api/chat', {
@@ -319,6 +426,8 @@ async function sendChat(text) {
       signal: AbortSignal.timeout(65_000),
     });
     const data = await readApiResponse(response);
+    state.lastChatFailure = null;
+    setDashboardChatState('', '');
     addMessage({ role: 'assistant', content: data.reply });
     elements.providerNote.textContent = `Connected through ${data.provider}. Search results are retrieved separately and linked to their sources.`;
     elements.modelValue.textContent = data.provider;
@@ -328,32 +437,60 @@ async function sendChat(text) {
     if (state.preferences.voiceEnabled) speak(data.reply);
   } catch (error) {
     addMessage({ role: 'assistant', content: error.message });
+    state.lastChatFailure = { text, message: error.message };
+    setDashboardChatState('error', error.message, true);
     elements.leftAiStatus.textContent = 'REQUEST FAILED';
     elements.leftAiDetail.textContent = error.message;
     logActivity('Chat request unavailable');
-    setAssistantState('', 'SYSTEM STANDBY');
+    setAssistantState('error', 'REQUEST FAILED');
   } finally {
     state.pending = false;
     elements.send.disabled = false;
-    if (!state.preferences.voiceEnabled || !('speechSynthesis' in window)) setAssistantState('', 'SYSTEM STANDBY');
+    elements.dashboardSend.disabled = false;
+    elements.dashboardRetryButton.disabled = false;
+    if (state.assistantMode === 'thinking' && (!state.preferences.voiceEnabled || !('speechSynthesis' in window))) {
+      setAssistantState('', 'SYSTEM STANDBY');
+    }
   }
 }
 
+function retryLastChat() {
+  if (state.pending || !state.lastChatFailure) return;
+  const failure = state.lastChatFailure;
+  const lastMessage = state.messages.at(-1);
+  if (lastMessage?.role === 'assistant' && lastMessage.content === failure.message) {
+    state.messages.pop();
+    renderMessages();
+    saveHistory();
+  }
+  state.pending = true;
+  elements.send.disabled = true;
+  elements.dashboardSend.disabled = true;
+  setDashboardChatState('thinking', 'Retrying your last message.');
+  sendChat(failure.text, { retry: true });
+}
+
 async function searchWeb(query) {
+  setDashboardChatState('thinking', 'Searching available web sources.');
   setAssistantState('thinking', 'SEARCHING THE WEB');
   try {
-    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { headers: apiHeaders(), signal: AbortSignal.timeout(10_000) });
+    const params = new URLSearchParams({ q: query, lang: state.preferences.language });
+    const response = await fetch(`/api/search?${params}`, { headers: apiHeaders(), signal: AbortSignal.timeout(18_000) });
     const data = await readApiResponse(response);
+    setDashboardChatState('', '');
     state.accessRequired = data.accessRequired === true;
     addMessage({ role: 'assistant', content: '', kind: 'search', data });
     elements.providerNote.textContent = `Retrieved results from ${data.source}. Results are shown as retrieved; no AI summary is implied.`;
     logActivity(`Web lookup: ${data.results.length} result${data.results.length === 1 ? '' : 's'}`);
   } catch (error) {
     addMessage({ role: 'assistant', content: error.message });
+    setDashboardChatState('error', error.message);
+    setAssistantState('error', 'SEARCH UNAVAILABLE');
   } finally {
     state.pending = false;
     elements.send.disabled = false;
-    setAssistantState('', 'SYSTEM STANDBY');
+    elements.dashboardSend.disabled = false;
+    if (state.assistantMode === 'thinking') setAssistantState('', 'SYSTEM STANDBY');
   }
 }
 
@@ -378,6 +515,7 @@ function submitMessage(event) {
   addMessage({ role: 'user', content: outgoingText });
   state.pending = true;
   elements.send.disabled = true;
+  elements.dashboardSend.disabled = true;
   if (state.searchMode) searchWeb(outgoingText);
   else sendChat(outgoingText);
 }
@@ -396,43 +534,44 @@ function selectedVoice() {
 
 function speak(text) {
   if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return;
+  const playbackId = ++state.speechPlaybackId;
   window.speechSynthesis.cancel();
-  clearTimeout(state.voiceMotionTimer);
-  clearInterval(state.voiceMotionInterval);
-  elements.avatar.classList.remove('mouth-speaking');
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = state.preferences.language === 'hi' ? 'hi-IN' : 'en-US';
   utterance.rate = state.preferences.speechRate;
   utterance.voice = selectedVoice();
   utterance.onstart = () => {
+    if (playbackId !== state.speechPlaybackId) return;
     setAssistantState('speaking', 'VOICE OUTPUT');
-    state.voiceMotionInterval = window.setInterval(() => pulseAvatarMouth(130), 390);
     logActivity('Voice response started');
   };
-  utterance.onboundary = () => pulseAvatarMouth(145);
   utterance.onend = () => {
-    stopAvatarMouth();
+    if (playbackId !== state.speechPlaybackId) return;
+    state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     logActivity('Voice response complete');
   };
-  utterance.onerror = () => {
-    stopAvatarMouth();
+  utterance.onerror = (event) => {
+    if (playbackId !== state.speechPlaybackId) return;
+    state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
-    showFeedback('Speech output is unavailable for the selected voice on this device.');
+    showFeedback(event.error === 'canceled' || event.error === 'interrupted'
+      ? ''
+      : 'Speech output is unavailable for the selected voice on this device.');
   };
-  window.speechSynthesis.speak(utterance);
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    state.speechPlaybackId += 1;
+    setAssistantState('', 'SYSTEM STANDBY');
+    showFeedback('Speech output could not start on this device.');
+  }
 }
 
-function pulseAvatarMouth(duration) {
-  clearTimeout(state.voiceMotionTimer);
-  elements.avatar.classList.add('mouth-speaking');
-  state.voiceMotionTimer = window.setTimeout(() => elements.avatar.classList.remove('mouth-speaking'), duration);
-}
-
-function stopAvatarMouth() {
-  clearTimeout(state.voiceMotionTimer);
-  clearInterval(state.voiceMotionInterval);
-  elements.avatar.classList.remove('mouth-speaking');
+function stopSpeechOutput() {
+  state.speechPlaybackId += 1;
+  window.speechSynthesis.cancel();
+  if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
 }
 
 function updateVoiceList() {
@@ -457,6 +596,7 @@ function startListening() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
     showFeedback('Voice input is not supported by this browser. Try a current Chrome-based browser over HTTPS.');
+    setAssistantState('error', 'VOICE INPUT UNAVAILABLE');
     return;
   }
   if (state.listening) {
@@ -472,6 +612,10 @@ function startListening() {
   state.listening = true;
   elements.mic.classList.add('is-active');
   elements.mic.setAttribute('aria-label', 'Stop voice input');
+  elements.mic.setAttribute('aria-pressed', 'true');
+  elements.dashboardMicButton.classList.add('is-active');
+  elements.dashboardMicButton.setAttribute('aria-label', 'Stop voice input');
+  elements.dashboardMicButton.setAttribute('aria-pressed', 'true');
   setAssistantState('listening', 'LISTENING');
   showFeedback('Listening. Your browser may ask for microphone permission.');
 
@@ -492,14 +636,16 @@ function startListening() {
       'network': 'Browser speech recognition is unavailable over the current network.',
     };
     showFeedback(messages[event.error] || `Voice input stopped: ${event.error}.`);
+    setAssistantState('error', 'VOICE INPUT ERROR');
     stopListening();
   };
   recognition.onend = stopListening;
   try {
     recognition.start();
   } catch {
-    stopListening();
     showFeedback('The microphone could not be started. Check browser permissions and try again.');
+    setAssistantState('error', 'MICROPHONE UNAVAILABLE');
+    stopListening();
   }
 }
 
@@ -507,6 +653,10 @@ function stopListening() {
   state.listening = false;
   elements.mic.classList.remove('is-active');
   elements.mic.setAttribute('aria-label', 'Start voice input');
+  elements.mic.setAttribute('aria-pressed', 'false');
+  elements.dashboardMicButton.classList.remove('is-active');
+  elements.dashboardMicButton.setAttribute('aria-label', 'Start voice input');
+  elements.dashboardMicButton.setAttribute('aria-pressed', 'false');
   if (elements.assistantState.textContent === 'LISTENING') setAssistantState('', 'SYSTEM STANDBY');
 }
 
@@ -517,28 +667,35 @@ function syncSettings() {
   elements.voiceEnabled.checked = state.preferences.voiceEnabled;
   elements.memoryEnabled.checked = state.preferences.memoryEnabled;
   elements.leftMemoryStatus.textContent = state.preferences.memoryEnabled ? 'LOCAL' : 'OFF';
+  elements.presenceMemoryStatus.textContent = state.preferences.memoryEnabled ? 'MEMORY LOCAL' : 'MEMORY OFF';
   elements.leftMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition ? 'AVAILABLE' : 'UNSUPPORTED';
+  elements.presenceMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition
+    ? 'MIC AVAILABLE'
+    : 'MIC UNSUPPORTED';
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
   elements.leftModeStatus.textContent = state.preferences.studyMode ? 'STUDY' : 'STANDARD';
   elements.studyIndicator.textContent = state.preferences.studyMode ? 'ON' : 'OFF';
   elements.studyQuickIndicator.textContent = state.preferences.studyMode ? 'ON' : 'OFF';
   elements.dashboardVoiceToggle.setAttribute('aria-pressed', String(state.preferences.voiceEnabled));
   elements.dashboardVoiceLabel.textContent = state.preferences.voiceEnabled ? 'Voice on' : 'Voice off';
+  elements.voiceOutputValue.textContent = 'speechSynthesis' in window
+    ? state.preferences.voiceEnabled ? 'Ready' : 'Off'
+    : 'Not available';
   elements.dashboardVoiceToggle.disabled = !('speechSynthesis' in window);
-  loadSystemMetrics();
   syncFullAccess();
   updateVoiceList();
 }
 
 async function checkServer() {
-  elements.networkValue.textContent = navigator.onLine ? 'Online' : 'Offline';
-  elements.voiceValue.textContent = window.SpeechRecognition || window.webkitSpeechRecognition ? 'Available' : 'Unsupported';
+  updateDeviceMonitor();
   elements.memoryValue.textContent = state.preferences.memoryEnabled ? 'Local storage' : 'Disabled';
   loadSystemMetrics();
   if (!navigator.onLine) {
+    elements.backendConnectionValue.textContent = 'Offline';
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'OFFLINE';
     elements.leftAiStatus.textContent = 'OFFLINE';
+    elements.presenceAiStatus.textContent = 'AI OFFLINE';
     elements.leftAiDetail.textContent = 'The server cannot be reached while this device is offline.';
     elements.leftSessionStatus.textContent = 'OFFLINE';
     return;
@@ -547,15 +704,25 @@ async function checkServer() {
     const response = await fetch('/api/health', { signal: AbortSignal.timeout(5_000) });
     const data = await readApiResponse(response);
     state.accessRequired = data.accessRequired === true;
-    const ollamaSelected = data.ollamaAvailable !== null;
+    const ollamaSelected = data.provider === 'ollama';
     const aiReady = data.aiConfigured && (!ollamaSelected || data.aiAvailable);
+    if (!state.aiSettingsLoaded) {
+      state.aiSettingsLoaded = true;
+      elements.aiProvider.value = data.provider || 'openai-compatible';
+      elements.aiModel.value = data.model || (ollamaSelected ? 'qwen2.5:3b' : 'gemini-2.5-flash');
+      if (data.baseUrl) elements.aiBaseUrl.value = data.baseUrl;
+      updateAIProviderFields();
+    }
+    elements.aiSetupStatus.textContent = data.aiConfigured
+      ? `Current: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}`
+      : 'No AI provider is configured. Choose a provider and model here, then save.';
     elements.connection.className = aiReady ? 'connection-indicator' : 'connection-indicator is-warning';
     elements.connection.lastElementChild.textContent = aiReady
       ? ollamaSelected ? 'OLLAMA READY' : 'AI CONFIGURED'
       : ollamaSelected && !data.ollamaAvailable ? 'OLLAMA OFFLINE'
         : ollamaSelected ? 'MODEL MISSING' : 'NO AI MODEL';
     elements.providerNote.textContent = !data.aiConfigured
-      ? 'No AI provider configured. Set OLLAMA_BASE_URL for local Ollama, or AI_API_KEY and AI_MODEL on the server.'
+      ? 'No AI provider is configured. Open Settings → AI provider to select a model and configure Ollama or an OpenAI-compatible provider.'
       : ollamaSelected && !data.ollamaAvailable
         ? 'Ollama is selected but unreachable from this server. Start the Ollama daemon on the server host.'
         : ollamaSelected && !data.modelInstalled
@@ -574,10 +741,18 @@ async function checkServer() {
     elements.leftAiStatus.textContent = ollamaSelected
       ? data.aiAvailable ? 'OLLAMA READY' : data.ollamaAvailable ? 'MODEL MISSING' : 'OLLAMA OFFLINE'
       : data.aiConfigured ? 'PROVIDER SET' : 'NO MODEL';
+    elements.presenceAiStatus.textContent = data.aiConfigured
+      ? `${data.provider === 'ollama' ? 'OLLAMA' : 'AI'} ${data.aiAvailable ? 'READY' : 'SET'}`
+      : 'AI NOT SET';
+    elements.presenceMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition
+      ? 'MIC AVAILABLE'
+      : 'MIC UNSUPPORTED';
+    elements.presenceMemoryStatus.textContent = state.preferences.memoryEnabled ? 'MEMORY LOCAL' : 'MEMORY OFF';
     elements.leftAiDetail.textContent = ollamaSelected
       ? data.aiAvailable ? `${data.model} is available on this server.` : data.ollamaAvailable ? `${data.model} is not installed.` : 'Ollama is not reachable from this server.'
-      : data.aiConfigured ? 'Provider is configured. Availability is confirmed when you send a message.' : 'Set up Ollama or configure a server-side AI provider.';
+      : data.aiConfigured ? 'Provider is configured. Availability is confirmed when you send a message.' : 'Open Settings to configure an AI provider and model.';
     elements.leftSessionStatus.textContent = 'CONNECTED';
+    elements.backendConnectionValue.textContent = 'Connected';
     elements.leftMemoryStatus.textContent = state.preferences.memoryEnabled ? 'LOCAL' : 'OFF';
     elements.footerStatus.textContent = aiReady ? 'SERVER AI · LOCAL HISTORY · PERMISSION-BOUND' : 'AI UNAVAILABLE · LOCAL HISTORY · PERMISSION-BOUND';
   } catch {
@@ -586,14 +761,16 @@ async function checkServer() {
     elements.providerNote.textContent = 'The app server is not responding. Chat and web search require a connection to this server.';
     elements.modelValue.textContent = 'Unavailable';
     elements.leftAiStatus.textContent = 'UNAVAILABLE';
+    elements.presenceAiStatus.textContent = 'AI UNAVAILABLE';
     elements.leftAiDetail.textContent = 'The J.A.R.V.I.S. server did not respond.';
     elements.leftSessionStatus.textContent = 'OFFLINE';
+    elements.backendConnectionValue.textContent = 'Unavailable';
   }
 }
 
 function formatBytes(value) {
   if (!Number.isFinite(value) || value < 0) return 'Unavailable';
-  const units = ['B', 'KB', 'GB', 'TB'];
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let amount = value;
   let unit = 0;
   while (amount >= 1024 && unit < units.length - 1) {
@@ -603,37 +780,218 @@ function formatBytes(value) {
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+function updateMetricGauge(track, meter, value) {
+  const available = Number.isFinite(value) && value >= 0 && value <= 100;
+  track.hidden = !available;
+  if (available) meter.style.width = `${value}%`;
+}
+
+function updateDeviceMonitor() {
+  const profile = detectDeviceProfile(navigator);
+  elements.deviceTypeValue.textContent = profile.deviceType;
+  elements.platformValue.textContent = `${profile.browser} · ${profile.platform}`;
+  document.querySelectorAll('[data-device-group="mobile"]').forEach((item) => {
+    item.hidden = !profile.isMobile;
+  });
+  document.querySelectorAll('[data-device-group="desktop"]').forEach((item) => {
+    item.hidden = profile.isMobile;
+  });
+  elements.cpuLabel.textContent = 'SERVER CPU';
+  elements.ramLabel.textContent = 'SERVER RAM';
+  elements.diskLabel.textContent = 'SERVER STORAGE';
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const networkParts = [navigator.onLine ? 'Online' : 'Offline'];
+  if (navigator.onLine && connection?.effectiveType) networkParts.push(connection.effectiveType);
+  elements.networkValue.textContent = networkParts.join(' · ');
+
+  renderMicrophoneStatus();
+  elements.voiceOutputValue.textContent = 'speechSynthesis' in window
+    ? state.assistantMode === 'speaking' ? 'Speaking' : state.preferences.voiceEnabled ? 'Ready' : 'Off'
+    : 'Not available';
+
+  const memory = performance.memory;
+  elements.browserMemoryValue.textContent = memory
+    && Number.isFinite(memory.usedJSHeapSize)
+    && Number.isFinite(memory.jsHeapSizeLimit)
+    ? `${formatBytes(memory.usedJSHeapSize)} / ${formatBytes(memory.jsHeapSizeLimit)} JS heap`
+    : 'Not available';
+  return profile;
+}
+
+function renderMicrophoneStatus() {
+  const recognitionSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const text = !recognitionSupported
+    ? 'Not available'
+    : state.assistantMode === 'listening' ? 'Listening'
+      : state.microphonePermission === 'granted' ? 'Ready'
+        : state.microphonePermission === 'denied' ? 'Permission denied'
+          : state.microphonePermission === 'prompt' ? 'Permission required'
+            : 'Permission status unavailable';
+  elements.voiceValue.textContent = text;
+}
+
+async function updateMicrophonePermission(permissionStatus) {
+  if (!elements.voiceValue) return;
+  const recognitionSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  if (!recognitionSupported) {
+    elements.voiceValue.textContent = 'Not available';
+    return;
+  }
+  if (!navigator.permissions?.query && !permissionStatus) {
+    elements.voiceValue.textContent = 'Permission status unavailable';
+    return;
+  }
+  try {
+    const status = permissionStatus || await navigator.permissions.query({ name: 'microphone' });
+    state.microphonePermission = status.state;
+    renderMicrophoneStatus();
+    if (!permissionStatus) status.addEventListener('change', () => updateMicrophonePermission(status));
+  } catch {
+    state.microphonePermission = 'unknown';
+    renderMicrophoneStatus();
+  }
+}
+
+async function updateBatteryStatus() {
+  if (!elements.batteryValue || typeof navigator.getBattery !== 'function') {
+    if (elements.batteryValue) elements.batteryValue.textContent = 'Not available';
+    return;
+  }
+  try {
+    const battery = await navigator.getBattery();
+    const renderBattery = () => {
+      const percent = Number.isFinite(battery.level) ? `${Math.round(battery.level * 100)}%` : 'Level unavailable';
+      elements.batteryValue.textContent = `${percent} · ${battery.charging ? 'Charging' : 'On battery'}`;
+    };
+    renderBattery();
+    battery.addEventListener('levelchange', renderBattery);
+    battery.addEventListener('chargingchange', renderBattery);
+  } catch {
+    elements.batteryValue.textContent = 'Not available';
+  }
+}
+
 async function loadSystemMetrics() {
+  const profile = detectDeviceProfile(navigator);
+  if (profile.isMobile) {
+    elements.cpuValue.textContent = 'Not available on this device';
+    elements.ramValue.textContent = 'Not available on this device';
+    elements.diskValue.textContent = 'Not available on this device';
+    updateMetricGauge(elements.cpuMeterTrack, elements.cpuMeter, null);
+    updateMetricGauge(elements.ramMeterTrack, elements.ramMeter, null);
+    updateMetricGauge(elements.diskMeterTrack, elements.diskMeter, null);
+    elements.monitorContext.textContent = 'Mobile browsers do not expose system CPU, RAM, or storage. Browser-only information is shown instead.';
+    return;
+  }
   try {
     const response = await fetch('/api/system', { headers: apiHeaders(), signal: AbortSignal.timeout(4_000) });
     const metrics = await readApiResponse(response);
-    elements.cpuValue.textContent = `${metrics.cpuLoad1mPercent}% / ${metrics.cpuCount} cores`;
+    elements.cpuValue.textContent = metrics.cpuUsagePercent === null
+      ? 'Sampling…'
+      : `${metrics.cpuUsagePercent}% / ${metrics.cpuCount} cores`;
     elements.ramValue.textContent = `${formatBytes(metrics.memoryUsedBytes)} / ${formatBytes(metrics.memoryTotalBytes)} (${metrics.memoryPercent}%)`;
     elements.diskValue.textContent = `${formatBytes(metrics.diskUsedBytes)} / ${formatBytes(metrics.diskTotalBytes)} (${metrics.diskPercent}%)`;
-    elements.monitorContext.textContent = `Live ${metrics.source} metrics · ${new Date(metrics.measuredAt).toLocaleTimeString()}`;
+    updateMetricGauge(elements.cpuMeterTrack, elements.cpuMeter, metrics.cpuUsagePercent);
+    updateMetricGauge(elements.ramMeterTrack, elements.ramMeter, metrics.memoryPercent);
+    updateMetricGauge(elements.diskMeterTrack, elements.diskMeter, metrics.diskPercent);
+    elements.monitorContext.textContent = `Server/container measurements · ${metrics.source} · ${new Date(metrics.measuredAt).toLocaleTimeString()}`;
   } catch {
     elements.cpuValue.textContent = 'Unavailable';
     elements.ramValue.textContent = 'Unavailable';
     elements.diskValue.textContent = 'Unavailable';
-    elements.monitorContext.textContent = 'Server metrics unavailable. These readings describe the server container, not your physical device.';
+    updateMetricGauge(elements.cpuMeterTrack, elements.cpuMeter, null);
+    updateMetricGauge(elements.ramMeterTrack, elements.ramMeter, null);
+    updateMetricGauge(elements.diskMeterTrack, elements.diskMeter, null);
+    elements.monitorContext.textContent = 'Server measurements unavailable. They describe the app host/container, not this device.';
   }
+}
+
+function initializeDeviceMonitor() {
+  const profile = updateDeviceMonitor();
+  updateMicrophonePermission();
+  if (profile.isMobile) updateBatteryStatus();
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  connection?.addEventListener?.('change', updateDeviceMonitor);
 }
 
 function openSettings() {
   if (!elements.settings.open) elements.settings.showModal();
 }
 
+function updateAIProviderFields() {
+  const usesApiKey = elements.aiProvider.value === 'openai-compatible';
+  elements.aiKeyField.hidden = !usesApiKey;
+  elements.aiBaseUrlField.hidden = !usesApiKey;
+  elements.aiBaseUrl.required = usesApiKey;
+  elements.aiApiKey.required = usesApiKey;
+  elements.aiProviderHelp.textContent = usesApiKey
+    ? 'Use Google Gemini’s OpenAI-compatible chat completions API or another compatible provider. The key is sent to this server, held only in server memory, and never returned to this page or saved in this browser. Use a trusted server over HTTPS.'
+    : 'Ollama must be running on the Node server host. J.A.R.V.I.S. uses OLLAMA_BASE_URL or http://127.0.0.1:11434; the selected model must already be installed.';
+}
+
+async function saveAISettings(provider = elements.aiProvider.value) {
+  const apiKey = provider === 'openai-compatible' ? elements.aiApiKey.value : '';
+  elements.aiApiKey.value = '';
+  elements.aiSettingsSave.disabled = true;
+  elements.aiSettingsEnvironment.disabled = true;
+  elements.aiSetupStatus.textContent = 'Saving provider settings…';
+  try {
+    const response = await fetch('/api/settings/ai', {
+      method: 'POST',
+      headers: apiHeaders(true),
+      body: JSON.stringify(provider === 'environment'
+        ? { provider }
+        : {
+          provider,
+          model: elements.aiModel.value.trim(),
+          baseUrl: provider === 'openai-compatible' ? elements.aiBaseUrl.value.trim() : undefined,
+          apiKey,
+        }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    const data = await readApiResponse(response);
+    state.aiSettingsLoaded = true;
+    if (data.configured) {
+      elements.aiProvider.value = data.provider;
+      elements.aiModel.value = data.model;
+      if (data.baseUrl) elements.aiBaseUrl.value = data.baseUrl;
+      updateAIProviderFields();
+      elements.aiSetupStatus.textContent = `Saved for this server session: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}.`;
+    } else {
+      elements.aiSetupStatus.textContent = 'No server-side AI provider is configured. Enter a provider key here or set AI_API_KEY on the server.';
+    }
+    await checkServer();
+  } catch (error) {
+    elements.aiSetupStatus.textContent = error.message;
+  } finally {
+    elements.aiSettingsSave.disabled = false;
+    elements.aiSettingsEnvironment.disabled = false;
+  }
+}
+
 function selectNavigation(destination) {
   document.querySelectorAll('[data-nav]').forEach((item) => item.classList.toggle('is-current', item.dataset.nav === destination));
 }
 
-function setWorkspaceView(view) {
+function setWorkspaceView(view, { remember = true } = {}) {
   state.workspaceView = view;
-  elements.dashboardLayout.hidden = view !== 'dashboard';
-  elements.conversationView.hidden = view !== 'chat';
-  document.body.classList.toggle('chat-view', view === 'chat');
-  document.body.classList.remove('mobile-system-open', 'mobile-news-open', 'mobile-activity-open');
-  selectNavigation(view);
+  switchWorkspaceView(view, {
+    dashboard: elements.dashboardLayout,
+    conversation: elements.conversationView,
+    body: document.body,
+    navigationItems: document.querySelectorAll('[data-nav]'),
+  });
+  document.querySelector('#new-interface-button').setAttribute('aria-pressed', String(view === 'dashboard'));
+  document.querySelector('#old-interface-button').setAttribute('aria-pressed', String(view === 'chat'));
+  if (remember) {
+    try {
+      saveWorkspaceView(view, localStorage);
+    } catch {
+      showFeedback('Your interface choice could not be saved in this browser.');
+    }
+  }
 }
 
 function showHistory() {
@@ -834,14 +1192,22 @@ function handleNavigation(event) {
   if (destination === 'dashboard') {
     setWorkspaceView('dashboard');
   } else if (destination === 'chat') {
-    setWorkspaceView('chat');
-    elements.message.focus();
+    if (state.workspaceView === 'dashboard') {
+      elements.dashboardMessage.focus();
+      elements.dashboardChatPanel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      setWorkspaceView('chat');
+      elements.message.focus();
+    }
   } else if (destination === 'voice') {
-    setWorkspaceView('chat');
+    if (state.workspaceView !== 'dashboard') setWorkspaceView('chat');
     startListening();
   } else if (destination === 'more') {
     elements.moreNavigationDialog.showModal();
   } else if (destination === 'history') {
+    showHistory();
+  } else if (destination === 'memory') {
+    selectNavigation('memory');
     showHistory();
   } else if (destination === 'files') {
     elements.fileSearchQuery.value = '';
@@ -875,16 +1241,42 @@ function handleNavigation(event) {
   }
 }
 
+function handleDashboardFeature(event) {
+  const button = event.target.closest('[data-dashboard-feature], [data-avatar-feature]');
+  if (!button) return;
+  const destination = button.dataset.dashboardFeature || button.dataset.avatarFeature;
+  if (destination === 'chat') {
+    elements.dashboardMessage.focus();
+    document.querySelector('#dashboard-chat-title').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else if (destination === 'voice') {
+    startListening();
+  } else if (destination === 'files') {
+    elements.fileSearchQuery.value = '';
+    searchAttachedFiles();
+    elements.fileSearchDialog.showModal();
+  } else if (destination === 'browser') {
+    elements.applicationDialog.showModal();
+  } else if (destination === 'system') {
+    document.querySelector('#system-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else if (destination === 'settings') {
+    openSettings();
+  } else if (destination === 'more') {
+    elements.moreNavigationDialog.showModal();
+  }
+}
+
 async function loadBriefing() {
   elements.briefingButton.disabled = true;
   elements.briefingResults.replaceChildren();
   const status = document.createElement('p');
-  status.textContent = 'Retrieving available instant answers...';
+  status.textContent = 'Searching available web sources...';
   elements.briefingResults.append(status);
   try {
-    const response = await fetch('/api/search?q=latest%20technology%20news', {
+    const query = state.preferences.language === 'hi' ? 'प्रौद्योगिकी समाचार' : 'latest technology news';
+    const params = new URLSearchParams({ q: query, lang: state.preferences.language });
+    const response = await fetch(`/api/search?${params}`, {
       headers: apiHeaders(),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(18_000),
     });
     const data = await readApiResponse(response);
     elements.briefingResults.replaceChildren();
@@ -922,7 +1314,16 @@ function updateClock() {
 
 document.querySelector('#settings-button').addEventListener('click', () => elements.settings.showModal());
 elements.dashboardSettingsButton.addEventListener('click', () => elements.settings.showModal());
-document.querySelectorAll('.primary-nav, .mobile-nav').forEach((nav) => nav.addEventListener('click', handleNavigation));
+document.querySelector('#new-interface-button').addEventListener('click', () => setWorkspaceView('dashboard'));
+document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
+document.querySelector('#more-tools-button').addEventListener('click', () => {
+  elements.settings.close();
+  elements.moreNavigationDialog.showModal();
+});
+document.querySelectorAll('.primary-nav, .mobile-nav, .feature-toolbar, .right-rail').forEach((nav) => nav.addEventListener('click', handleNavigation));
+document.querySelector('.new-feature-bar').addEventListener('click', handleDashboardFeature);
+document.querySelector('.avatar-shortcuts-left').addEventListener('click', handleDashboardFeature);
+document.querySelector('.avatar-shortcuts-right').addEventListener('click', handleDashboardFeature);
 elements.moreNavigationDialog.addEventListener('click', handleNavigation);
 document.querySelector('#clear-button').addEventListener('click', () => {
   state.messages = [];
@@ -932,27 +1333,31 @@ document.querySelector('#clear-button').addEventListener('click', () => {
 document.querySelector('#settings-clear').addEventListener('click', () => {
   if (!window.confirm('Clear saved conversation history and preferences from this browser?')) return;
   state.messages = [];
+  state.accessToken = '';
+  elements.accessToken.value = '';
   renderMessages();
+  let storageCleared = true;
   try {
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem(PREFERENCES_KEY);
   } catch {
-    showFeedback('Browser storage could not be cleared.');
+    storageCleared = false;
   }
   state.preferences = { ...defaults };
   syncSettings();
-  savePreferences();
-  showFeedback('Saved data cleared from this browser.');
+  showFeedback(storageCleared
+    ? 'Saved data cleared from this browser.'
+    : 'Active settings were reset, but the browser could not confirm that all saved data was cleared.');
 });
 elements.dashboardCommandForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const text = elements.dashboardMessage.value.trim();
   if (!text) return;
-  setWorkspaceView('chat');
   elements.message.value = text;
   elements.dashboardMessage.value = '';
   elements.form.requestSubmit();
 });
+elements.dashboardRetryButton.addEventListener('click', retryLastChat);
 elements.dashboardMessage.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
@@ -1053,7 +1458,6 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => button.addE
   }
   if (!state.preferences.fullAccessEnabled) return;
   if (button.dataset.quickAction === 'voice') {
-    setWorkspaceView('chat');
     startListening();
   }
   if (button.dataset.quickAction === 'search') {
@@ -1064,12 +1468,6 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => button.addE
     document.querySelector('.conversation').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }));
-document.querySelector('#interface-toggle').addEventListener('click', (event) => {
-  const classic = document.body.classList.toggle('classic-mode');
-  event.currentTarget.textContent = classic ? 'New UI' : 'Old UI';
-  event.currentTarget.setAttribute('aria-pressed', String(classic));
-  try { localStorage.setItem(INTERFACE_MODE_KEY, classic ? 'old' : 'new'); } catch {}
-});
 elements.language.addEventListener('change', () => {
   state.preferences.language = elements.language.value;
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
@@ -1078,6 +1476,16 @@ elements.language.addEventListener('change', () => {
 elements.accessToken.addEventListener('input', () => {
   state.accessToken = elements.accessToken.value.trim();
 });
+elements.aiProvider.addEventListener('change', () => {
+  elements.aiModel.value = elements.aiProvider.value === 'ollama' ? 'qwen2.5:3b' : 'gemini-2.5-flash';
+  elements.aiApiKey.value = '';
+  updateAIProviderFields();
+});
+elements.aiSettingsForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveAISettings();
+});
+elements.aiSettingsEnvironment.addEventListener('click', () => saveAISettings('environment'));
 elements.voice.addEventListener('change', () => {
   state.preferences.voiceURI = elements.voice.value;
   savePreferences();
@@ -1091,11 +1499,10 @@ elements.voiceEnabled.addEventListener('change', () => {
   state.preferences.voiceEnabled = elements.voiceEnabled.checked;
   elements.dashboardVoiceToggle.setAttribute('aria-pressed', String(state.preferences.voiceEnabled));
   elements.dashboardVoiceLabel.textContent = state.preferences.voiceEnabled ? 'Voice on' : 'Voice off';
-  if (!state.preferences.voiceEnabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+  if (!state.preferences.voiceEnabled && 'speechSynthesis' in window) stopSpeechOutput();
   savePreferences();
 });
 elements.dashboardMicButton.addEventListener('click', () => {
-  setWorkspaceView('chat');
   startListening();
 });
 elements.dashboardVoiceToggle.addEventListener('click', () => {
@@ -1180,13 +1587,8 @@ state.messages = loadHistory();
 syncSettings();
 renderMessages();
 updateSearchMode();
-setWorkspaceView('dashboard');
-try {
-  const classic = localStorage.getItem(INTERFACE_MODE_KEY) === 'old';
-  document.body.classList.toggle('classic-mode', classic);
-  document.querySelector('#interface-toggle').textContent = classic ? 'New UI' : 'Old UI';
-  document.querySelector('#interface-toggle').setAttribute('aria-pressed', String(classic));
-} catch {}
+setWorkspaceView(state.workspaceView, { remember: false });
+initializeDeviceMonitor();
 updateClock();
 window.setInterval(updateClock, 30_000);
 window.setInterval(loadSystemMetrics, 30_000);
@@ -1196,7 +1598,9 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=10', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=22', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }
+
+window.dispatchEvent(new Event('jarvis:app-ready'));

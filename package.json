@@ -9,7 +9,7 @@
     "codespaces:ollama": "node scripts/codespaces.js --ollama",
     "icons:generate": "node scripts/generate-pwa-icons.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check public/app.js && node --check public/service-worker.js"
+    "check": "node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check public/app.js && node --check public/interface-switcher.js && node --check public/device-monitor.js && node --check public/diagnostics.js && node --check public/service-worker.js"
   },
   "engines": {
     "node": ">=20"

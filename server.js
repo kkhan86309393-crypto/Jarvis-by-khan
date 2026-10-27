@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, statfs } from 'node:fs/promises';
-import { availableParallelism, freemem, loadavg, platform, totalmem } from 'node:os';
+import { cpus, freemem, platform, totalmem } from 'node:os';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +11,8 @@ const maxBodyBytes = 24_000;
 const requestWindowMs = 60_000;
 const requestLimit = 30;
 const clientRequests = new Map();
+let runtimeAIConfig = null;
+let previousCpuTimes = null;
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -107,6 +109,185 @@ function validateMessages(value) {
   });
 }
 
+function getAIConfig() {
+  if (runtimeAIConfig) return runtimeAIConfig;
+
+  if (process.env.AI_PROVIDER === 'ollama' || process.env.OLLAMA_BASE_URL) {
+    return {
+      provider: 'ollama',
+      model: process.env.OLLAMA_MODEL || 'qwen2.5:3b',
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+    };
+  }
+  if (process.env.AI_API_KEY) {
+    return {
+      provider: 'openai-compatible',
+      model: process.env.AI_MODEL || 'gemini-2.5-flash',
+      apiKey: process.env.AI_API_KEY,
+      baseUrl: process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    };
+  }
+  return null;
+}
+
+function publicAIConfig(config = getAIConfig()) {
+  return config ? {
+    provider: config.provider,
+    model: config.model,
+    ...(config.provider === 'openai-compatible' ? { baseUrl: config.baseUrl } : {}),
+  } : null;
+}
+
+function getOpenAIChatCompletionsUrl(baseUrl) {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+  return normalizedBaseUrl.endsWith('/chat/completions')
+    ? normalizedBaseUrl
+    : `${normalizedBaseUrl}/chat/completions`;
+}
+
+function getSafeProviderErrorCode(value, status) {
+  if (Number.isInteger(value) && value >= 100 && value <= 599) return String(value);
+  if (typeof value === 'string') {
+    const code = value.trim().toUpperCase();
+    if (/^\d{3}$/.test(code) && Number(code) >= 100 && Number(code) <= 599) return code;
+    if ([
+      'ALREADY_EXISTS',
+      'CANCELLED',
+      'DEADLINE_EXCEEDED',
+      'FAILED_PRECONDITION',
+      'INSUFFICIENT_QUOTA',
+      'INTERNAL',
+      'INVALID_API_KEY',
+      'INVALID_ARGUMENT',
+      'MODEL_NOT_FOUND',
+      'NOT_FOUND',
+      'OUT_OF_RANGE',
+      'PERMISSION_DENIED',
+      'RATE_LIMIT_EXCEEDED',
+      'RESOURCE_EXHAUSTED',
+      'UNAUTHENTICATED',
+      'UNAVAILABLE',
+      'UNKNOWN',
+      'UNIMPLEMENTED',
+    ].includes(code)) return code;
+  }
+  return `HTTP_${status}`;
+}
+
+function sanitizeProviderErrorMessage(message, apiKey, status) {
+  if (typeof message !== 'string' || !message.trim()) {
+    return `AI provider returned HTTP ${status}. Check the model and provider settings.`;
+  }
+
+  let sanitized = message
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\b(?:authorization|proxy-authorization)\s*[:=]\s*bearer\s+[^\s,;]+/gi, '[redacted credential]')
+    .replace(/\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\s*[:=]\s*["']?[^"'\s,;]+["']?/gi, '[redacted credential]')
+    .replace(/\b(?:authorization|api[_-]?key)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi, '[redacted credential]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [redacted]')
+    .replace(/[?&](?:key|api[_-]?key|token)=([^&\s]+)/gi, (match) => `${match.slice(0, match.indexOf('=') + 1)}[redacted]`)
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, '[redacted]')
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/gi, '[redacted]');
+  if (apiKey) sanitized = sanitized.split(apiKey).join('[redacted]');
+
+  sanitized = sanitized.replace(/\s+/g, ' ').trim().slice(0, 500);
+  return sanitized || `AI provider returned HTTP ${status}. Check the model and provider settings.`;
+}
+
+async function getSafeProviderError(upstream, apiKey) {
+  const status = upstream.status;
+  let details = null;
+  let bodyShape = 'invalid JSON';
+  try {
+    const body = JSON.parse(await upstream.text());
+    bodyShape = Array.isArray(body) ? 'JSON array' : body === null ? 'JSON null' : typeof body === 'object' ? 'JSON object without a structured error' : `JSON ${typeof body}`;
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      if (body.error && typeof body.error === 'object' && !Array.isArray(body.error)) {
+        details = body.error;
+        bodyShape = 'JSON object with structured error';
+      } else {
+        details = body;
+      }
+    }
+  } catch {
+    // Keep diagnostics limited to parsed, allowlisted fields.
+  }
+  const providerCode = getSafeProviderErrorCode(details?.status, status);
+  const fallbackCode = getSafeProviderErrorCode(details?.code, status);
+  const code = providerCode === `HTTP_${status}` ? fallbackCode : providerCode;
+  const message = typeof details?.message === 'string' && details.message.trim()
+    ? sanitizeProviderErrorMessage(details.message, apiKey, status)
+    : `AI provider returned HTTP ${status}; its response was ${bodyShape} and contained no usable error message.`;
+  const rawContentType = upstream.headers.get('content-type')?.split(';', 1)[0].trim() || '';
+  const contentType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(rawContentType)
+    ? rawContentType.slice(0, 100)
+    : 'unknown';
+  const bodyPreview = JSON.stringify({
+    code: code === `HTTP_${status}` ? undefined : code,
+    message: typeof details?.message === 'string' && details.message.trim() ? message : undefined,
+    shape: bodyShape,
+    ...(typeof details?.message === 'string' && details.message.trim() ? {} : { diagnostic: 'No allowlisted error message found; other upstream fields omitted.' }),
+  }).slice(0, 700);
+  return {
+    code,
+    message,
+    ...(status === 404 ? { diagnostics: { contentType, body: bodyPreview } } : {}),
+  };
+}
+
+async function configureAI(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw Object.assign(new Error('Request body must be a JSON object.'), { status: 400 });
+  }
+  if (body.provider === 'environment') {
+    runtimeAIConfig = null;
+    return publicAIConfig();
+  }
+  if (!['openai-compatible', 'ollama'].includes(body.provider)) {
+    throw Object.assign(new Error('Choose OpenAI-compatible or Ollama as the AI provider.'), { status: 400 });
+  }
+  if (typeof body.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(body.model.trim())) {
+    throw Object.assign(new Error('Enter a valid model name using letters, numbers, dots, underscores, colons, slashes, or hyphens.'), { status: 400 });
+  }
+
+  if (body.provider === 'ollama') {
+    runtimeAIConfig = {
+      provider: 'ollama',
+      model: body.model.trim(),
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+    };
+  } else {
+    if (typeof body.apiKey !== 'string' || !body.apiKey.trim() || body.apiKey.length > 1_024) {
+      throw Object.assign(new Error('Enter a provider API key, or configure AI_API_KEY on the server. The key must be no longer than 1,024 characters.'), { status: 400 });
+    }
+    const baseUrl = body.baseUrl ?? process.env.AI_BASE_URL ?? 'https://generativelanguage.googleapis.com/v1beta/openai/';
+    let parsedBaseUrl;
+    try {
+      parsedBaseUrl = new URL(baseUrl);
+    } catch {
+      throw Object.assign(new Error('Enter a valid provider base URL.'), { status: 400 });
+    }
+    if (
+      typeof baseUrl !== 'string'
+      || baseUrl.length > 2_048
+      || !['http:', 'https:'].includes(parsedBaseUrl.protocol)
+      || parsedBaseUrl.username
+      || parsedBaseUrl.password
+      || parsedBaseUrl.search
+      || parsedBaseUrl.hash
+    ) {
+      throw Object.assign(new Error('Provider base URL must be a valid HTTP or HTTPS URL without credentials, query parameters, or a fragment.'), { status: 400 });
+    }
+    runtimeAIConfig = {
+      provider: 'openai-compatible',
+      model: body.model.trim(),
+      apiKey: body.apiKey.trim(),
+      baseUrl: parsedBaseUrl.href,
+    };
+  }
+  return publicAIConfig();
+}
+
 async function handleChat(request, response) {
   const body = await readJson(request);
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -122,9 +303,10 @@ async function handleChat(request, response) {
     content: `You are J.A.R.V.I.S., a helpful, concise assistant. Reply in ${language} unless the user clearly asks for another language. Be honest about uncertainty and never claim to have performed actions you cannot perform. ${modeInstruction}`,
   };
 
-  if (process.env.AI_PROVIDER === 'ollama' || process.env.OLLAMA_BASE_URL) {
-    const baseUrl = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/$/, '');
-    const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b';
+  const config = getAIConfig();
+  if (config?.provider === 'ollama') {
+    const baseUrl = config.baseUrl.replace(/\/+$/, '');
+    const model = config.model;
     let upstream;
     try {
       upstream = await fetch(`${baseUrl}/api/chat`, {
@@ -151,41 +333,40 @@ async function handleChat(request, response) {
     return;
   }
 
-  if (process.env.AI_API_KEY) {
-    const baseUrl = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
-    const upstream = await fetch(`${baseUrl}/chat/completions`, {
+  if (config?.provider === 'openai-compatible') {
+    const upstream = await fetch(getOpenAIChatCompletionsUrl(config.baseUrl), {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${process.env.AI_API_KEY}`,
+        authorization: `Bearer ${config.apiKey}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.AI_MODEL || 'gpt-4o-mini',
+        model: config.model,
         messages: [systemMessage, ...messages],
       }),
       signal: AbortSignal.timeout(25_000),
     });
 
     if (!upstream.ok) {
-      throw Object.assign(new Error(`AI provider returned HTTP ${upstream.status}. Check server provider settings.`), { status: 502 });
+      const providerError = await getSafeProviderError(upstream, config.apiKey);
+      throw Object.assign(new Error(providerError.message), { status: 502, code: providerError.code });
     }
     const data = await upstream.json();
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
       throw Object.assign(new Error('AI provider returned an empty response.'), { status: 502 });
     }
-    sendJson(response, 200, { reply: content.trim(), provider: process.env.AI_MODEL || 'configured AI provider' });
+    sendJson(response, 200, { reply: content.trim(), provider: config.model });
     return;
   }
 
-  throw Object.assign(new Error('No AI provider is configured. Set OLLAMA_BASE_URL for a local Ollama model, or configure AI_API_KEY and AI_MODEL on the server.'), { status: 503 });
+  throw Object.assign(new Error('No AI provider is configured. Enter a provider API key in Settings or configure AI_API_KEY on the server.'), { status: 503 });
 }
 
-async function inspectOllama() {
-  const selected = process.env.AI_PROVIDER === 'ollama' || Boolean(process.env.OLLAMA_BASE_URL);
-  if (!selected) return null;
-  const baseUrl = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/$/, '');
-  const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b';
+async function inspectOllama(config) {
+  if (config?.provider !== 'ollama') return null;
+  const baseUrl = config.baseUrl.replace(/\/$/, '');
+  const model = config.model;
   try {
     const response = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(2_000) });
     if (!response.ok) return { available: false, modelInstalled: false, model };
@@ -203,13 +384,26 @@ async function getSystemMetrics() {
   const disk = await statfs(root);
   const diskTotal = Number(disk.blocks) * Number(disk.bsize);
   const diskFree = Number(disk.bavail) * Number(disk.bsize);
-  const systemLoad = loadavg()[0];
-  const cpuCount = availableParallelism();
+  const cpuTimes = cpus().map(({ times }) => times);
+  let cpuUsagePercent = null;
+  if (previousCpuTimes && previousCpuTimes.length === cpuTimes.length) {
+    let totalDelta = 0;
+    let idleDelta = 0;
+    for (const [index, times] of cpuTimes.entries()) {
+      for (const [key, value] of Object.entries(times)) {
+        const delta = Math.max(0, value - previousCpuTimes[index][key]);
+        totalDelta += delta;
+        if (key === 'idle') idleDelta += delta;
+      }
+    }
+    if (totalDelta > 0) cpuUsagePercent = Math.round(((totalDelta - idleDelta) / totalDelta) * 100);
+  }
+  previousCpuTimes = cpuTimes;
 
   return {
     source: process.env.CODESPACE_NAME ? 'Codespaces container' : `${platform()} server`,
-    cpuLoad1mPercent: Math.round(Math.min(100, (systemLoad / cpuCount) * 100)),
-    cpuCount,
+    cpuUsagePercent,
+    cpuCount: cpuTimes.length,
     memoryUsedBytes: totalMemory - freeMemory,
     memoryTotalBytes: totalMemory,
     memoryPercent: Math.round(((totalMemory - freeMemory) / totalMemory) * 100),
@@ -231,38 +425,81 @@ function flattenTopics(topics, results) {
   }
 }
 
-async function handleSearch(url, response) {
-  const query = (url.searchParams.get('q') || '').trim();
-  if (!query || query.length > 200) {
-    throw Object.assign(new Error('Enter a search query of 1 to 200 characters.'), { status: 400 });
-  }
-
+async function searchDuckDuckGo(query) {
   const searchUrl = new URL('https://api.duckduckgo.com/');
   searchUrl.searchParams.set('q', query);
   searchUrl.searchParams.set('format', 'json');
   searchUrl.searchParams.set('no_html', '1');
   searchUrl.searchParams.set('skip_disambig', '1');
-
-  let data;
-  try {
-    const upstream = await fetch(searchUrl, { signal: AbortSignal.timeout(8_000) });
-    if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
-    data = await upstream.json();
-  } catch {
-    throw Object.assign(new Error('Internet search is temporarily unavailable. Check your connection and try again.'), { status: 502 });
-  }
-
+  const upstream = await fetch(searchUrl, { signal: AbortSignal.timeout(8_000) });
+  if (!upstream.ok) throw new Error(`DuckDuckGo returned HTTP ${upstream.status}.`);
+  const data = await upstream.json();
   const results = [];
   if (data.AbstractURL && data.AbstractText) {
     results.push({ title: data.Heading || query, snippet: data.AbstractText, url: data.AbstractURL });
   }
   flattenTopics(data.RelatedTopics, results);
+  return results.slice(0, 8);
+}
 
+async function searchWikipedia(query, language) {
+  const searchUrl = new URL(`https://${language}.wikipedia.org/w/api.php`);
+  searchUrl.searchParams.set('action', 'query');
+  searchUrl.searchParams.set('generator', 'search');
+  searchUrl.searchParams.set('gsrsearch', query);
+  searchUrl.searchParams.set('gsrlimit', '8');
+  searchUrl.searchParams.set('prop', 'extracts');
+  searchUrl.searchParams.set('exintro', '1');
+  searchUrl.searchParams.set('explaintext', '1');
+  searchUrl.searchParams.set('exsentences', '2');
+  searchUrl.searchParams.set('format', 'json');
+  const upstream = await fetch(searchUrl, {
+    headers: { 'user-agent': 'JARVIS-Personal-Assistant/1.0 (Wikipedia search)' },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!upstream.ok) throw new Error(`Wikipedia returned HTTP ${upstream.status}.`);
+  const data = await upstream.json();
+  return Object.values(data.query?.pages || {})
+    .filter((page) => Number.isInteger(page.pageid) && typeof page.title === 'string')
+    .slice(0, 8)
+    .map((page) => ({
+      title: page.title,
+      snippet: typeof page.extract === 'string' ? page.extract.trim() : '',
+      url: `https://${language}.wikipedia.org/wiki/${encodeURIComponent(page.title.replaceAll(' ', '_'))}`,
+    }));
+}
+
+async function handleSearch(url, response) {
+  const query = (url.searchParams.get('q') || '').trim();
+  if (!query || query.length > 200) {
+    throw Object.assign(new Error('Enter a search query of 1 to 200 characters.'), { status: 400 });
+  }
+  const language = url.searchParams.get('lang') || 'en';
+  if (!['en', 'hi'].includes(language)) {
+    throw Object.assign(new Error('Search language must be English or Hindi.'), { status: 400 });
+  }
+
+  let results;
+  try {
+    results = await searchDuckDuckGo(query);
+    if (results.length) {
+      sendJson(response, 200, { query, source: 'DuckDuckGo Instant Answer', results, notice: null });
+      return;
+    }
+  } catch {
+    results = [];
+  }
+
+  try {
+    results = await searchWikipedia(query, language);
+  } catch {
+    throw Object.assign(new Error('Internet search is temporarily unavailable. DuckDuckGo Instant Answers and Wikipedia search could not be reached. Check your connection and try again.'), { status: 502 });
+  }
   sendJson(response, 200, {
     query,
-    source: 'DuckDuckGo Instant Answer',
+    source: `Wikipedia search (${language === 'hi' ? 'Hindi' : 'English'})`,
     results,
-    notice: results.length ? null : 'No instant-answer results were returned. This endpoint does not provide comprehensive web results.',
+    notice: results.length ? null : 'No results were found by DuckDuckGo Instant Answers or Wikipedia search.',
   });
 }
 
@@ -306,19 +543,33 @@ export function createAppServer() {
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
     try {
       if (request.method === 'GET' && url.pathname === '/api/health') {
-        const ollama = await inspectOllama();
-        const aiConfigured = Boolean(process.env.AI_API_KEY || ollama);
+        const config = getAIConfig();
+        const ollama = await inspectOllama(config);
+        const aiConfigured = Boolean(config);
         sendJson(response, 200, {
           aiConfigured,
-          aiAvailable: ollama ? ollama.available && ollama.modelInstalled : Boolean(process.env.AI_API_KEY),
+          aiAvailable: ollama ? ollama.available && ollama.modelInstalled : Boolean(config),
           ollamaAvailable: ollama?.available ?? null,
           modelInstalled: ollama?.modelInstalled ?? null,
-          model: ollama?.model ?? process.env.AI_MODEL ?? null,
+          provider: config?.provider ?? null,
+          model: config?.model ?? null,
+          baseUrl: config?.provider === 'openai-compatible' ? config.baseUrl : null,
           accessRequired: Boolean(process.env.APP_ACCESS_TOKEN) || process.env.NODE_ENV === 'production',
           accessConfigured: Boolean(process.env.APP_ACCESS_TOKEN),
-          search: 'DuckDuckGo Instant Answer',
+          search: 'DuckDuckGo Instant Answers with Wikipedia search fallback',
           voice: 'Browser Web Speech API when available',
         });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/settings/ai') {
+        if (!authorizeApiRequest(request, response)) return;
+        if (isRateLimited(request)) {
+          sendJson(response, 429, { error: 'Too many requests. Please wait a minute and try again.' });
+          return;
+        }
+        const config = await configureAI(await readJson(request));
+        sendJson(response, 200, { configured: Boolean(config), ...config });
         return;
       }
 
@@ -368,7 +619,10 @@ export function createAppServer() {
         return;
       }
       const status = error.status || (error.name === 'TimeoutError' || error.name === 'AbortError' ? 504 : 502);
-      sendJson(response, status, { error: error.message || 'The request could not be completed.' });
+      sendJson(response, status, {
+        error: error.message || 'The request could not be completed.',
+        ...(typeof error.code === 'string' ? { code: error.code } : {}),
+      });
     }
   });
 }
