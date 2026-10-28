@@ -8,6 +8,7 @@ import {
   applySpeechBoundaryCue,
   applyHeadMotion,
   animateBuiltInAvatar,
+  createReferenceFaceTexture,
   createBuiltInAvatar,
   estimateAudioMouthOpening,
   estimateMouthCue,
@@ -173,20 +174,71 @@ test('adds subtle head movement without discarding the model rest pose', () => {
   assert.equal(head.rotation.z, baseRotation.z + Math.sin(0.35) * 0.008);
 });
 
+test('maps the bundled reference photo onto a lightweight, lit face texture', () => {
+  const previousDocument = globalThis.document;
+  const drawCalls = [];
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return {
+        drawImage(...args) { drawCalls.push(args); },
+        save() {},
+        translate() {},
+        scale() {},
+        restore() {},
+      };
+    },
+  };
+  const reference = { width: 1536, height: 1536 };
+  globalThis.document = { createElement(name) {
+    assert.equal(name, 'canvas');
+    return canvas;
+  } };
+
+  try {
+    const texture = createReferenceFaceTexture(reference);
+    assert.equal(canvas.width, 256);
+    assert.equal(canvas.height, 256);
+    assert.equal(drawCalls.length, 2);
+    assert.equal(drawCalls[0][0], reference);
+    assert.equal(drawCalls[0][1], 1536 * 0.32);
+    assert.equal(drawCalls[0][3], 1536 * 0.36);
+    assert.equal(drawCalls[0][4], 1536 * 0.6);
+    assert.equal(texture.colorSpace, THREE.SRGBColorSpace);
+    assert.equal(texture.minFilter, THREE.LinearFilter);
+    assert.equal(texture.generateMipmaps, false);
+    texture.dispose();
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
+
 test('creates a built-in holographic avatar with facial controls and animation', () => {
   const { root, rig } = createBuiltInAvatar();
   assert.equal(root.name, 'jarvis-holographic-avatar');
-  for (const name of ['face', 'hair-cap', 'eye-1', 'eye--1', 'mouth', 'shoulders']) {
+  for (const name of ['face', 'hair-cap', 'left-side-hair', 'right-side-hair', 'eyelid-1', 'eyelid--1', 'iris-1', 'mouth', 'shoulders']) {
     assert.ok(root.getObjectByName(name), `expected built-in avatar part ${name}`);
   }
+  assert.equal(root.getObjectByName('face').material.map.image.width, 64);
+  assert.equal(root.getObjectByName('hair-cap').material.color.getHex(), 0x211711);
+  assert.equal(root.getObjectByName('eyelid-1').material.color.getHex(), 0xd8ad98);
+  assert.equal(root.getObjectByName('iris-1').children[0].material.color.getHex(), 0x70472e);
+  assert.equal(rig.lids[0].position.x, -0.19);
+  assert.equal(rig.mouth.position.y, -0.32);
 
   animateBuiltInAvatar(rig, { blinkValue: 0, mouthValue: 0 });
   const openLidScale = rig.lids[0].scale.y;
+  const restingGazeX = rig.pupils[0].position.x;
   const closedMouthScale = rig.mouth.scale.y;
+  rig.seconds = 1;
   animateBuiltInAvatar(rig, { blinkValue: 1, mouthValue: 0.8, mouthViseme: 'aa', happy: 0.4, attentive: 1 });
-  assert.ok(rig.lids[0].scale.y < openLidScale);
+  assert.ok(rig.lids[0].scale.y > openLidScale);
+  assert.ok(rig.lids[0].position.y < rig.lids[0].userData.openY);
+  assert.notEqual(rig.pupils[0].position.x, restingGazeX);
   assert.ok(rig.mouth.scale.y > closedMouthScale);
-  assert.ok(rig.mouth.scale.x > 0.105);
+  assert.ok(rig.mouth.scale.x > 0.068);
   assert.ok(rig.head.rotation.z > 0);
 
   root.traverse((object) => {

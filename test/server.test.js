@@ -1,5 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createAppServer } from '../server.js';
 import { getForwardedUrl, getServerEnvironment } from '../scripts/codespaces.js';
 import {
@@ -39,8 +40,14 @@ test('serves the app shell with restrictive browser security headers', async () 
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
+  assert.match(response.headers.get('cache-control'), /no-cache/);
   assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
   assert.match(html, /J\.A\.R\.V\.I\.S\./);
+  assert.match(html, /apple-mobile-web-app-capable/);
+  assert.match(html, /apple-touch-icon/);
+  assert.match(html, /Use temporarily/);
+  assert.match(html, /Use deployment environment/);
+  assert.match(html, /cannot change deployment secrets/);
 });
 
 test('detects mobile, tablet, Windows, browser, and platform hints', () => {
@@ -77,14 +84,23 @@ test('detects mobile, tablet, Windows, browser, and platform hints', () => {
 test('provides every client-selected element and the avatar/mobile controls', async () => {
   const html = await (await fetch(baseUrl)).text();
   const client = await (await fetch(`${baseUrl}/app.js`)).text();
+  const appHub = await (await fetch(`${baseUrl}/app-hub.js`)).text();
   const avatarRuntime = await (await fetch(`${baseUrl}/avatar3d.bundle.js`)).text();
   const interfaceSwitcher = await (await fetch(`${baseUrl}/interface-switcher.js`)).text();
   const deviceMonitor = await (await fetch(`${baseUrl}/device-monitor.js`)).text();
   const shareLink = await (await fetch(`${baseUrl}/share-link.js`)).text();
   const diagnostics = await (await fetch(`${baseUrl}/diagnostics.js`)).text();
-  const worker = await (await fetch(`${baseUrl}/service-worker.js`)).text();
+  const workerResponse = await fetch(`${baseUrl}/service-worker.js`);
+  const worker = await workerResponse.text();
+  assert.match(workerResponse.headers.get('cache-control'), /no-cache/);
   const styles = await (await fetch(`${baseUrl}/styles.css`)).text();
   assert.match(client, /^import \{/);
+  assert.match(client, /initializeAppHubs/);
+  assert.match(client, /from '\.\/app-hub\.js'/);
+  assert.match(appHub, /jarvis\.app-hub\.v1/);
+  assert.match(appHub, /function renderShortcuts/);
+  assert.match(client, /cache: 'no-store'/);
+  assert.match(client, /requestSequence !== healthRequestSequence/);
   assert.match(client, /import\('\.\/avatar3d\.bundle\.js'\)/);
   assert.doesNotMatch(client, /from '\.\/avatar3d\.bundle\.js'/);
   assert.doesNotMatch(worker, /avatar3d\.bundle\.js/);
@@ -96,11 +112,14 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="ai-avatar is-normal" id="ai-avatar"/);
   assert.match(html, /id="portrait-mouth"/);
   assert.match(html, /id="avatar-model-button"/);
-  assert.match(html, /id="built-in-avatar-button">Activate holographic avatar</);
+  assert.match(html, /id="built-in-avatar-button">Activate stylized 3D avatar</);
+  assert.match(html, /class="portrait-blink portrait-blink-left"/);
+  assert.match(html, /class="portrait-blink portrait-blink-right"/);
+  assert.match(html, /The photographic face stays active by default/);
   assert.match(html, /id="avatar-canvas"/);
   assert.match(avatarRuntime, /This model has no recognized mouth-open or speech viseme morph/);
   assert.match(avatarRuntime, /webglcontextlost/);
-  assert.match(avatarRuntime, /Built-in holographic avatar ready/);
+  assert.match(avatarRuntime, /Stylized 3D avatar ready/);
   assert.match(client, /utterance\.onboundary/);
   assert.match(client, /utterance\.onpause/);
   assert.match(client, /utterance\.onresume/);
@@ -144,16 +163,27 @@ test('provides every client-selected element and the avatar/mobile controls', as
     assert.match(html, new RegExp(`data-dashboard-feature="${feature}"`));
   }
   assert.match(html, /class="feature-toolbar"/);
+  const featureToolbar = html.match(/<nav class="feature-toolbar"[\s\S]*?<\/nav>/)?.[0] || '';
+  assert.equal([...featureToolbar.matchAll(/<svg\b/g)].length, 7);
+  assert.deepEqual([...featureToolbar.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]), [
+    'Chat', 'Voice', 'Files', 'Applications', 'System', 'Memory', 'Settings',
+  ]);
+  assert.doesNotMatch(featureToolbar, /toolbar-icon">/);
   assert.match(html, /id="presence-ai-status"/);
   assert.match(html, /id="presence-mic-status"/);
   assert.match(html, /id="presence-memory-status"/);
   for (const status of ['normal', 'listening', 'thinking', 'speaking', 'error']) {
     assert.match(html, new RegExp(`data-expression="${status}"`));
   }
-  assert.match(html, /id="image-tools-title">Image AI/);
-  assert.match(html, /id="generate-image-button"[^>]*disabled/);
-  assert.match(html, /id="image-prompt-input"[^>]*disabled/);
-  assert.match(html, /no image-generation service or endpoint/i);
+  assert.doesNotMatch(html, /Image AI|image-generation|generate-image-button|image-prompt-input/i);
+  assert.equal([...html.matchAll(/data-app-hub/g)].length, 2);
+  assert.match(html, /JARVIS APP HUB/);
+  assert.match(html, /data-hub-search/);
+  assert.match(html, /data-hub-apps/);
+  assert.match(html, /data-hub-runner/);
+  assert.match(html, /data-hub-field="icon"[^>]*accept="image\/png,image\/jpeg,image\/webp"/);
+  assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
+  assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
   assert.match(html, /id="dashboard-mic-button"/);
   assert.match(html, /id="dashboard-mic-button"[^>]*aria-pressed="false"/);
@@ -236,8 +266,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.holo-stage \{\s*width: min\(100%, 330px\)/);
   assert.match(styles, /body\.new-interface \.avatar-frame \{\s*width: 78%;\s*height: 91%/);
   assert.match(styles, /body\.new-interface \.right-rail \{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(styles, /body\.new-interface \.holo-stage \{ width: min\(57vw, 205px\); margin: 0; \}/);
-  assert.match(styles, /body\.new-interface \.new-feature-bar \{\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /body\.new-interface \.holo-stage \{ width: min\(57vw, 205px\); flex: 0 0 auto; margin: 0; \}/);
+  assert.match(styles, /body\.new-interface \.new-feature-bar \{\s*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /body\.new-interface \.new-feature-bar button \{\s*min-width: 0;\s*min-height: 52px/);
+  assert.match(styles, /body\.new-interface \.new-feature-bar button span \{ white-space: nowrap; \}/);
+  assert.doesNotMatch(client, /activateBuiltInAvatarOnDashboard/);
+  assert.doesNotMatch(avatarRuntime, /reference\.src = '\/reference-face\.jpg'/);
+  assert.match(client, /avatarModelSelectionMade = engine\.loadBuiltInAvatar\(\) !== false/);
   assert.match(interfaceSwitcher, /dashboard\.hidden = view !== 'dashboard'/);
   assert.match(interfaceSwitcher, /conversation\.hidden = view !== 'chat'/);
   assert.match(html, /class="holo-particles"/);
@@ -265,30 +300,46 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.mobile-news-open \.right-rail \.briefing-panel/);
   assert.match(styles, /body\.mobile-activity-open \.left-rail \.activity-panel/);
   assert.match(styles, /\.presence \{[^}]*grid-template-rows: auto minmax\(260px, 1fr\)/);
-  assert.match(html, /diagnostics\.js\?hud=26/);
+  assert.match(html, /styles\.css\?hud=31/);
+  assert.match(html, /diagnostics\.js\?hud=27/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(diagnostics, /JavaScript errors:/);
   assert.match(diagnostics, /get\('diagnostics'\) === '1'/);
-  assert.match(worker, /jarvis-shell-v27/);
-  assert.match(worker, /styles\.css\?hud=26/);
-  assert.match(worker, /diagnostics\.js\?hud=26/);
-  assert.match(worker, /app\.js\?hud=26/);
+  assert.match(worker, /jarvis-shell-v37/);
+  assert.doesNotMatch(worker, /reference-face\.jpg/);
+  assert.match(worker, /styles\.css\?hud=31/);
+  assert.match(worker, /diagnostics\.js\?hud=27/);
+  assert.match(worker, /app\.js\?hud=35/);
+  assert.match(worker, /app-hub\.js/);
+  assert.match(worker, /NETWORK_TIMEOUT_MS = 4_000/);
+  assert.match(worker, /response\.status >= 500 && cached/);
+  assert.ok(worker.includes("requestUrl.pathname.startsWith('/api/')"));
   assert.match(worker, /share-link\.js/);
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
-  assert.match(worker, /const response = await fetch\(event\.request\)/);
-  assert.match(client, /service-worker\.js\?hud=26/);
+  assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
+  assert.match(client, /service-worker\.js\?hud=37/);
+  assert.match(client, /AbortSignal\.timeout\(125_000\)/);
   assert.match(client, /feature-toolbar, \.right-rail/);
   assert.match(client, /updateAvatarExpression/);
   assert.match(styles, /\.feature-toolbar \{ display: none; \}/);
+  assert.match(styles, /\.feature-toolbar \.toolbar-icon \{ width: 18px; height: 18px;/);
+  assert.match(styles, /\.mobile-nav button \{ min-width: 0; min-height: 44px;/);
   assert.match(styles, /\.dashboard-command \{/);
   assert.match(styles, /\.ai-avatar\.is-thinking/);
   assert.match(styles, /@media \(max-width: 780px\)/);
   assert.match(styles, /@media \(min-width: 781px\) and \(max-width: 1100px\)/);
   const mobileNavigation = html.match(/<nav class="mobile-nav"[\s\S]*?<\/nav>/)?.[0] || '';
+  assert.equal([...mobileNavigation.matchAll(/<svg\b/g)].length, 6);
   assert.deepEqual([...mobileNavigation.matchAll(/data-nav="([^"]+)"/g)].map((match) => match[1]), [
-    'dashboard', 'chat', 'voice', 'memory', 'settings',
+    'chat', 'voice', 'files', 'applications', 'system', 'more',
   ]);
+  assert.deepEqual([...mobileNavigation.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]), [
+    'AI Chat', 'Voice', 'Files', 'Browser', 'Monitor', 'More',
+  ]);
+  assert.match(styles, /\.new-feature-bar \{ display: none; \}/);
+  assert.match(styles, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.mobile-nav button span \{ white-space: nowrap; \}/);
   assert.match(html, /id="more-tools-button"/);
   assert.doesNotMatch(client, /scheduleAvatarExpression|clearAvatarSpeech/);
   assert.match(client, /utterance\.onstart = \(\) => \{\s*if \(playbackId !== state\.speechPlaybackId\) return;\s*setAssistantState\('speaking'/);
@@ -364,6 +415,7 @@ test('serves PWA metadata with the current dashboard theme', async () => {
   const response = await fetch(`${baseUrl}/manifest.webmanifest`);
   const manifest = await response.json();
   assert.equal(response.status, 200);
+  assert.match(response.headers.get('cache-control'), /no-cache/);
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.theme_color, '#050a17');
   assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192' && icon.type === 'image/png'));
@@ -394,12 +446,30 @@ test('serves the photographic portrait as a local JPEG asset', async () => {
   assert.deepEqual([...image.slice(0, 3)], [0xff, 0xd8, 0xff]);
 });
 
+test('serves and retains the bundled avatar face reference as a local JPEG asset', async () => {
+  const response = await fetch(`${baseUrl}/reference-face.jpg`);
+  const image = new Uint8Array(await response.arrayBuffer());
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /image\/jpeg/);
+  assert.ok(image.length > 100_000);
+  assert.deepEqual([...image.slice(0, 3)], [0xff, 0xd8, 0xff]);
+});
+
 test('formats a private Codespaces HTTPS URL and handles non-Codespaces runs', () => {
   assert.equal(
     getForwardedUrl({ codespaceName: 'bright-jarvis', forwardingDomain: 'app.github.dev', port: 4173 }),
     'https://bright-jarvis-4173.app.github.dev',
   );
   assert.equal(getForwardedUrl({ forwardingDomain: 'app.github.dev' }), null);
+});
+
+test('keeps Codespaces port 4173 private in both workspace configurations', async () => {
+  const [devcontainer, workspaceSettings] = await Promise.all([
+    readFile(new URL('../.devcontainer/devcontainer.json', import.meta.url), 'utf8'),
+    readFile(new URL('../.vscode/settings.json', import.meta.url), 'utf8'),
+  ]);
+  assert.equal(JSON.parse(devcontainer).portsAttributes['4173'].visibility, 'private');
+  assert.equal(JSON.parse(workspaceSettings)['remote.portsAttributes']['4173'].visibility, 'private');
 });
 
 test('selects the requested local Ollama model without adding credentials', () => {
@@ -414,7 +484,9 @@ test('reports provider and access configuration without exposing credentials', a
   const response = await fetch(`${baseUrl}/api/health`);
   const health = await response.json();
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(health.aiConfigured, false);
+  assert.equal(health.providerSource, 'none');
   assert.equal(health.aiAvailable, false);
   assert.equal(health.ollamaAvailable, null);
   assert.equal(health.accessRequired, false);
@@ -422,21 +494,27 @@ test('reports provider and access configuration without exposing credentials', a
   assert.equal(health.search, 'DuckDuckGo Instant Answers with Wikipedia search fallback');
 });
 
-test('defaults server environment credentials to Google Gemini without exposing the key', async () => {
-  const previousApiKey = process.env.AI_API_KEY;
+test('prefers server cloud credentials over an implicit Ollama URL without exposing the key', async () => {
+  const keys = ['AI_API_KEY', 'AI_PROVIDER', 'OLLAMA_BASE_URL'];
+  const previousEnvironment = new Map(keys.map((key) => [key, process.env[key]]));
   const apiKey = 'test-only-gemini-environment-secret';
   process.env.AI_API_KEY = apiKey;
+  process.env.OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+  delete process.env.AI_PROVIDER;
   try {
     const response = await fetch(`${baseUrl}/api/health`);
     const health = await response.json();
     assert.equal(response.status, 200);
     assert.equal(health.provider, 'openai-compatible');
-    assert.equal(health.model, 'gemini-2.5-flash');
+    assert.equal(health.providerSource, 'environment');
+    assert.equal(health.model, 'gemini-3.8-flash');
     assert.equal(health.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/openai/');
     assert.doesNotMatch(JSON.stringify(health), new RegExp(apiKey));
   } finally {
-    if (previousApiKey === undefined) delete process.env.AI_API_KEY;
-    else process.env.AI_API_KEY = previousApiKey;
+    for (const [key, value] of previousEnvironment) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
@@ -477,6 +555,7 @@ test('rejects invalid chat payloads and reports a missing provider honestly', as
 
 test('routes chat to Ollama and returns its actual response', async () => {
   process.env.AI_PROVIDER = 'ollama';
+  process.env.AI_API_KEY = 'test-only-cloud-provider-secret';
   process.env.OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
   process.env.OLLAMA_MODEL = 'qwen2.5:3b';
   const originalFetch = globalThis.fetch;
@@ -510,6 +589,7 @@ test('routes chat to Ollama and returns its actual response', async () => {
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.AI_PROVIDER;
+    delete process.env.AI_API_KEY;
     delete process.env.OLLAMA_BASE_URL;
     delete process.env.OLLAMA_MODEL;
   }
@@ -576,6 +656,7 @@ test('configures a server-side OpenAI-compatible provider without returning its 
   });
   assert.deepEqual(await localConfiguration.json(), {
     configured: true,
+    providerSource: 'session',
     provider: 'ollama',
     model: 'qwen2.5:3b',
   });
@@ -594,6 +675,7 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     const localHealth = await originalFetch(`${baseUrl}/api/health`);
     const localStatus = await localHealth.json();
     assert.equal(localStatus.provider, 'ollama');
+    assert.equal(localStatus.providerSource, 'session');
     assert.equal(localStatus.model, 'qwen2.5:3b');
     assert.equal(localStatus.aiAvailable, true);
   } finally {
@@ -616,7 +698,7 @@ test('configures a server-side OpenAI-compatible provider without returning its 
   const missingKey = await fetch(`${baseUrl}/api/settings/ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-2.5-flash' }),
+    body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-3.8-flash' }),
   });
   assert.equal(missingKey.status, 400);
   assert.match((await missingKey.json()).error, /API key|AI_API_KEY/);
@@ -624,7 +706,7 @@ test('configures a server-side OpenAI-compatible provider without returning its 
   const invalidBaseUrl = await fetch(`${baseUrl}/api/settings/ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-2.5-flash', apiKey, baseUrl: 'javascript:alert(1)' }),
+    body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-3.8-flash', apiKey, baseUrl: 'javascript:alert(1)' }),
   });
   assert.equal(invalidBaseUrl.status, 400);
 
@@ -632,17 +714,27 @@ test('configures a server-side OpenAI-compatible provider without returning its 
   const configured = await fetch(`${baseUrl}/api/settings/ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-2.5-flash', apiKey, baseUrl: geminiBaseUrl }),
+    body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-3.8-flash', apiKey, baseUrl: geminiBaseUrl }),
   });
   const configuration = await configured.json();
   assert.equal(configured.status, 200);
-  assert.deepEqual(configuration, { configured: true, provider: 'openai-compatible', model: 'gemini-2.5-flash', baseUrl: geminiBaseUrl });
+  assert.equal(configured.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(configuration, {
+    configured: true,
+    providerSource: 'session',
+    provider: 'openai-compatible',
+    model: 'gemini-3.8-flash',
+    baseUrl: geminiBaseUrl,
+  });
   assert.doesNotMatch(JSON.stringify(configuration), new RegExp(apiKey));
 
   const healthResponse = await fetch(`${baseUrl}/api/health`);
   const health = await healthResponse.json();
+  assert.equal(healthResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(health.aiConfigured, true);
+  assert.equal(health.providerSource, 'session');
   assert.equal(health.provider, 'openai-compatible');
-  assert.equal(health.model, 'gemini-2.5-flash');
+  assert.equal(health.model, 'gemini-3.8-flash');
   assert.equal(health.baseUrl, geminiBaseUrl);
   assert.doesNotMatch(JSON.stringify(health), new RegExp(apiKey));
 
@@ -668,9 +760,9 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     const chat = await chatResponse.json();
     assert.equal(chatResponse.status, 200);
     assert.equal(chat.reply, 'Configured provider reply.');
-    assert.equal(chat.provider, 'gemini-2.5-flash');
+    assert.equal(chat.provider, 'gemini-3.8-flash');
     assert.equal(providerAuthorization, `Bearer ${apiKey}`);
-    assert.equal(providerRequest.model, 'gemini-2.5-flash');
+    assert.equal(providerRequest.model, 'gemini-3.8-flash');
     assert.deepEqual(providerRequest.messages.at(-1), { role: 'user', content: 'hello' });
     assert.doesNotMatch(JSON.stringify(chat), new RegExp(apiKey));
   } finally {
@@ -691,7 +783,7 @@ test('reports rejected OpenAI-compatible provider keys without treating them as 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       provider: 'openai-compatible',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       apiKey,
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     }),
@@ -740,7 +832,7 @@ test('returns sanitized Google upstream details for OpenAI-compatible 404 respon
     ['AI_API_KEY', 'AI_MODEL', 'AI_BASE_URL'].map((key) => [key, process.env[key]]),
   );
   process.env.AI_API_KEY = apiKey;
-  process.env.AI_MODEL = 'gemini-2.5-flash';
+  process.env.AI_MODEL = 'gemini-3.8-flash';
   process.env.AI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
   const originalFetch = globalThis.fetch;
@@ -767,6 +859,11 @@ test('returns sanitized Google upstream details for OpenAI-compatible 404 respon
     assert.equal(response.status, 502);
     assert.equal(result.code, 'NOT_FOUND');
     assert.match(result.error, /Model not found for API version v1beta/i);
+    assert.match(result.error, /verify that this model is enabled for your key/i);
+    assert.equal(result.diagnostics.contentType, 'application/json');
+    const details = JSON.parse(result.diagnostics.body);
+    assert.equal(details.code, 'NOT_FOUND');
+    assert.match(details.message, /Model not found for API version v1beta/i);
     assert.doesNotMatch(JSON.stringify(result), new RegExp(apiKey));
     assert.doesNotMatch(JSON.stringify(result), new RegExp(echoedToken));
     assert.doesNotMatch(JSON.stringify(result), /test-only-sensitive-response-field|sensitiveDebugField/);
@@ -784,7 +881,7 @@ test('explains missing upstream error messages without exposing response details
     ['AI_API_KEY', 'AI_MODEL', 'AI_BASE_URL'].map((key) => [key, process.env[key]]),
   );
   process.env.AI_API_KEY = 'test-only-gemini-missing-message-secret';
-  process.env.AI_MODEL = 'gemini-2.5-flash';
+  process.env.AI_MODEL = 'gemini-3.8-flash';
   process.env.AI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
   const originalFetch = globalThis.fetch;
@@ -827,7 +924,7 @@ test('does not append chat completions twice when the configured base URL alread
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       provider: 'openai-compatible',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       apiKey: 'test-only-provider-secret',
       baseUrl: baseUrlWithEndpoint,
     }),

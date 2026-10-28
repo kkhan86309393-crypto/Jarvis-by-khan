@@ -7,7 +7,7 @@ const savedEnvironment = new Map(
 );
 for (const key of savedEnvironment.keys()) delete process.env[key];
 process.env.AI_API_KEY = 'test-only-ai-error-key';
-process.env.AI_MODEL = 'gemini-2.5-flash';
+process.env.AI_MODEL = 'gemini-3.8-flash';
 process.env.AI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
 const server = createAppServer();
@@ -31,9 +31,16 @@ after(async () => {
 
 test('returns clear timeout and malformed-provider response errors', async () => {
   const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  const timeoutDurations = [];
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutDurations.push(milliseconds);
+    return originalTimeout(milliseconds);
+  };
   let upstreamMode = 'timeout';
   globalThis.fetch = async (input, options) => {
     if (String(input).endsWith('/chat/completions')) {
+      assert.equal(options.signal.aborted, false);
       if (upstreamMode === 'timeout') throw new DOMException('Timed out', 'TimeoutError');
       if (upstreamMode === 'unavailable') throw new TypeError('fetch failed');
       return new Response('not json', { status: 200, headers: { 'content-type': 'application/json' } });
@@ -53,6 +60,7 @@ test('returns clear timeout and malformed-provider response errors', async () =>
     assert.equal(response.status, 504);
     assert.equal(result.code, 'UPSTREAM_TIMEOUT');
     assert.match(result.error, /AI provider timed out/i);
+    assert.equal(timeoutDurations.at(-1), 120_000);
 
     upstreamMode = 'unavailable';
     response = await request();
@@ -70,5 +78,6 @@ test('returns clear timeout and malformed-provider response errors', async () =>
     assert.doesNotMatch(JSON.stringify(result), /test-only-ai-error-key/);
   } finally {
     globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
   }
 });

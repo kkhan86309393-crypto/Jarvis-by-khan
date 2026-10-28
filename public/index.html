@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#050a17">
     <meta name="description" content="A private, browser-based J.A.R.V.I.S. assistant with optional local AI, voice, and web search.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="J.A.R.V.I.S.">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?hud=26">
+    <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
+    <link rel="stylesheet" href="/styles.css?hud=31">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -45,7 +48,7 @@
           <button class="nav-item" type="button" data-nav="productivity"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6m-3 0v3"/></svg><span>Productivity</span></button>
           <button class="nav-item" type="button" data-nav="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>System monitor</span></button>
           <button class="nav-item" type="button" data-nav="memory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5"/></svg><span>Memory</span></button>
-          <button class="nav-item" type="button" data-nav="activity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Activity</span></button>
+          <button class="nav-item" type="button" data-nav="activity"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/><path d="M8 6h12M8 12h12M8 18h12"/></svg><span>Activity</span></button>
           <div class="nav-spacer"></div>
           <div class="access-control">
             <div class="access-copy"><span>FULL ACCESS</span><small id="access-mode-note">Browser-safe actions only</small></div>
@@ -88,6 +91,8 @@
               <div class="holo-particles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
               <div class="avatar-frame">
                 <img class="ai-avatar is-normal" id="ai-avatar" src="/ai-avatar.jpg" alt="Photographic female assistant avatar under blue holographic light" width="720" height="940" fetchpriority="high" draggable="false">
+                <span class="portrait-blink portrait-blink-left" aria-hidden="true"></span>
+                <span class="portrait-blink portrait-blink-right" aria-hidden="true"></span>
                 <span class="portrait-mouth" id="portrait-mouth" aria-hidden="true"></span>
                 <span class="avatar-fallback" id="avatar-fallback" hidden>J.A.R.V.I.S.</span>
                 <canvas class="avatar-canvas" id="avatar-canvas" aria-hidden="true" hidden></canvas>
@@ -109,11 +114,11 @@
             </nav>
           </div>
           <div class="avatar-model-controls">
-            <button type="button" class="avatar-model-button" id="built-in-avatar-button">Activate holographic avatar</button>
+            <button type="button" class="avatar-model-button" id="built-in-avatar-button">Activate stylized 3D avatar</button>
             <button type="button" class="avatar-model-button" id="avatar-model-button">Load local 3D model</button>
             <button type="button" class="avatar-model-button" id="avatar-audio-sync-button" aria-pressed="false">Sync mouth to tab audio</button>
             <input id="avatar-model-input" type="file" accept=".glb,.vrm,model/gltf-binary" hidden>
-            <p id="avatar-model-status" role="status" aria-live="polite">Activate the built-in holographic avatar, or load a licensed, self-contained VRM or GLB locally.</p>
+            <p id="avatar-model-status" role="status" aria-live="polite">The photographic face stays active by default. Try the stylized 3D preview, or load a licensed, self-contained VRM or GLB locally.</p>
             <p id="avatar-audio-sync-status" role="status" aria-live="polite">Optional audio sync asks you to share this browser tab's audio. Audio is analyzed locally and is not recorded or uploaded.</p>
             <details class="avatar-model-guide">
               <summary>Female model requirements and import steps</summary>
@@ -216,19 +221,31 @@
             <button class="briefing-button" id="dashboard-attach-button" type="button"><span>Choose a text file</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v5h14v-5"/></svg></button>
             <p class="dashboard-file-status" id="dashboard-file-status">No file selected</p>
           </section>
-          <section class="dashboard-panel image-tools-panel" aria-labelledby="image-tools-title">
-            <div class="panel-heading"><div><span class="eyebrow">VISUAL WORKSPACE</span><h2 id="image-tools-title">Image AI</h2></div><span class="live-label">UNAVAILABLE</span></div>
-            <p class="briefing-note">This project has no image-generation service or endpoint. Image prompts and previews are unavailable; no result will be fabricated.</p>
-            <label class="sr-only" for="image-prompt-input">Image generation prompt</label>
-            <textarea class="image-prompt-input" id="image-prompt-input" rows="2" placeholder="Image generation is not connected" disabled></textarea>
-            <div class="image-preview-placeholder" role="img" aria-label="No generated image is available">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 15-5-5L5 20"/></svg>
-              <span>No generated image</span>
+          <section class="dashboard-panel app-hub-panel" aria-labelledby="app-hub-panel-title" data-app-hub>
+            <div class="panel-heading"><div><span class="eyebrow">PERSONAL LAUNCHER</span><h2 id="app-hub-panel-title">JARVIS APP HUB</h2></div><button class="app-hub-add" type="button" data-hub-action="add">Add App</button></div>
+            <p class="app-hub-note">Your shortcuts are saved on this device. Websites open in a new tab; Android app links depend on browser and device support.</p>
+            <div class="app-hub-tools">
+              <label class="sr-only" for="app-hub-search-panel">Search saved apps</label>
+              <input id="app-hub-search-panel" data-hub-search type="search" placeholder="Search My Apps">
             </div>
-            <div class="image-tool-actions">
-              <button class="briefing-button" id="generate-image-button" type="button" disabled>Image generation unavailable</button>
-            </div>
-            <p class="image-tool-status" id="image-tool-status" role="status">No image-generation backend is configured.</p>
+            <div class="app-hub-list" data-hub-apps aria-live="polite"></div>
+            <form class="app-hub-form" data-hub-form hidden>
+              <strong class="app-hub-form-title">Add or edit shortcut</strong>
+              <label>Name<input data-hub-field="name" maxlength="32" autocomplete="off" required></label>
+              <label>Website or Android intent URL<input data-hub-field="url" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com" required></label>
+              <label>Fallback website (optional)<input data-hub-field="fallback" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com"></label>
+              <label>App icon (optional)<input data-hub-field="icon" type="file" accept="image/png,image/jpeg,image/webp"></label>
+              <span class="app-hub-icon-status" data-hub-icon-status>PNG, JPEG, or WebP; up to 256 KB.</span>
+              <div class="app-hub-form-actions"><button class="app-hub-primary" type="submit">Save shortcut</button><button type="button" data-hub-action="cancel">Cancel</button></div>
+            </form>
+            <form class="app-hub-runner" data-hub-runner>
+              <label>URL Runner<input data-hub-field="run-url" type="text" inputmode="url" maxlength="2048" placeholder="Paste a website or Android intent link" required></label>
+              <label class="sr-only" for="app-hub-run-fallback-panel">Optional fallback website</label>
+              <input id="app-hub-run-fallback-panel" data-hub-field="run-fallback" type="text" inputmode="url" maxlength="2048" placeholder="Optional fallback website">
+              <button class="app-hub-primary" type="submit">Open / Run</button>
+            </form>
+            <p class="app-hub-status" data-hub-status role="status" aria-live="polite"></p>
+            <p class="app-hub-safety">Websites and Android links open outside JARVIS when supported. APKs and native apps cannot run inside a website; uploaded icons are images only and are never executed.</p>
           </section>
           <section class="dashboard-panel ai-status-panel" aria-labelledby="ai-status-title">
             <div class="panel-heading"><div><span class="eyebrow">INTELLIGENCE CORE</span><h2 id="ai-status-title">AI status</h2></div><i class="status-pulse"></i></div>
@@ -301,20 +318,21 @@
       </main>
       </div>
       <nav class="feature-toolbar" aria-label="Desktop feature shortcuts">
-        <button type="button" data-nav="chat"><span class="toolbar-icon">AI</span><span>Chat</span></button>
-        <button type="button" data-nav="voice"><span class="toolbar-icon">◖</span><span>Voice</span></button>
-        <button type="button" data-nav="files"><span class="toolbar-icon">▱</span><span>Files</span></button>
-        <button type="button" data-nav="applications"><span class="toolbar-icon">⌘</span><span>Browser</span></button>
-        <button type="button" data-nav="system"><span class="toolbar-icon">⌁</span><span>System</span></button>
-        <button type="button" data-nav="memory"><span class="toolbar-icon">▤</span><span>Memory</span></button>
-        <button type="button" data-nav="settings"><span class="toolbar-icon">⚙</span><span>Settings</span></button>
+        <button type="button" data-nav="chat"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>Chat</span></button>
+        <button type="button" data-nav="voice"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Voice</span></button>
+        <button type="button" data-nav="files"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4zM8 13h8m-8 3h6"/></svg><span>Files</span></button>
+        <button type="button" data-nav="applications"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg><span>Applications</span></button>
+        <button type="button" data-nav="system"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>System</span></button>
+        <button type="button" data-nav="memory"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5"/></svg><span>Memory</span></button>
+        <button type="button" data-nav="settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg><span>Settings</span></button>
       </nav>
       <nav class="mobile-nav" aria-label="Mobile navigation">
-        <button type="button" data-nav="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg><span>Home</span></button>
-        <button class="is-current" type="button" data-nav="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/></svg><span>Chat</span></button>
-        <button type="button" data-nav="voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/></svg><span>Voice</span></button>
-        <button type="button" data-nav="memory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5"/></svg><span>Memory</span></button>
-        <button type="button" data-nav="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 13a7 7 0 0 0 0-2l2-1-2-4-2 1a7 7 0 0 0-2-1l-.3-2h-4L10 6a7 7 0 0 0-2 1L6 6l-2 4 2 1a7 7 0 0 0 0 2l-2 1 2 4 2-1a7 7 0 0 0 2 1l.7 2h4L15 18a7 7 0 0 0 2-1l2 1 2-4-2-1Z"/></svg><span>Settings</span></button>
+        <button class="is-current" type="button" data-nav="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>AI Chat</span></button>
+        <button type="button" data-nav="voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Voice</span></button>
+        <button type="button" data-nav="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4zM8 13h8m-8 3h6"/></svg><span>Files</span></button>
+        <button type="button" data-nav="applications"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span>Browser</span></button>
+        <button type="button" data-nav="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Monitor</span></button>
+        <button type="button" data-nav="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
       </nav>
       <footer class="footer-line"><span>J.A.R.V.I.S. <b>01</b></span><span id="footer-status">BROWSER-BASED | PERMISSION-BOUND</span></footer>
     </div>
@@ -326,11 +344,11 @@
           <div class="provider-settings-heading"><span class="eyebrow">SERVER-SIDE AI</span><h3 id="ai-provider-title">AI provider</h3><p id="ai-setup-status" class="settings-disclaimer" role="status" aria-live="polite">Checking current provider…</p></div>
           <form id="ai-settings-form">
             <label class="provider-field" for="ai-provider-select"><span>Provider</span><select id="ai-provider-select"><option value="openai-compatible">OpenAI-compatible API</option><option value="ollama">Ollama (local)</option></select></label>
-            <label class="provider-field" for="ai-model-input"><span>Model name</span><input id="ai-model-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" value="gemini-2.5-flash" required></label>
+            <label class="provider-field" for="ai-model-input"><span>Model name</span><input id="ai-model-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" value="gemini-3.8-flash" required></label>
             <label class="provider-field" id="ai-base-url-field" for="ai-base-url"><span>Provider base URL</span><input id="ai-base-url" type="url" maxlength="2048" autocomplete="url" spellcheck="false" value="https://generativelanguage.googleapis.com/v1beta/openai/" required></label>
             <label class="provider-field" id="ai-key-field" for="ai-api-key"><span>Provider API key</span><input id="ai-api-key" type="password" maxlength="1024" autocomplete="new-password" spellcheck="false" placeholder="Not saved in this browser"></label>
-            <p class="provider-help" id="ai-provider-help">Google Gemini uses the OpenAI-compatible chat completions API. The key is sent to this server, held only in server memory, and never returned to this page. Use a trusted server over HTTPS.</p>
-            <div class="setting-actions"><button class="secondary-button" id="ai-settings-save" type="submit">Save provider</button><button class="secondary-button" id="ai-settings-environment" type="button">Use server environment</button></div>
+            <p class="provider-help" id="ai-provider-help">Saving here sends the key to this server and keeps it in memory only until the server restarts. It is not saved in this browser and is never returned by the server. For persistence, set AI_API_KEY in your hosting provider’s environment/secrets dashboard; this form cannot change deployment secrets. Use a trusted server over HTTPS.</p>
+            <div class="setting-actions"><button class="secondary-button" id="ai-settings-save" type="submit">Use temporarily</button><button class="secondary-button" id="ai-settings-environment" type="button">Use deployment environment</button></div>
           </form>
         </section>
         <section class="share-settings" aria-labelledby="share-title">
@@ -361,9 +379,31 @@
       <form method="dialog" class="settings-head"><div><span class="eyebrow">THIS DEVICE</span><h2 id="history-title">Conversation history</h2></div><button class="icon-button subtle" aria-label="Close history" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
       <div class="settings-content"><p class="settings-disclaimer" id="history-count"></p><div class="history-list" id="history-list"></div><button class="secondary-button" id="history-open-chat" type="button">Return to current conversation</button></div>
     </dialog>
-    <dialog class="settings-dialog" id="application-dialog" aria-labelledby="application-title">
-      <form method="dialog" class="settings-head"><div><span class="eyebrow">BROWSER ACTION</span><h2 id="application-title">Open web app</h2></div><button class="icon-button subtle" aria-label="Close app launcher" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
-      <div class="settings-content"><label class="setting-row application-url-row" for="application-url"><span><strong>HTTPS address</strong><small>This opens a website in a new browser tab; it cannot launch desktop programs.</small></span><input id="application-url" type="url" inputmode="url" placeholder="https://example.com"></label><div class="setting-actions"><button class="secondary-button" id="open-application-button" type="button">Open website</button></div></div>
+    <dialog class="settings-dialog app-hub-dialog" id="application-dialog" aria-labelledby="application-title">
+      <form method="dialog" class="settings-head"><div><span class="eyebrow">PERSONAL LAUNCHER</span><h2 id="application-title">JARVIS APP HUB</h2></div><button class="icon-button subtle" aria-label="Close App Hub" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
+      <section class="settings-content app-hub-dialog-content" data-app-hub>
+        <div class="app-hub-dialog-toolbar"><p class="app-hub-note">Shortcuts stay on this device. Android app launching depends on your browser and installed apps.</p><button class="app-hub-add" type="button" data-hub-action="add">Add App</button></div>
+        <label class="sr-only" for="app-hub-search-dialog">Search saved apps</label>
+        <input id="app-hub-search-dialog" class="app-hub-search" data-hub-search type="search" placeholder="Search My Apps">
+        <div class="app-hub-list app-hub-dialog-list" data-hub-apps aria-live="polite"></div>
+        <form class="app-hub-form" data-hub-form hidden>
+          <strong class="app-hub-form-title">Add or edit shortcut</strong>
+          <label>Name<input data-hub-field="name" maxlength="32" autocomplete="off" required></label>
+          <label>Website or Android intent URL<input data-hub-field="url" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com" required></label>
+          <label>Fallback website (optional)<input data-hub-field="fallback" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com"></label>
+          <label>App icon (optional)<input data-hub-field="icon" type="file" accept="image/png,image/jpeg,image/webp"></label>
+          <span class="app-hub-icon-status" data-hub-icon-status>PNG, JPEG, or WebP; up to 256 KB.</span>
+          <div class="app-hub-form-actions"><button class="app-hub-primary" type="submit">Save shortcut</button><button type="button" data-hub-action="cancel">Cancel</button></div>
+        </form>
+        <form class="app-hub-runner app-hub-dialog-runner" data-hub-runner>
+          <label>URL Runner<input data-hub-field="run-url" type="text" inputmode="url" maxlength="2048" placeholder="Paste a website or Android intent link" required></label>
+          <label class="sr-only" for="app-hub-run-fallback-dialog">Optional fallback website</label>
+          <input id="app-hub-run-fallback-dialog" data-hub-field="run-fallback" type="text" inputmode="url" maxlength="2048" placeholder="Optional fallback website">
+          <button class="app-hub-primary" type="submit">Open / Run</button>
+        </form>
+        <p class="app-hub-status" data-hub-status role="status" aria-live="polite"></p>
+        <p class="app-hub-safety">Only HTTP/HTTPS websites and explicit Android intent links are accepted. APKs or native applications cannot run inside JARVIS; uploaded files are restricted to image icons and are never executed.</p>
+      </section>
     </dialog>
     <dialog class="settings-dialog" id="screen-capture-dialog" aria-labelledby="screen-capture-title">
       <form method="dialog" class="settings-head"><div><span class="eyebrow">PERMISSION REQUIRED</span><h2 id="screen-capture-title">Screen capture</h2></div><button class="icon-button subtle" id="close-capture-dialog" aria-label="Close screen capture" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
@@ -380,7 +420,7 @@
       </div>
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
-    <script src="/diagnostics.js?hud=26"></script>
-    <script src="/app.js?hud=26" type="module"></script>
+    <script src="/diagnostics.js?hud=27"></script>
+    <script src="/app.js?hud=35" type="module"></script>
   </body>
 </html>

@@ -112,7 +112,10 @@ function validateMessages(value) {
 function getAIConfig() {
   if (runtimeAIConfig) return runtimeAIConfig;
 
-  if (process.env.AI_PROVIDER === 'ollama' || process.env.OLLAMA_BASE_URL) {
+  if (
+    process.env.AI_PROVIDER === 'ollama'
+    || (process.env.AI_PROVIDER !== 'openai-compatible' && !process.env.AI_API_KEY && process.env.OLLAMA_BASE_URL)
+  ) {
     return {
       provider: 'ollama',
       model: process.env.OLLAMA_MODEL || 'qwen2.5:3b',
@@ -122,12 +125,17 @@ function getAIConfig() {
   if (process.env.AI_API_KEY) {
     return {
       provider: 'openai-compatible',
-      model: process.env.AI_MODEL || 'gemini-2.5-flash',
+      model: process.env.AI_MODEL || 'gemini-3.8-flash',
       apiKey: process.env.AI_API_KEY,
       baseUrl: process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
     };
   }
   return null;
+}
+
+function getAIConfigSource(config = getAIConfig()) {
+  if (!config) return 'none';
+  return runtimeAIConfig ? 'session' : 'environment';
 }
 
 function publicAIConfig(config = getAIConfig()) {
@@ -375,7 +383,7 @@ async function handleChat(request, response) {
         model: config.model,
         messages: [systemMessage, ...messages],
       }),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(120_000),
       });
     } catch (error) {
       throw getUpstreamRequestError(error);
@@ -388,9 +396,15 @@ async function handleChat(request, response) {
         : upstream.status === 429
           ? ' Check the provider quota or rate limit, then retry.'
           : upstream.status === 404
-            ? ' Check the model name and provider base URL in Settings.'
+            ? config.baseUrl.includes('generativelanguage.googleapis.com')
+              ? ' For Gemini, verify that this model is enabled for your key and keep the base URL at https://generativelanguage.googleapis.com/v1beta/openai/.'
+              : ' Check the model name and provider base URL in Settings.'
             : '';
-      throw Object.assign(new Error(`${providerError.message}${guidance}`), { status: 502, code: providerError.code });
+      throw Object.assign(new Error(`${providerError.message}${guidance}`), {
+        status: 502,
+        code: providerError.code,
+        ...(providerError.diagnostics ? { diagnostics: providerError.diagnostics } : {}),
+      });
     }
     const data = await readUpstreamJson(upstream, 'AI provider');
     const content = data.choices?.[0]?.message?.content;
@@ -566,7 +580,12 @@ async function serveStatic(url, response) {
       'content-type': mimeTypes[extname(filePath)] || 'application/octet-stream',
       'x-content-type-options': 'nosniff',
     };
-    if (filePath.endsWith('service-worker.js')) headers['service-worker-allowed'] = '/';
+    if (filePath.endsWith('service-worker.js')) {
+      headers['service-worker-allowed'] = '/';
+      headers['cache-control'] = 'no-cache';
+    } else if (filePath.endsWith('index.html') || filePath.endsWith('manifest.webmanifest')) {
+      headers['cache-control'] = 'no-cache';
+    }
     response.writeHead(200, headers);
     response.end(content);
   } catch {
@@ -582,6 +601,7 @@ export function createAppServer() {
     response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
 
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+    if (url.pathname.startsWith('/api/')) response.setHeader('cache-control', 'no-store');
     try {
       if (request.method === 'GET' && url.pathname === '/api/health') {
         const config = getAIConfig();
@@ -589,6 +609,7 @@ export function createAppServer() {
         const aiConfigured = Boolean(config);
         sendJson(response, 200, {
           aiConfigured,
+          providerSource: getAIConfigSource(config),
           aiAvailable: ollama ? ollama.available && ollama.modelInstalled : Boolean(config),
           ollamaAvailable: ollama?.available ?? null,
           modelInstalled: ollama?.modelInstalled ?? null,
@@ -610,7 +631,11 @@ export function createAppServer() {
           return;
         }
         const config = await configureAI(await readJson(request));
-        sendJson(response, 200, { configured: Boolean(config), ...config });
+        sendJson(response, 200, {
+          configured: Boolean(config),
+          providerSource: getAIConfigSource(config),
+          ...config,
+        });
         return;
       }
 
@@ -663,6 +688,7 @@ export function createAppServer() {
       sendJson(response, status, {
         error: error.message || 'The request could not be completed.',
         ...(typeof error.code === 'string' ? { code: error.code } : {}),
+        ...(error.diagnostics && typeof error.diagnostics === 'object' ? { diagnostics: error.diagnostics } : {}),
       });
     }
   });

@@ -188,6 +188,53 @@ function addCurve(parent, name, material, points, radius = 0.012) {
   return mesh;
 }
 
+function createSkinTexture() {
+  const size = 64;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      const sample = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+      const grain = (sample - Math.floor(sample) - 0.5) * 5;
+      data[offset] = 233 + grain;
+      data[offset + 1] = 194 + grain;
+      data[offset + 2] = 173 + grain;
+      data[offset + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function createReferenceFaceTexture(image) {
+  const width = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = width;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not create the reference face texture canvas.');
+
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  context.drawImage(image, sourceWidth * 0.32, 0, sourceWidth * 0.36, sourceHeight * 0.6, 0, 0, width / 2, width);
+  context.save();
+  context.translate(width, 0);
+  context.scale(-1, 1);
+  context.drawImage(image, sourceWidth * 0.32, 0, sourceWidth * 0.36, sourceHeight * 0.6, 0, 0, width / 2, width);
+  context.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
 export function animateBuiltInAvatar(rig, {
   blinkValue = 0,
   mouthValue = 0,
@@ -200,17 +247,17 @@ export function animateBuiltInAvatar(rig, {
   if (!rig) return;
   const eyeOpen = 1 - THREE.MathUtils.clamp(blinkValue, 0, 1);
   for (const lid of rig.lids) {
-    lid.scale.y = 0.015 + eyeOpen * 0.1;
-    lid.position.y = 0.075 - (1 - eyeOpen) * 0.045;
+    lid.scale.y = 0.012 + (1 - eyeOpen) * 0.09;
+    lid.position.y = lid.userData.openY - (1 - eyeOpen) * 0.055;
   }
   for (const pupil of rig.pupils) {
     pupil.position.x = pupil.userData.baseX + Math.sin(rig.seconds * 0.31) * 0.012;
     pupil.position.y = pupil.userData.baseY + Math.sin(rig.seconds * 0.23) * 0.008;
   }
   const visemeScale = mouthViseme === 'oh' || mouthViseme === 'ou' ? 0.78 : mouthViseme === 'ee' ? 0.72 : 1;
-  rig.mouth.scale.y = 0.018 + Math.max(mouthValue, happy * 0.3) * 0.12;
-  rig.mouth.scale.x = 0.105 * (visemeScale + happy * 0.22);
-  rig.mouth.position.y = -0.2 + happy * 0.012 - frown * 0.008;
+  rig.mouth.scale.y = 0.001 + Math.max(mouthValue, happy * 0.3) * 0.042;
+  rig.mouth.scale.x = 0.068 * (visemeScale + happy * 0.12);
+  rig.mouth.position.y = -0.32 + happy * 0.008 - frown * 0.005;
   rig.brows.forEach((brow, index) => {
     const side = index === 0 ? 1 : -1;
     brow.position.y = 0.19 + thinking * 0.018 - frown * 0.01;
@@ -248,20 +295,37 @@ export function createBuiltInAvatar() {
     metalness: 0.3,
     roughness: 0.24,
   });
-  const eyeWhite = new THREE.MeshStandardMaterial({
-    color: 0xc8f6ff,
-    emissive: 0x55caff,
-    emissiveIntensity: 0.6,
+  const faceSkin = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: createSkinTexture(),
+    roughness: 0.78,
+    metalness: 0,
+  });
+  const faceHair = new THREE.MeshStandardMaterial({
+    color: 0x211711,
+    emissive: 0x07121c,
+    emissiveIntensity: 0.06,
+    roughness: 0.76,
+    metalness: 0.02,
+  });
+  const mouthInterior = new THREE.MeshStandardMaterial({
+    color: 0x421d23,
+    roughness: 0.74,
   });
   const irisMaterial = new THREE.MeshStandardMaterial({
-    color: 0x148bff,
-    emissive: 0x20bfff,
-    emissiveIntensity: 1.2,
+    color: 0x70472e,
+    roughness: 0.3,
+    metalness: 0,
   });
-  const dark = new THREE.MeshStandardMaterial({
-    color: 0x031329,
-    emissive: 0x06385c,
-    emissiveIntensity: 0.3,
+  const pupilMaterial = new THREE.MeshStandardMaterial({
+    color: 0x170f0c,
+    roughness: 0.18,
+  });
+  const eyeHighlight = new THREE.MeshBasicMaterial({ color: 0xfff8ec });
+  const eyelidMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd8ad98,
+    roughness: 0.78,
+    metalness: 0,
   });
 
   addSphere(root, 'shoulders', hair, [0, -0.48, 0], [0.58, 0.3, 0.28]);
@@ -272,68 +336,62 @@ export function createBuiltInAvatar() {
   head.name = 'head';
   head.position.y = 0.45;
   root.add(head);
-  addSphere(head, 'face', skin, [0, 0, 0], [0.38, 0.52, 0.32]);
-  addSphere(head, 'hair-cap', hair, [0, 0.22, -0.025], [0.42, 0.39, 0.36]);
-  addSphere(head, 'left-side-hair', hair, [-0.36, -0.11, -0.005], [0.11, 0.46, 0.26]);
-  addSphere(head, 'right-side-hair', hair, [0.36, -0.11, -0.005], [0.11, 0.46, 0.26]);
+  const faceGeometry = new THREE.SphereGeometry(1, 40, 28);
+  const facePositions = faceGeometry.attributes.position;
+  for (let index = 0; index < facePositions.count; index += 1) {
+    const y = facePositions.getY(index);
+    const jawTaper = Math.max(0, -y) * 0.2;
+    const foreheadTaper = Math.max(0, y) * 0.06;
+    facePositions.setX(index, facePositions.getX(index) * (1 - jawTaper - foreheadTaper));
+  }
+  facePositions.needsUpdate = true;
+  faceGeometry.computeVertexNormals();
+  const face = new THREE.Mesh(faceGeometry, faceSkin);
+  face.name = 'face';
+  face.scale.set(0.37, 0.51, 0.31);
+  head.add(face);
+  addSphere(head, 'hair-cap', faceHair, [0, 0.22, -0.2], [0.42, 0.39, 0.25]);
+  addSphere(head, 'left-side-hair', faceHair, [-0.36, -0.11, -0.005], [0.11, 0.46, 0.26]);
+  addSphere(head, 'right-side-hair', faceHair, [0.36, -0.11, -0.005], [0.11, 0.46, 0.26]);
 
   for (const side of [-1, 1]) {
-    addCurve(head, `bang-${side}`, edge, [
-      [side * 0.04, 0.48, 0.18],
-      [side * 0.18, 0.39, 0.285],
-      [side * 0.3, 0.22, 0.22],
-      [side * 0.27, 0.08, 0.2],
-    ], 0.018);
-    addCurve(head, `hair-lock-${side}`, hair, [
+    addCurve(head, `hair-lock-${side}`, faceHair, [
       [side * 0.31, 0.2, 0.04],
       [side * 0.43, -0.05, 0.03],
       [side * 0.39, -0.42, 0.04],
       [side * 0.3, -0.76, 0.06],
-    ], 0.045);
+    ], 0.035);
   }
 
-  const eyes = [];
   const lids = [];
   const pupils = [];
-  const brows = [];
   for (const side of [-1, 1]) {
-    const eye = addSphere(head, `eye-${side}`, eyeWhite, [side * 0.16, 0.075, 0.285], [0.105, 0.052, 0.035]);
-    eyes.push(eye);
-    const pupil = addSphere(head, `pupil-${side}`, irisMaterial, [side * 0.16, 0.075, 0.32], [0.038, 0.039, 0.018]);
-    pupil.userData.baseX = pupil.position.x;
-    pupil.userData.baseY = pupil.position.y;
-    pupils.push(pupil);
-    addSphere(head, `iris-core-${side}`, dark, [side * 0.16, 0.075, 0.338], [0.017, 0.024, 0.008]);
-    const lid = addSphere(head, `eyelid-${side}`, skin, [side * 0.16, 0.075, 0.325], [0.11, 0.11, 0.025]);
+    const eyeX = side * 0.19;
+    const lid = addSphere(head, `eyelid-${side}`, eyelidMaterial, [eyeX, 0.14, 0.319], [0.096, 0.012, 0.026]);
+    lid.userData.openY = lid.position.y;
     lids.push(lid);
-    const brow = addCurve(head, `brow-${side}`, edge, [
-      [side * 0.28, 0.19, 0.3],
-      [side * 0.17, 0.22, 0.32],
-      [side * 0.06, 0.19, 0.3],
-    ], 0.014);
-    brows.push(brow);
+    const iris = new THREE.Group();
+    iris.name = `iris-${side}`;
+    iris.position.set(eyeX, 0.065, 0.284);
+    iris.userData.baseX = eyeX;
+    iris.userData.baseY = iris.position.y;
+    head.add(iris);
+    addSphere(iris, `iris-color-${side}`, irisMaterial, [0, 0, 0], [0.03, 0.032, 0.009]);
+    addSphere(iris, `pupil-${side}`, pupilMaterial, [0, 0, 0.008], [0.014, 0.019, 0.005]);
+    addSphere(iris, `eye-glint-${side}`, eyeHighlight, [-0.007, 0.01, 0.013], [0.005, 0.006, 0.002]);
+    pupils.push(iris);
   }
 
-  addSphere(head, 'nose-bridge', skin, [0, -0.045, 0.32], [0.048, 0.13, 0.065]);
-  addSphere(head, 'nose-tip', edge, [0, -0.13, 0.36], [0.07, 0.038, 0.05]);
-  addSphere(head, 'mouth', dark, [0, -0.2, 0.316], [0.105, 0.018, 0.025]);
-  addCurve(head, 'upper-lip', edge, [
-    [-0.115, -0.19, 0.328],
-    [-0.045, -0.18, 0.343],
-    [0, -0.193, 0.346],
-    [0.045, -0.18, 0.343],
-    [0.115, -0.19, 0.328],
-  ], 0.009);
-  addSphere(head, 'ear-left', skin, [-0.37, -0.02, 0], [0.055, 0.105, 0.07]);
-  addSphere(head, 'ear-right', skin, [0.37, -0.02, 0], [0.055, 0.105, 0.07]);
+  addSphere(head, 'mouth', mouthInterior, [0, -0.32, 0.265], [0.068, 0.001, 0.012]);
+  addSphere(head, 'ear-left', faceSkin, [-0.37, -0.02, 0], [0.055, 0.105, 0.07]);
+  addSphere(head, 'ear-right', faceSkin, [0.37, -0.02, 0], [0.055, 0.105, 0.07]);
   return {
     root,
     rig: {
       head,
-      eyes,
       lids,
       pupils,
-      brows,
+      brows: [],
       mouth: head.getObjectByName('mouth'),
       seconds: 0,
     },
@@ -506,6 +564,13 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
     const attentive = avatarState === 'listening' ? 0.2 : 0;
     const thinking = avatarState === 'thinking' ? 0.18 : 0;
     const frown = avatarState === 'error' ? 0.16 : 0;
+    if (now >= nextBlinkAt && !blinkStartedAt) {
+      blinkStartedAt = now;
+      nextBlinkAt = now + 2500 + Math.random() * 3200;
+    }
+    const blinkProgress = blinkStartedAt ? (now - blinkStartedAt) / 170 : 1;
+    const blinkValue = blinkStartedAt && blinkProgress < 1 ? Math.sin(blinkProgress * Math.PI) : 0;
+    if (blinkStartedAt && blinkProgress >= 1) blinkStartedAt = 0;
     if (builtInRig) {
       builtInRig.seconds = seconds;
       animateBuiltInAvatar(builtInRig, {
@@ -518,14 +583,6 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
         frown,
       });
     }
-
-    if (now >= nextBlinkAt && !blinkStartedAt) {
-      blinkStartedAt = now;
-      nextBlinkAt = now + 2500 + Math.random() * 3200;
-    }
-    const blinkProgress = blinkStartedAt ? (now - blinkStartedAt) / 170 : 1;
-    const blinkValue = blinkStartedAt && blinkProgress < 1 ? Math.sin(blinkProgress * Math.PI) : 0;
-    if (blinkStartedAt && blinkProgress >= 1) blinkStartedAt = 0;
 
     if (activeVrm) {
       applyVrmExpressions(activeVrm.expressionManager, {
@@ -683,6 +740,7 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
   function loadBuiltInAvatar() {
     try {
       const { root, rig } = createBuiltInAvatar();
+      const face = root.getObjectByName('face');
       const bounds = new THREE.Box3().setFromObject(root);
       const size = bounds.getSize(new THREE.Vector3());
       const center = bounds.getCenter(new THREE.Vector3());
@@ -701,11 +759,13 @@ export function initializeAvatar3d({ frame, canvas, image, mouthOverlay, fileInp
       if (mouthOverlay) mouthOverlay.hidden = true;
       frame.classList.add('is-3d-active');
       resize();
-      report('Built-in holographic avatar ready. Facial animation follows J.A.R.V.I.S. voice and assistant state.', 'ready');
+      report('Stylized 3D avatar ready. Load a compatible local VRM or GLB for a realistic, fully rigged face.', 'ready');
       animationFrame = requestAnimationFrame(animate);
+      return true;
     } catch (error) {
       disposeModel();
       report(`Could not create the built-in avatar: ${error.message || 'WebGL is unavailable'}. The portrait remains active.`, 'error');
+      return false;
     }
   }
 

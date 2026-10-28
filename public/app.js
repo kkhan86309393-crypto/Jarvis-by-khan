@@ -2,6 +2,7 @@ import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './int
 import { detectDeviceProfile } from './device-monitor.js';
 import { applySpeechBoundaryCue, estimateAudioMouthOpening } from './avatar-cues.js';
 import { getPublicShareUrl } from './share-link.js';
+import { initializeAppHubs } from './app-hub.js';
 
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
@@ -137,7 +138,6 @@ const elements = {
   historyCount: document.querySelector('#history-count'),
   historyList: document.querySelector('#history-list'),
   applicationDialog: document.querySelector('#application-dialog'),
-  applicationUrl: document.querySelector('#application-url'),
   screenCaptureDialog: document.querySelector('#screen-capture-dialog'),
   capturePreview: document.querySelector('#capture-preview'),
   captureCanvas: document.querySelector('#capture-canvas'),
@@ -214,7 +214,9 @@ const state = {
 };
 
 let avatar3d = null;
-let avatar3dLoading = false;
+let avatar3dLoadPromise = null;
+let avatarModelSelectionMade = false;
+let healthRequestSequence = 0;
 
 function loadHistory() {
   if (!state.preferences.memoryEnabled) return [];
@@ -461,7 +463,7 @@ async function sendChat(text, { retry = false } = {}) {
         language: state.preferences.language,
         mode: state.preferences.studyMode ? 'study' : 'standard',
       }),
-      signal: AbortSignal.timeout(65_000),
+      signal: AbortSignal.timeout(125_000),
     });
     const data = await readApiResponse(response);
     state.lastChatFailure = null;
@@ -646,34 +648,36 @@ function setAvatarMouth(opening, viseme = 'aa') {
   avatar3d?.setViseme(viseme);
 }
 
-async function loadAvatarEngine() {
-  if (avatar3d) return avatar3d;
-  if (avatar3dLoading) return null;
-  avatar3dLoading = true;
+function loadAvatarEngine() {
+  if (avatar3d) return Promise.resolve(avatar3d);
+  if (avatar3dLoadPromise) return avatar3dLoadPromise;
   elements.avatarModelButton.disabled = true;
   elements.builtInAvatarButton.disabled = true;
   elements.avatarModelStatus.textContent = 'Loading the optional 3D avatar engine…';
-  try {
-    const { initializeAvatar3d } = await import('./avatar3d.bundle.js');
-    avatar3d = initializeAvatar3d({
-      frame: elements.avatarFrame,
-      canvas: elements.avatarCanvas,
-      image: elements.avatar,
-      mouthOverlay: document.querySelector('#portrait-mouth'),
-      fileInput: null,
-      status: elements.avatarModelStatus,
-    });
-    avatar3d.setState(state.assistantMode);
-    elements.avatarModelButton.textContent = 'Load a local 3D model';
-    return avatar3d;
-  } catch (error) {
-    elements.avatarModelStatus.textContent = `The optional 3D avatar engine could not load: ${error.message || 'unknown error'}. The portrait remains active.`;
-    return null;
-  } finally {
-    avatar3dLoading = false;
-    elements.avatarModelButton.disabled = false;
-    elements.builtInAvatarButton.disabled = false;
-  }
+  avatar3dLoadPromise = (async () => {
+    try {
+      const { initializeAvatar3d } = await import('./avatar3d.bundle.js');
+      avatar3d = initializeAvatar3d({
+        frame: elements.avatarFrame,
+        canvas: elements.avatarCanvas,
+        image: elements.avatar,
+        mouthOverlay: document.querySelector('#portrait-mouth'),
+        fileInput: null,
+        status: elements.avatarModelStatus,
+      });
+      avatar3d.setState(state.assistantMode);
+      elements.avatarModelButton.textContent = 'Load a local 3D model';
+      return avatar3d;
+    } catch (error) {
+      elements.avatarModelStatus.textContent = `The optional 3D avatar engine could not load: ${error.message || 'unknown error'}. The portrait remains active.`;
+      return null;
+    } finally {
+      avatar3dLoadPromise = null;
+      elements.avatarModelButton.disabled = false;
+      elements.builtInAvatarButton.disabled = false;
+    }
+  })();
+  return avatar3dLoadPromise;
 }
 
 elements.avatarModelButton.addEventListener('click', () => elements.avatarModelInput.click());
@@ -681,17 +685,23 @@ elements.avatarModelButton.addEventListener('click', () => elements.avatarModelI
 elements.avatarModelInput.addEventListener('change', async () => {
   const [file] = elements.avatarModelInput.files || [];
   if (!file) return;
+  avatarModelSelectionMade = true;
   const engine = await loadAvatarEngine();
   if (engine) await engine.loadModel(file);
+  else avatarModelSelectionMade = false;
   elements.avatarModelInput.value = '';
 });
 
 elements.builtInAvatarButton.addEventListener('click', async () => {
+  avatarModelSelectionMade = true;
   const engine = await loadAvatarEngine();
-  if (!engine) return;
+  if (!engine) {
+    avatarModelSelectionMade = false;
+    return;
+  }
   elements.builtInAvatarButton.disabled = true;
   elements.avatarModelStatus.textContent = 'Building the holographic avatar…';
-  engine.loadBuiltInAvatar();
+  avatarModelSelectionMade = engine.loadBuiltInAvatar() !== false;
   elements.builtInAvatarButton.disabled = false;
 });
 
@@ -920,10 +930,12 @@ function syncSettings() {
 }
 
 async function checkServer() {
+  const requestSequence = ++healthRequestSequence;
   updateDeviceMonitor();
   elements.memoryValue.textContent = state.preferences.memoryEnabled ? 'Local storage' : 'Disabled';
   loadSystemMetrics();
   if (!navigator.onLine) {
+    if (requestSequence !== healthRequestSequence) return;
     elements.backendConnectionValue.textContent = 'Offline';
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'OFFLINE';
@@ -934,20 +946,24 @@ async function checkServer() {
     return;
   }
   try {
-    const response = await fetch('/api/health', { signal: AbortSignal.timeout(5_000) });
+    const response = await fetch('/api/health', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5_000),
+    });
     const data = await readApiResponse(response);
+    if (requestSequence !== healthRequestSequence) return;
     state.accessRequired = data.accessRequired === true;
     const ollamaSelected = data.provider === 'ollama';
     const aiReady = data.aiConfigured && (!ollamaSelected || data.aiAvailable);
     if (!state.aiSettingsLoaded) {
       state.aiSettingsLoaded = true;
       elements.aiProvider.value = data.provider || 'openai-compatible';
-      elements.aiModel.value = data.model || (ollamaSelected ? 'qwen2.5:3b' : 'gemini-2.5-flash');
+      elements.aiModel.value = data.model || (ollamaSelected ? 'qwen2.5:3b' : 'gemini-3.8-flash');
       if (data.baseUrl) elements.aiBaseUrl.value = data.baseUrl;
       updateAIProviderFields();
     }
     elements.aiSetupStatus.textContent = data.aiConfigured
-      ? `Current: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}`
+      ? `Current: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model} · ${data.providerSource === 'environment' ? 'deployment environment secret' : data.providerSource === 'session' ? 'temporary server-session setting' : 'server configuration'}`
       : 'No AI provider is configured. Choose a provider and model here, then save.';
     elements.connection.className = aiReady ? 'connection-indicator' : 'connection-indicator is-warning';
     elements.connection.lastElementChild.textContent = aiReady
@@ -962,7 +978,9 @@ async function checkServer() {
           ? `Ollama is running, but ${data.model} is not installed there.`
           : ollamaSelected
             ? `Ollama and ${data.model} are available on the server.`
-            : 'AI provider is configured on the server. Live availability is confirmed when you send a message.';
+            : data.providerSource === 'session'
+              ? 'A temporary provider key is active in server memory only. Set AI_API_KEY in the hosting provider’s environment secrets to keep it across restarts. Live availability is confirmed when you send a message.'
+              : 'AI provider is configured through the server environment. Live availability is confirmed when you send a message.';
     if (state.accessRequired) {
       elements.providerNote.textContent += data.accessConfigured
         ? ' This server requires an access key; enter it in Settings.'
@@ -989,6 +1007,7 @@ async function checkServer() {
     elements.leftMemoryStatus.textContent = state.preferences.memoryEnabled ? 'LOCAL' : 'OFF';
     elements.footerStatus.textContent = aiReady ? 'SERVER AI · LOCAL HISTORY · PERMISSION-BOUND' : 'AI UNAVAILABLE · LOCAL HISTORY · PERMISSION-BOUND';
   } catch {
+    if (requestSequence !== healthRequestSequence) return;
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'SERVER OFFLINE';
     elements.providerNote.textContent = 'The app server is not responding. Chat and web search require a connection to this server.';
@@ -1160,7 +1179,7 @@ function updateAIProviderFields() {
   elements.aiBaseUrl.required = usesApiKey;
   elements.aiApiKey.required = usesApiKey;
   elements.aiProviderHelp.textContent = usesApiKey
-    ? 'Use Google Gemini’s OpenAI-compatible chat completions API or another compatible provider. The key is sent to this server, held only in server memory, and never returned to this page or saved in this browser. Use a trusted server over HTTPS.'
+    ? 'Use Google Gemini’s OpenAI-compatible chat completions API or another compatible provider. Saving here stores the key only in server memory until restart. This form cannot change deployment secrets; set AI_API_KEY in your hosting provider’s environment/secrets dashboard for persistence. The key is never saved in this browser or returned by the server. Use a trusted server over HTTPS.'
     : 'Ollama must be running on the Node server host. J.A.R.V.I.S. uses OLLAMA_BASE_URL or http://127.0.0.1:11434; the selected model must already be installed.';
 }
 
@@ -1191,7 +1210,9 @@ async function saveAISettings(provider = elements.aiProvider.value) {
       elements.aiModel.value = data.model;
       if (data.baseUrl) elements.aiBaseUrl.value = data.baseUrl;
       updateAIProviderFields();
-      elements.aiSetupStatus.textContent = `Saved for this server session: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}.`;
+      elements.aiSetupStatus.textContent = data.providerSource === 'environment'
+        ? `Using deployment environment configuration: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}.`
+        : `Saved temporarily in this server session: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}. Configure AI_API_KEY as a hosting environment secret to keep the key across restarts.`;
     } else {
       elements.aiSetupStatus.textContent = 'No server-side AI provider is configured. Enter a provider key here or set AI_API_KEY on the server.';
     }
@@ -1370,31 +1391,6 @@ function stopScreenCapture() {
   elements.captureStatus.textContent = 'Screen sharing stopped.';
 }
 
-function openWebsiteApplication() {
-  let destination;
-  try {
-    destination = new URL(elements.applicationUrl.value.trim());
-  } catch {
-    elements.applicationUrl.setCustomValidity('Enter a valid HTTPS website address.');
-    elements.applicationUrl.reportValidity();
-    return;
-  }
-  elements.applicationUrl.setCustomValidity('');
-  if (destination.protocol !== 'https:') {
-    elements.applicationUrl.setCustomValidity('Only HTTPS websites can be opened from this launcher.');
-    elements.applicationUrl.reportValidity();
-    return;
-  }
-  const opened = window.open(destination.href, '_blank');
-  if (!opened) {
-    showFeedback('The browser blocked the new tab. Allow pop-ups for J.A.R.V.I.S. and try again.');
-    return;
-  }
-  opened.opener = null;
-  elements.applicationDialog.close();
-  logActivity(`Opened website: ${destination.hostname}`);
-}
-
 function captureScreenFrame() {
   const video = elements.capturePreview;
   if (!state.displayStream || !video.videoWidth || !video.videoHeight) {
@@ -1467,7 +1463,7 @@ function handleNavigation(event) {
     if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-news-open');
     if (!elements.briefingResults.childElementCount) loadBriefing();
     document.querySelector('#briefing-title').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } else if (destination === 'memory' || destination === 'settings') {
+  } else if (destination === 'settings') {
     selectNavigation(destination);
     openSettings();
   } else if (destination === 'activity') {
@@ -1664,8 +1660,6 @@ document.querySelector('#history-open-chat').addEventListener('click', () => {
   setWorkspaceView('chat');
   elements.message.focus();
 });
-document.querySelector('#open-application-button').addEventListener('click', openWebsiteApplication);
-elements.applicationUrl.addEventListener('input', () => elements.applicationUrl.setCustomValidity(''));
 document.querySelector('[data-quick-action="capture"]').addEventListener('click', () => {
   if (!state.preferences.fullAccessEnabled) return;
   elements.captureStatus.textContent = '';
@@ -1771,7 +1765,7 @@ elements.accessToken.addEventListener('input', () => {
   state.accessToken = elements.accessToken.value.trim();
 });
 elements.aiProvider.addEventListener('change', () => {
-  elements.aiModel.value = elements.aiProvider.value === 'ollama' ? 'qwen2.5:3b' : 'gemini-2.5-flash';
+  elements.aiModel.value = elements.aiProvider.value === 'ollama' ? 'qwen2.5:3b' : 'gemini-3.8-flash';
   elements.aiApiKey.value = '';
   updateAIProviderFields();
 });
@@ -1880,6 +1874,7 @@ elements.install.addEventListener('click', async () => {
 state.messages = loadHistory();
 syncSettings();
 renderMessages();
+initializeAppHubs({ onActivity: logActivity });
 updateSearchMode();
 setWorkspaceView(state.workspaceView, { remember: false });
 initializeDeviceMonitor();
@@ -1892,7 +1887,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=26', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=37', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

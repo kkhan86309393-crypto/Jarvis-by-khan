@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: jarvis-personal-assistant
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build:avatar
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: gemini-3.8-flash
+      - key: AI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+      - key: APP_ACCESS_TOKEN
+        generateValue: true
