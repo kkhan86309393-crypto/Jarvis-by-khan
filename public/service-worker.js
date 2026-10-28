@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jarvis-shell-v37';
-const APP_SHELL = ['/', '/styles.css?hud=31', '/diagnostics.js?hud=27', '/app.js?hud=35', '/avatar-cues.js', '/app-hub.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png', '/ai-avatar.jpg'];
+const CACHE_NAME = 'jarvis-shell-v42';
+const APP_SHELL = ['/', '/styles.css?hud=32', '/diagnostics.js?hud=27', '/app.js?hud=39', '/app-hub.js', '/search-summary.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
 const NETWORK_TIMEOUT_MS = 4_000;
 
 self.addEventListener('install', (event) => {

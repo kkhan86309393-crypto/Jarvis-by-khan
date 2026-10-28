@@ -8,9 +8,16 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('./public', import.meta.url)));
 const port = Number(process.env.PORT || 4173);
 const maxBodyBytes = 24_000;
+const maxVisionRequestBytes = 700_000;
+const maxVisionImageBytes = 500 * 1024;
+const maxVisionDimension = 1_280;
 const requestWindowMs = 60_000;
 const requestLimit = 30;
+const visionRequestLimit = 5;
+const aiRequestTimeoutMs = 45_000;
+const maxTransientRetries = 2;
 const clientRequests = new Map();
+const visionClientRequests = new Map();
 let runtimeAIConfig = null;
 let previousCpuTimes = null;
 
@@ -35,18 +42,18 @@ function getClientKey(request) {
   return request.socket.remoteAddress || 'unknown';
 }
 
-function isRateLimited(request) {
+function isRateLimited(request, limit = requestLimit, requests = clientRequests) {
   const now = Date.now();
   const clientKey = getClientKey(request);
-  const recentRequests = (clientRequests.get(clientKey) || []).filter((time) => now - time < requestWindowMs);
+  const recentRequests = (requests.get(clientKey) || []).filter((time) => now - time < requestWindowMs);
 
-  if (recentRequests.length >= requestLimit) {
-    clientRequests.set(clientKey, recentRequests);
+  if (recentRequests.length >= limit) {
+    requests.set(clientKey, recentRequests);
     return true;
   }
 
   recentRequests.push(now);
-  clientRequests.set(clientKey, recentRequests);
+  requests.set(clientKey, recentRequests);
   return false;
 }
 
@@ -72,13 +79,13 @@ function authorizeApiRequest(request, response) {
   return true;
 }
 
-async function readJson(request) {
+async function readJson(request, maxBytes = maxBodyBytes) {
   let size = 0;
   const chunks = [];
 
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > maxBodyBytes) {
+    if (size > maxBytes) {
       throw Object.assign(new Error('Request body is too large.'), { status: 413 });
     }
     chunks.push(chunk);
@@ -109,6 +116,67 @@ function validateMessages(value) {
   });
 }
 
+const jpegStartOfFrameMarkers = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7,
+  0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+]);
+
+function getJpegDimensions(bytes) {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+
+  while (offset < bytes.length - 2) {
+    if (bytes[offset] !== 0xff) return null;
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset];
+    offset += 1;
+    if (marker === 0xda || marker === 0xd9) return null;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > bytes.length) return null;
+
+    const segmentLength = bytes.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > bytes.length) return null;
+    if (jpegStartOfFrameMarkers.has(marker)) {
+      if (segmentLength < 7) return null;
+      return {
+        height: bytes.readUInt16BE(offset + 3),
+        width: bytes.readUInt16BE(offset + 5),
+      };
+    }
+    offset += segmentLength;
+  }
+  return null;
+}
+
+function validateVisionRequest(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw Object.assign(new Error('Request body must be a JSON object.'), { status: 400 });
+  }
+  const question = typeof body.question === 'string' ? body.question.trim() : '';
+  if (!question || question.length > 500) {
+    throw Object.assign(new Error('Enter a question of 1 to 500 characters about the captured screen.'), { status: 400 });
+  }
+  const match = typeof body.image === 'string'
+    ? /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/.exec(body.image)
+    : null;
+  if (!match) {
+    throw Object.assign(new Error('Vision accepts one JPEG screen capture only.'), { status: 400 });
+  }
+  const encoded = match[1];
+  const image = Buffer.from(encoded, 'base64');
+  if (!image.length || image.length > maxVisionImageBytes || image.toString('base64') !== encoded) {
+    throw Object.assign(new Error('The screen capture must be a valid JPEG no larger than 500 KB.'), { status: 400 });
+  }
+  const dimensions = getJpegDimensions(image);
+  if (!dimensions || !dimensions.width || !dimensions.height) {
+    throw Object.assign(new Error('The screen capture is not a valid JPEG image.'), { status: 400 });
+  }
+  if (Math.max(dimensions.width, dimensions.height) > maxVisionDimension) {
+    throw Object.assign(new Error('Resize the screen capture so its longest side is no more than 1280 pixels.'), { status: 400 });
+  }
+  return { question, image, imageDataUrl: body.image };
+}
+
 function getAIConfig() {
   if (runtimeAIConfig) return runtimeAIConfig;
 
@@ -125,7 +193,7 @@ function getAIConfig() {
   if (process.env.AI_API_KEY) {
     return {
       provider: 'openai-compatible',
-      model: process.env.AI_MODEL || 'gemini-3.8-flash',
+      model: process.env.AI_MODEL || 'gemini-3.5-flash-lite',
       apiKey: process.env.AI_API_KEY,
       baseUrl: process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
     };
@@ -151,6 +219,36 @@ function getOpenAIChatCompletionsUrl(baseUrl) {
   return normalizedBaseUrl.endsWith('/chat/completions')
     ? normalizedBaseUrl
     : `${normalizedBaseUrl}/chat/completions`;
+}
+
+function getRetryDelayMs(upstream, retryIndex) {
+  const retryAfter = upstream.headers.get('retry-after');
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(1_000, seconds * 1_000);
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) return Math.min(1_000, Math.max(0, retryAt - Date.now()));
+  }
+  return 250 * (2 ** retryIndex);
+}
+
+async function fetchOpenAICompatibleWithRetry(url, options, maxRetries = maxTransientRetries) {
+  const deadline = Date.now() + aiRequestTimeoutMs;
+  for (let retryIndex = 0; ; retryIndex += 1) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) throw new DOMException('Timed out', 'TimeoutError');
+    const upstream = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(remainingMs),
+    });
+    if (![500, 502, 503, 504].includes(upstream.status) || retryIndex >= maxRetries) {
+      return upstream;
+    }
+
+    await upstream.body?.cancel();
+    const delayMs = Math.min(getRetryDelayMs(upstream, retryIndex), Math.max(0, deadline - Date.now()));
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
 }
 
 function getUpstreamRequestError(error) {
@@ -323,6 +421,12 @@ async function handleChat(request, response) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw Object.assign(new Error('Request body must be a JSON object.'), { status: 400 });
   }
+  if (body.max_tokens !== undefined && (!Number.isInteger(body.max_tokens) || body.max_tokens < 1 || body.max_tokens > 256)) {
+    throw Object.assign(new Error('Chat output token limit must be an integer from 1 to 256.'), { status: 400 });
+  }
+  if (body.singleAttempt !== undefined && typeof body.singleAttempt !== 'boolean') {
+    throw Object.assign(new Error('singleAttempt must be a boolean.'), { status: 400 });
+  }
   const messages = validateMessages(body.messages);
   const language = body.language === 'hi' ? 'Hindi' : 'English';
   const modeInstruction = body.mode === 'study'
@@ -342,7 +446,12 @@ async function handleChat(request, response) {
       upstream = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model, messages: [systemMessage, ...messages], stream: false }),
+        body: JSON.stringify({
+          model,
+          messages: [systemMessage, ...messages],
+          stream: false,
+          ...(body.max_tokens ? { options: { num_predict: body.max_tokens } } : {}),
+        }),
         signal: AbortSignal.timeout(60_000),
       });
     } catch (error) {
@@ -373,18 +482,20 @@ async function handleChat(request, response) {
   if (config?.provider === 'openai-compatible') {
     let upstream;
     try {
-      upstream = await fetch(getOpenAIChatCompletionsUrl(config.baseUrl), {
+      upstream = await fetchOpenAICompatibleWithRetry(getOpenAIChatCompletionsUrl(config.baseUrl), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${config.apiKey}`,
         'content-type': 'application/json',
+        accept: 'application/json',
       },
       body: JSON.stringify({
         model: config.model,
         messages: [systemMessage, ...messages],
+        ...(body.max_tokens ? { max_tokens: body.max_tokens } : {}),
+        ...(config.baseUrl.includes('generativelanguage.googleapis.com') ? { reasoning_effort: 'low' } : {}),
       }),
-      signal: AbortSignal.timeout(120_000),
-      });
+      }, body.singleAttempt ? 0 : maxTransientRetries);
     } catch (error) {
       throw getUpstreamRequestError(error);
     }
@@ -395,13 +506,15 @@ async function handleChat(request, response) {
         ? ' Check that the API key is valid and has permission to use this model in Settings.'
         : upstream.status === 429
           ? ' Check the provider quota or rate limit, then retry.'
+          : upstream.status === 503
+            ? ' The AI provider is temporarily unavailable; try again shortly.'
           : upstream.status === 404
             ? config.baseUrl.includes('generativelanguage.googleapis.com')
               ? ' For Gemini, verify that this model is enabled for your key and keep the base URL at https://generativelanguage.googleapis.com/v1beta/openai/.'
               : ' Check the model name and provider base URL in Settings.'
             : '';
       throw Object.assign(new Error(`${providerError.message}${guidance}`), {
-        status: 502,
+        status: upstream.status === 503 ? 503 : 502,
         code: providerError.code,
         ...(providerError.diagnostics ? { diagnostics: providerError.diagnostics } : {}),
       });
@@ -416,6 +529,96 @@ async function handleChat(request, response) {
   }
 
   throw Object.assign(new Error('No AI provider is configured. Enter a provider API key in Settings or configure AI_API_KEY on the server.'), { status: 503 });
+}
+
+async function handleVision(request, response) {
+  const { question, image, imageDataUrl } = validateVisionRequest(await readJson(request, maxVisionRequestBytes));
+  const config = getAIConfig();
+  if (!config) {
+    throw Object.assign(new Error('No AI provider is configured. Configure an image-capable provider before using Vision.'), { status: 503 });
+  }
+
+  const systemMessage = {
+    role: 'system',
+    content: 'Answer the user’s question using only visible details in this single screen image. Be concise and say when text or content is unclear.',
+  };
+  let upstream;
+  let providerName = config.model;
+  try {
+    if (config.provider === 'ollama') {
+      providerName = `Ollama / ${config.model}`;
+      upstream = await fetch(`${config.baseUrl.replace(/\/+$/, '')}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [systemMessage, { role: 'user', content: question, images: [image.toString('base64')] }],
+          stream: false,
+          options: { num_predict: 256 },
+        }),
+        signal: AbortSignal.timeout(aiRequestTimeoutMs),
+      });
+    } else {
+      upstream = await fetch(getOpenAIChatCompletionsUrl(config.baseUrl), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.apiKey}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [
+            systemMessage,
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: question },
+                { type: 'image_url', image_url: { url: imageDataUrl } },
+              ],
+            },
+          ],
+          max_tokens: 256,
+          ...(config.baseUrl.includes('generativelanguage.googleapis.com') ? { reasoning_effort: 'low' } : {}),
+        }),
+        signal: AbortSignal.timeout(aiRequestTimeoutMs),
+      });
+    }
+  } catch (error) {
+    throw getUpstreamRequestError(error);
+  }
+
+  if (!upstream.ok) {
+    if (config.provider === 'ollama') {
+      throw Object.assign(new Error(`Local Ollama returned HTTP ${upstream.status}. Check that the selected model supports images.`), {
+        status: 502,
+        code: `HTTP_${upstream.status}`,
+      });
+    }
+    const providerError = await getSafeProviderError(upstream, config.apiKey);
+    const guidance = upstream.status === 429
+      ? ' Check the provider quota or rate limit, then retry manually.'
+      : upstream.status === 404
+        ? ' Check that the configured Gemini model is enabled and supports image input.'
+        : '';
+    throw Object.assign(new Error(`${providerError.message}${guidance}`), {
+      status: 502,
+      code: providerError.code,
+      ...(providerError.diagnostics ? { diagnostics: providerError.diagnostics } : {}),
+    });
+  }
+
+  const data = await readUpstreamJson(upstream, providerName);
+  const content = config.provider === 'ollama'
+    ? data.message?.content
+    : data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw Object.assign(new Error('The selected AI model returned no Vision response. Confirm that it supports image input.'), {
+      status: 502,
+      code: 'EMPTY_VISION_RESPONSE',
+    });
+  }
+  sendJson(response, 200, { reply: content.trim(), provider: providerName });
 }
 
 async function inspectOllama(config) {
@@ -656,6 +859,16 @@ export function createAppServer() {
           return;
         }
         await handleChat(request, response);
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/vision') {
+        if (!authorizeApiRequest(request, response)) return;
+        if (isRateLimited(request, visionRequestLimit, visionClientRequests)) {
+          sendJson(response, 429, { error: 'Vision is limited to five requests per minute. Wait a minute and try again.' });
+          return;
+        }
+        await handleVision(request, response);
         return;
       }
 

@@ -1,12 +1,14 @@
 import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './interface-switcher.js';
 import { detectDeviceProfile } from './device-monitor.js';
-import { applySpeechBoundaryCue, estimateAudioMouthOpening } from './avatar-cues.js';
 import { getPublicShareUrl } from './share-link.js';
 import { initializeAppHubs } from './app-hub.js';
+import { createSearchSummaryPrompt } from './search-summary.js';
 
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
 const historyLimit = 80;
+const maxVisionDimension = 1_280;
+const maxVisionImageBytes = 500 * 1024;
 const defaults = {
   language: 'en',
   voiceURI: '',
@@ -25,28 +27,13 @@ const elements = {
   send: document.querySelector('#send-button'),
   searchToggle: document.querySelector('#search-toggle'),
   mic: document.querySelector('#mic-button'),
-  stage: document.querySelector('#holo-stage'),
-  avatar: document.querySelector('#ai-avatar'),
-  avatarFrame: document.querySelector('.avatar-frame'),
-  avatarFallback: document.querySelector('#avatar-fallback'),
-  avatarCanvas: document.querySelector('#avatar-canvas'),
-  builtInAvatarButton: document.querySelector('#built-in-avatar-button'),
-  avatarModelButton: document.querySelector('#avatar-model-button'),
-  avatarModelInput: document.querySelector('#avatar-model-input'),
-  avatarModelStatus: document.querySelector('#avatar-model-status'),
-  avatarAudioSyncButton: document.querySelector('#avatar-audio-sync-button'),
-  avatarAudioSyncStatus: document.querySelector('#avatar-audio-sync-status'),
   dashboardLayout: document.querySelector('#dashboard-layout'),
   dashboardChatPanel: document.querySelector('.dashboard-chat-panel'),
   conversationView: document.querySelector('#conversation-view'),
   dashboardTranscript: document.querySelector('#dashboard-transcript'),
   dashboardFeedback: document.querySelector('#dashboard-feedback'),
   assistantState: document.querySelector('#assistant-state'),
-  presenceTitle: document.querySelector('#presence-title'),
-  presenceAiStatus: document.querySelector('#presence-ai-status'),
-  presenceMicStatus: document.querySelector('#presence-mic-status'),
-  presenceMemoryStatus: document.querySelector('#presence-memory-status'),
-  avatarExpressionReadout: document.querySelector('#avatar-expression-readout'),
+  dashboardConnection: document.querySelector('#connection-status-dashboard'),
   providerNote: document.querySelector('#provider-note'),
   connection: document.querySelector('#connection-status'),
   settings: document.querySelector('#settings-dialog'),
@@ -93,8 +80,6 @@ const elements = {
   fileInput: document.querySelector('#file-input'),
   attachButton: document.querySelector('#attach-button'),
   attachmentNote: document.querySelector('#attachment-note'),
-  briefingButton: document.querySelector('#news-button'),
-  briefingResults: document.querySelector('#briefing-results'),
   leftAiStatus: document.querySelector('#left-ai-status'),
   leftAiDetail: document.querySelector('#left-ai-detail'),
   leftSessionStatus: document.querySelector('#left-session-status'),
@@ -140,8 +125,11 @@ const elements = {
   applicationDialog: document.querySelector('#application-dialog'),
   screenCaptureDialog: document.querySelector('#screen-capture-dialog'),
   capturePreview: document.querySelector('#capture-preview'),
+  captureFramePreview: document.querySelector('#capture-frame-preview'),
   captureCanvas: document.querySelector('#capture-canvas'),
   captureFrameButton: document.querySelector('#capture-frame-button'),
+  visionQuestion: document.querySelector('#vision-question'),
+  visionSendButton: document.querySelector('#vision-send-button'),
   downloadCapture: document.querySelector('#download-capture'),
   stopCaptureButton: document.querySelector('#stop-capture-button'),
   captureStatus: document.querySelector('#capture-status'),
@@ -197,25 +185,20 @@ const state = {
   speechPlaybackId: 0,
   workspaceView: loadWorkspaceView(),
   displayStream: null,
-  audioLipSyncStream: null,
-  audioLipSyncContext: null,
-  audioLipSyncAnalyser: null,
-  audioLipSyncBuffer: null,
-  audioLipSyncTimer: null,
-  audioLipSyncStarting: false,
   focusRemaining: 25 * 60,
   focusTimerId: null,
   captureObjectUrl: null,
+  visionFrame: null,
+  visionSending: false,
+  visionAbortController: null,
+  visionCaptureSequence: 0,
   assistantMode: 'normal',
-  avatarMoodTimer: null,
   microphonePermission: 'unknown',
   lastChatFailure: null,
   aiSettingsLoaded: false,
+  aiConfigured: false,
 };
 
-let avatar3d = null;
-let avatar3dLoadPromise = null;
-let avatarModelSelectionMade = false;
 let healthRequestSequence = 0;
 
 function loadHistory() {
@@ -271,23 +254,18 @@ function syncFullAccess() {
     control.disabled = !enabled;
     control.title = enabled ? 'Run this action inside J.A.R.V.I.S.' : 'Enable Full Access to use app shortcuts';
   });
+  if (!enabled && elements.screenCaptureDialog.open) {
+    state.visionCaptureSequence += 1;
+    state.visionAbortController?.abort();
+    elements.screenCaptureDialog.close();
+  }
+  window.dispatchEvent(new Event('jarvis:full-access-change'));
 }
 
 function setAssistantState(mode, label) {
-  window.clearTimeout(state.avatarMoodTimer);
-  state.avatarMoodTimer = null;
   const supportedModes = ['normal', 'listening', 'speaking', 'thinking', 'happy', 'error', 'offline'];
   state.assistantMode = supportedModes.includes(mode) ? mode : 'normal';
-  elements.stage.classList.remove(...supportedModes.filter((item) => item !== 'normal').map((item) => `is-${item}`));
-  if (state.assistantMode !== 'normal') elements.stage.classList.add(`is-${state.assistantMode}`);
   elements.assistantState.textContent = label;
-  elements.presenceTitle.textContent = ({
-    listening: "I'm listening.",
-    thinking: 'One moment.',
-    speaking: 'Speaking.',
-    error: 'I could not complete that request.',
-    offline: 'Connection unavailable.',
-  })[state.assistantMode] || 'At your service.';
   elements.voiceConsoleStatus.textContent = label;
   renderMicrophoneStatus();
   elements.voiceOutputValue.textContent = state.assistantMode === 'speaking'
@@ -302,27 +280,6 @@ function setAssistantState(mode, label) {
     error: 'Assistant request failed',
     offline: 'Assistant connection unavailable',
   })[state.assistantMode] || 'Voice channel idle');
-  updateAvatarExpression(state.assistantMode);
-  avatar3d?.setState(state.assistantMode);
-}
-
-function updateAvatarExpression(expression) {
-  const supportedState = ['normal', 'listening', 'thinking', 'speaking', 'happy', 'error', 'offline'].includes(expression)
-    ? expression
-    : 'normal';
-  const activeState = supportedState === 'offline' ? 'error' : supportedState;
-  const stateLabel = ({
-    normal: 'IDLE',
-    listening: 'LISTENING',
-    thinking: 'THINKING',
-    speaking: 'SPEAKING',
-    happy: 'HAPPY',
-    error: 'ERROR / OFFLINE',
-  })[activeState];
-  elements.avatarExpressionReadout.textContent = stateLabel;
-  document.querySelectorAll('[data-expression]').forEach((item) => {
-    item.classList.toggle('is-current', item.dataset.expression === activeState);
-  });
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
@@ -371,6 +328,17 @@ function messageElement(message) {
         item.append(snippet);
       }
       wrapper.append(item);
+    }
+    const summaryPrompt = createSearchSummaryPrompt(message.data);
+    if (summaryPrompt) {
+      const summarize = document.createElement('button');
+      summarize.type = 'button';
+      summarize.className = 'search-summary-button';
+      summarize.textContent = 'Summarize with AI';
+      summarize.setAttribute('aria-label', 'Ask J.A.R.V.I.S. to summarize these search results');
+      summarize.disabled = state.pending;
+      summarize.addEventListener('click', () => summarizeSearchResults(message.data, summaryPrompt));
+      wrapper.append(summarize);
     }
     if (!results.length) {
       const notice = document.createElement('p');
@@ -446,8 +414,8 @@ function apiHeaders(json = false) {
   return headers;
 }
 
-async function sendChat(text, { retry = false } = {}) {
-  const context = state.messages
+async function sendChat(text, { retry = false, contextOverride = null, maxTokens = null, singleAttempt = false } = {}) {
+  const context = contextOverride || state.messages
     .filter((message) => !message.kind && ['user', 'assistant'].includes(message.role))
     .slice(-20)
     .map(({ role, content }) => ({ role, content }));
@@ -455,6 +423,7 @@ async function sendChat(text, { retry = false } = {}) {
   setDashboardChatState('thinking', 'J.A.R.V.I.S. is processing your message.');
   setAssistantState('thinking', 'PROCESSING REQUEST');
   try {
+    showFeedback('');
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: apiHeaders(true),
@@ -462,8 +431,10 @@ async function sendChat(text, { retry = false } = {}) {
         messages: context,
         language: state.preferences.language,
         mode: state.preferences.studyMode ? 'study' : 'standard',
+        ...(maxTokens ? { max_tokens: maxTokens } : {}),
+        ...(singleAttempt ? { singleAttempt: true } : {}),
       }),
-      signal: AbortSignal.timeout(125_000),
+      signal: AbortSignal.timeout(50_000),
     });
     const data = await readApiResponse(response);
     state.lastChatFailure = null;
@@ -475,15 +446,11 @@ async function sendChat(text, { retry = false } = {}) {
     elements.leftAiDetail.textContent = `Most recent successful reply came from ${data.provider}.`;
     logActivity('Assistant reply received');
     setAssistantState('happy', 'RESPONSE READY');
-    state.avatarMoodTimer = window.setTimeout(() => {
-      if (state.assistantMode === 'happy') setAssistantState('', 'SYSTEM STANDBY');
-    }, 1400);
     if (state.preferences.voiceEnabled) speak(data.reply);
   } catch (error) {
     const message = getRequestErrorMessage(error, 'AI request');
-    showFeedback(message);
-    addMessage({ role: 'assistant', content: message });
-    state.lastChatFailure = { text, message };
+    showFeedback(document.body.classList.contains('new-interface') ? '' : message);
+    state.lastChatFailure = { text, message, contextOverride, maxTokens, singleAttempt };
     setDashboardChatState('error', message, true);
     elements.leftAiStatus.textContent = 'REQUEST FAILED';
     elements.leftAiDetail.textContent = message;
@@ -494,6 +461,7 @@ async function sendChat(text, { retry = false } = {}) {
     elements.send.disabled = false;
     elements.dashboardSend.disabled = false;
     elements.dashboardRetryButton.disabled = false;
+    document.querySelectorAll('.search-summary-button').forEach((button) => { button.disabled = false; });
     if (state.assistantMode === 'thinking' && (!state.preferences.voiceEnabled || !('speechSynthesis' in window))) {
       setAssistantState('', 'SYSTEM STANDBY');
     }
@@ -513,7 +481,12 @@ function retryLastChat() {
   elements.send.disabled = true;
   elements.dashboardSend.disabled = true;
   setDashboardChatState('thinking', 'Retrying your last message.');
-  sendChat(failure.text, { retry: true });
+  sendChat(failure.text, {
+    retry: true,
+    contextOverride: failure.contextOverride,
+    maxTokens: failure.maxTokens,
+    singleAttempt: failure.singleAttempt,
+  });
 }
 
 async function searchWeb(query) {
@@ -538,8 +511,32 @@ async function searchWeb(query) {
     state.pending = false;
     elements.send.disabled = false;
     elements.dashboardSend.disabled = false;
+    document.querySelectorAll('.search-summary-button').forEach((button) => { button.disabled = false; });
     if (state.assistantMode === 'thinking') setAssistantState('', 'SYSTEM STANDBY');
   }
+}
+
+function summarizeSearchResults(data, prompt) {
+  if (state.pending) return;
+  if (!state.aiConfigured) {
+    showFeedback('AI summaries are unavailable because no AI provider is configured. Search results are still available.');
+    return;
+  }
+  if (!prompt) {
+    showFeedback('No safe source links are available to summarize.');
+    return;
+  }
+  state.pending = true;
+  elements.send.disabled = true;
+  elements.dashboardSend.disabled = true;
+  document.querySelectorAll('.search-summary-button').forEach((button) => { button.disabled = true; });
+  const query = typeof data.query === 'string' ? data.query : 'the retrieved sources';
+  addMessage({ role: 'user', content: `Summarize the retrieved search sources for: ${query}` });
+  sendChat(prompt, {
+    contextOverride: [{ role: 'user', content: prompt }],
+    maxTokens: 256,
+    singleAttempt: true,
+  });
 }
 
 function submitMessage(event) {
@@ -583,8 +580,6 @@ function selectedVoice() {
 function speak(text) {
   if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return;
   const playbackId = ++state.speechPlaybackId;
-  setAvatarMouth(0);
-  elements.stage.classList.remove('is-speech-paused');
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
@@ -596,37 +591,23 @@ function speak(text) {
     setAssistantState('speaking', 'VOICE OUTPUT');
     logActivity('Voice response started');
   };
-  utterance.onboundary = (event) => {
-    if (playbackId !== state.speechPlaybackId || (event.name && event.name !== 'word')) return;
-    applySpeechBoundaryCue(text, event, (opening, viseme) => {
-      if (state.audioLipSyncAnalyser) avatar3d?.setViseme(viseme);
-      else setAvatarMouth(opening, viseme);
-    });
-  };
   utterance.onpause = () => {
     if (playbackId !== state.speechPlaybackId) return;
-    setAvatarMouth(0);
-    elements.stage.classList.add('is-speech-paused');
     setAssistantState('', 'VOICE PAUSED');
   };
   utterance.onresume = () => {
     if (playbackId !== state.speechPlaybackId) return;
-    elements.stage.classList.remove('is-speech-paused');
     setAssistantState('speaking', 'VOICE OUTPUT');
   };
   utterance.onend = () => {
     if (playbackId !== state.speechPlaybackId) return;
     state.speechPlaybackId += 1;
-    setAvatarMouth(0);
-    elements.stage.classList.remove('is-speech-paused');
     setAssistantState('', 'SYSTEM STANDBY');
     logActivity('Voice response complete');
   };
   utterance.onerror = (event) => {
     if (playbackId !== state.speechPlaybackId) return;
     state.speechPlaybackId += 1;
-    setAvatarMouth(0);
-    elements.stage.classList.remove('is-speech-paused');
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback(event.error === 'canceled' || event.error === 'interrupted'
       ? ''
@@ -636,186 +617,16 @@ function speak(text) {
     window.speechSynthesis.speak(utterance);
   } catch {
     state.speechPlaybackId += 1;
-    setAvatarMouth(0);
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
   }
 }
 
-function setAvatarMouth(opening, viseme = 'aa') {
-  elements.avatarFrame.style.setProperty('--mouth-open', String(opening));
-  avatar3d?.setMouth(opening);
-  avatar3d?.setViseme(viseme);
-}
-
-function loadAvatarEngine() {
-  if (avatar3d) return Promise.resolve(avatar3d);
-  if (avatar3dLoadPromise) return avatar3dLoadPromise;
-  elements.avatarModelButton.disabled = true;
-  elements.builtInAvatarButton.disabled = true;
-  elements.avatarModelStatus.textContent = 'Loading the optional 3D avatar engine…';
-  avatar3dLoadPromise = (async () => {
-    try {
-      const { initializeAvatar3d } = await import('./avatar3d.bundle.js');
-      avatar3d = initializeAvatar3d({
-        frame: elements.avatarFrame,
-        canvas: elements.avatarCanvas,
-        image: elements.avatar,
-        mouthOverlay: document.querySelector('#portrait-mouth'),
-        fileInput: null,
-        status: elements.avatarModelStatus,
-      });
-      avatar3d.setState(state.assistantMode);
-      elements.avatarModelButton.textContent = 'Load a local 3D model';
-      return avatar3d;
-    } catch (error) {
-      elements.avatarModelStatus.textContent = `The optional 3D avatar engine could not load: ${error.message || 'unknown error'}. The portrait remains active.`;
-      return null;
-    } finally {
-      avatar3dLoadPromise = null;
-      elements.avatarModelButton.disabled = false;
-      elements.builtInAvatarButton.disabled = false;
-    }
-  })();
-  return avatar3dLoadPromise;
-}
-
-elements.avatarModelButton.addEventListener('click', () => elements.avatarModelInput.click());
-
-elements.avatarModelInput.addEventListener('change', async () => {
-  const [file] = elements.avatarModelInput.files || [];
-  if (!file) return;
-  avatarModelSelectionMade = true;
-  const engine = await loadAvatarEngine();
-  if (engine) await engine.loadModel(file);
-  else avatarModelSelectionMade = false;
-  elements.avatarModelInput.value = '';
-});
-
-elements.builtInAvatarButton.addEventListener('click', async () => {
-  avatarModelSelectionMade = true;
-  const engine = await loadAvatarEngine();
-  if (!engine) {
-    avatarModelSelectionMade = false;
-    return;
-  }
-  elements.builtInAvatarButton.disabled = true;
-  elements.avatarModelStatus.textContent = 'Building the holographic avatar…';
-  avatarModelSelectionMade = engine.loadBuiltInAvatar() !== false;
-  elements.builtInAvatarButton.disabled = false;
-});
-
 function stopSpeechOutput() {
   state.speechPlaybackId += 1;
   window.speechSynthesis.cancel();
-  setAvatarMouth(0);
-  elements.stage.classList.remove('is-speech-paused');
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
 }
-
-function stopAudioLipSync(message = 'Audio lip-sync is off. Browser word-boundary cues are used when available.') {
-  const stream = state.audioLipSyncStream;
-  const audioContext = state.audioLipSyncContext;
-  if (state.audioLipSyncTimer) window.clearInterval(state.audioLipSyncTimer);
-  state.audioLipSyncTimer = null;
-  state.audioLipSyncStream = null;
-  state.audioLipSyncContext = null;
-  state.audioLipSyncAnalyser = null;
-  state.audioLipSyncBuffer = null;
-  stream?.getTracks().forEach((track) => track.stop());
-  if (audioContext && audioContext.state !== 'closed') {
-    audioContext.close().catch((error) => {
-      elements.avatarAudioSyncStatus.textContent = `Audio processing could not close cleanly: ${error.message}`;
-    });
-  }
-  elements.avatarAudioSyncButton.setAttribute('aria-pressed', 'false');
-  elements.avatarAudioSyncButton.textContent = 'Sync mouth to tab audio';
-  elements.avatarAudioSyncStatus.textContent = message;
-  setAvatarMouth(0);
-}
-
-async function toggleAudioLipSync() {
-  if (state.audioLipSyncStream) {
-    stopAudioLipSync();
-    return;
-  }
-  if (state.displayStream) {
-    elements.avatarAudioSyncStatus.textContent = 'Stop the current screen-capture session before enabling audio lip-sync.';
-    return;
-  }
-  if (state.audioLipSyncStarting) return;
-  if (!navigator.mediaDevices?.getDisplayMedia || !window.AudioContext) {
-    elements.avatarAudioSyncStatus.textContent = 'Tab-audio capture is unavailable in this browser. Word-boundary cues remain available when provided by the voice.';
-    return;
-  }
-
-  elements.avatarAudioSyncButton.disabled = true;
-  state.audioLipSyncStarting = true;
-  elements.avatarAudioSyncStatus.textContent = 'Choose this J.A.R.V.I.S. browser tab and enable its audio in the browser sharing prompt.';
-  let stream;
-  let audioContext;
-  try {
-    stream = await navigator.mediaDevices.getDisplayMedia({
-      audio: true,
-      video: true,
-      preferCurrentTab: true,
-    });
-    const [audioTrack] = stream.getAudioTracks();
-    if (!audioTrack) {
-      throw new Error('No tab-audio track was shared. Choose this browser tab and enable Share tab audio.');
-    }
-
-    audioContext = new window.AudioContext();
-    await audioContext.resume();
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.58;
-    audioContext.createMediaStreamSource(stream).connect(analyser);
-    stream.getVideoTracks().forEach((track) => track.stop());
-
-    state.audioLipSyncStream = stream;
-    state.audioLipSyncContext = audioContext;
-    state.audioLipSyncAnalyser = analyser;
-    state.audioLipSyncBuffer = new Float32Array(analyser.fftSize);
-    state.audioLipSyncTimer = window.setInterval(() => {
-      if (!state.audioLipSyncAnalyser || state.assistantMode !== 'speaking') {
-        setAvatarMouth(0);
-        return;
-      }
-      state.audioLipSyncAnalyser.getFloatTimeDomainData(state.audioLipSyncBuffer);
-      setAvatarMouth(estimateAudioMouthOpening(state.audioLipSyncBuffer));
-    }, 30);
-    audioTrack.addEventListener('ended', () => {
-      if (state.audioLipSyncStream === stream) {
-        stopAudioLipSync('Shared-tab audio ended. Word-boundary cues are used again when available.');
-      }
-    }, { once: true });
-    elements.avatarAudioSyncButton.textContent = 'Stop audio lip-sync';
-    elements.avatarAudioSyncButton.setAttribute('aria-pressed', 'true');
-    elements.avatarAudioSyncStatus.textContent = 'Using live tab-audio amplitude locally while J.A.R.V.I.S. speaks. This controls mouth opening, not phoneme timing.';
-  } catch (error) {
-    stream?.getTracks().forEach((track) => track.stop());
-    if (audioContext && audioContext.state !== 'closed') {
-      await audioContext.close().catch((closeError) => {
-        elements.avatarAudioSyncStatus.textContent = `Audio processing could not close cleanly: ${closeError.message}`;
-      });
-    }
-    if (!elements.avatarAudioSyncStatus.textContent.startsWith('Audio processing could not close cleanly:')) {
-      elements.avatarAudioSyncStatus.textContent = error.name === 'NotAllowedError'
-        ? 'Audio sharing was cancelled or denied. No audio was captured.'
-        : error.message || 'Tab audio could not be connected.';
-    }
-  } finally {
-    state.audioLipSyncStarting = false;
-    elements.avatarAudioSyncButton.disabled = false;
-  }
-}
-
-elements.avatarAudioSyncButton.addEventListener('click', toggleAudioLipSync);
-elements.avatar.addEventListener('error', () => {
-  elements.avatar.classList.add('is-unavailable');
-  elements.avatarFallback.hidden = false;
-});
 
 function updateVoiceList() {
   if (!('speechSynthesis' in window)) {
@@ -910,11 +721,7 @@ function syncSettings() {
   elements.voiceEnabled.checked = state.preferences.voiceEnabled;
   elements.memoryEnabled.checked = state.preferences.memoryEnabled;
   elements.leftMemoryStatus.textContent = state.preferences.memoryEnabled ? 'LOCAL' : 'OFF';
-  elements.presenceMemoryStatus.textContent = state.preferences.memoryEnabled ? 'MEMORY LOCAL' : 'MEMORY OFF';
   elements.leftMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition ? 'AVAILABLE' : 'UNSUPPORTED';
-  elements.presenceMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition
-    ? 'MIC AVAILABLE'
-    : 'MIC UNSUPPORTED';
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
   elements.leftModeStatus.textContent = state.preferences.studyMode ? 'STUDY' : 'STANDARD';
   elements.studyIndicator.textContent = state.preferences.studyMode ? 'ON' : 'OFF';
@@ -939,8 +746,8 @@ async function checkServer() {
     elements.backendConnectionValue.textContent = 'Offline';
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'OFFLINE';
+    elements.dashboardConnection.textContent = 'OFFLINE';
     elements.leftAiStatus.textContent = 'OFFLINE';
-    elements.presenceAiStatus.textContent = 'AI OFFLINE';
     elements.leftAiDetail.textContent = 'The server cannot be reached while this device is offline.';
     elements.leftSessionStatus.textContent = 'OFFLINE';
     return;
@@ -952,13 +759,14 @@ async function checkServer() {
     });
     const data = await readApiResponse(response);
     if (requestSequence !== healthRequestSequence) return;
+    state.aiConfigured = data.aiConfigured === true;
     state.accessRequired = data.accessRequired === true;
     const ollamaSelected = data.provider === 'ollama';
     const aiReady = data.aiConfigured && (!ollamaSelected || data.aiAvailable);
     if (!state.aiSettingsLoaded) {
       state.aiSettingsLoaded = true;
       elements.aiProvider.value = data.provider || 'openai-compatible';
-      elements.aiModel.value = data.model || (ollamaSelected ? 'qwen2.5:3b' : 'gemini-3.8-flash');
+      elements.aiModel.value = data.model || (ollamaSelected ? 'qwen2.5:3b' : 'gemini-3.5-flash-lite');
       if (data.baseUrl) elements.aiBaseUrl.value = data.baseUrl;
       updateAIProviderFields();
     }
@@ -970,6 +778,7 @@ async function checkServer() {
       ? ollamaSelected ? 'OLLAMA READY' : 'AI CONFIGURED'
       : ollamaSelected && !data.ollamaAvailable ? 'OLLAMA OFFLINE'
         : ollamaSelected ? 'MODEL MISSING' : 'NO AI MODEL';
+    elements.dashboardConnection.textContent = aiReady ? 'CONNECTED' : 'SETUP REQUIRED';
     elements.providerNote.textContent = !data.aiConfigured
       ? 'No AI provider is configured. Open Settings → AI provider to select a model and configure Ollama or an OpenAI-compatible provider.'
       : ollamaSelected && !data.ollamaAvailable
@@ -992,13 +801,6 @@ async function checkServer() {
     elements.leftAiStatus.textContent = ollamaSelected
       ? data.aiAvailable ? 'OLLAMA READY' : data.ollamaAvailable ? 'MODEL MISSING' : 'OLLAMA OFFLINE'
       : data.aiConfigured ? 'PROVIDER SET' : 'NO MODEL';
-    elements.presenceAiStatus.textContent = data.aiConfigured
-      ? `${data.provider === 'ollama' ? 'OLLAMA' : 'AI'} ${data.aiAvailable ? 'READY' : 'SET'}`
-      : 'AI NOT SET';
-    elements.presenceMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition
-      ? 'MIC AVAILABLE'
-      : 'MIC UNSUPPORTED';
-    elements.presenceMemoryStatus.textContent = state.preferences.memoryEnabled ? 'MEMORY LOCAL' : 'MEMORY OFF';
     elements.leftAiDetail.textContent = ollamaSelected
       ? data.aiAvailable ? `${data.model} is available on this server.` : data.ollamaAvailable ? `${data.model} is not installed.` : 'Ollama is not reachable from this server.'
       : data.aiConfigured ? 'Provider is configured. Availability is confirmed when you send a message.' : 'Open Settings to configure an AI provider and model.';
@@ -1010,10 +812,10 @@ async function checkServer() {
     if (requestSequence !== healthRequestSequence) return;
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'SERVER OFFLINE';
+    elements.dashboardConnection.textContent = 'SERVER OFFLINE';
     elements.providerNote.textContent = 'The app server is not responding. Chat and web search require a connection to this server.';
     elements.modelValue.textContent = 'Unavailable';
     elements.leftAiStatus.textContent = 'UNAVAILABLE';
-    elements.presenceAiStatus.textContent = 'AI UNAVAILABLE';
     elements.leftAiDetail.textContent = 'The J.A.R.V.I.S. server did not respond.';
     elements.leftSessionStatus.textContent = 'OFFLINE';
     elements.backendConnectionValue.textContent = 'Unavailable';
@@ -1355,29 +1157,39 @@ function toggleFocusTimer() {
   }, 1000);
 }
 
-async function startScreenCapture() {
-  if (state.audioLipSyncStream || state.audioLipSyncStarting) {
-    elements.captureStatus.textContent = 'Stop audio lip-sync before starting screen capture.';
-    return;
-  }
+async function startScreenCapture(captureSequence) {
   if (!navigator.mediaDevices?.getDisplayMedia) {
     elements.captureStatus.textContent = 'Screen capture is not supported in this browser.';
+    elements.captureFrameButton.textContent = 'Screen capture unavailable';
     return;
   }
+  elements.captureFrameButton.disabled = true;
+  elements.captureFrameButton.textContent = 'Waiting for screen permission';
   elements.captureStatus.textContent = 'Choose a screen or window in the browser permission picker.';
   try {
-    state.displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    if (captureSequence !== state.visionCaptureSequence
+      || !elements.screenCaptureDialog.open
+      || !state.preferences.fullAccessEnabled) {
+      displayStream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    state.displayStream = displayStream;
     elements.capturePreview.srcObject = state.displayStream;
     elements.capturePreview.hidden = false;
     elements.captureFrameButton.disabled = false;
+    elements.captureFrameButton.textContent = 'Capture one frame';
     elements.stopCaptureButton.disabled = false;
     elements.captureStatus.textContent = 'Screen sharing is active only while the browser indicator is visible.';
     state.displayStream.getVideoTracks()[0]?.addEventListener('ended', stopScreenCapture, { once: true });
     logActivity('Screen sharing approved by user');
   } catch (error) {
+    if (captureSequence !== state.visionCaptureSequence || !elements.screenCaptureDialog.open) return;
     elements.captureStatus.textContent = error.name === 'NotAllowedError'
       ? 'Screen capture was cancelled or denied.'
       : `Screen capture unavailable: ${error.message}`;
+    elements.captureFrameButton.disabled = false;
+    elements.captureFrameButton.textContent = 'Choose screen again';
   }
 }
 
@@ -1386,33 +1198,166 @@ function stopScreenCapture() {
   state.displayStream = null;
   elements.capturePreview.srcObject = null;
   elements.capturePreview.hidden = true;
-  elements.captureFrameButton.disabled = true;
-  elements.stopCaptureButton.disabled = true;
+  elements.captureFrameButton.disabled = false;
+  elements.captureFrameButton.textContent = 'Choose screen again';
   elements.captureStatus.textContent = 'Screen sharing stopped.';
 }
 
-function captureScreenFrame() {
+function updateVisionSendButton() {
+  elements.visionSendButton.disabled = !state.visionFrame
+    || state.visionSending
+    || !elements.visionQuestion.value.trim();
+}
+
+function clearVisionFrame() {
+  state.visionFrame = null;
+  if (state.captureObjectUrl) URL.revokeObjectURL(state.captureObjectUrl);
+  state.captureObjectUrl = null;
+  elements.captureFramePreview.removeAttribute('src');
+  elements.captureFramePreview.hidden = true;
+  elements.downloadCapture.removeAttribute('href');
+  elements.downloadCapture.hidden = true;
+  elements.visionQuestion.value = '';
+  elements.visionQuestion.disabled = true;
+  updateVisionSendButton();
+}
+
+function openVisionDialog() {
+  if (!state.preferences.fullAccessEnabled) return;
+  if (elements.applicationDialog.open) elements.applicationDialog.close();
+  const captureSequence = ++state.visionCaptureSequence;
+  clearVisionFrame();
+  elements.captureFrameButton.disabled = true;
+  elements.stopCaptureButton.disabled = false;
+  elements.captureStatus.textContent = '';
+  elements.screenCaptureDialog.showModal();
+  startScreenCapture(captureSequence);
+}
+
+function emergencyStopVision() {
+  state.visionCaptureSequence += 1;
+  state.visionAbortController?.abort();
+  stopScreenCapture();
+  clearVisionFrame();
+  elements.stopCaptureButton.disabled = true;
+  elements.captureFrameButton.disabled = false;
+  elements.captureFrameButton.textContent = 'Choose screen again';
+  elements.captureStatus.textContent = 'Emergency Stop: screen sharing stopped, pending request cancelled, and local preview cleared.';
+}
+
+function canvasToJpeg(canvas, quality) {
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+}
+
+async function createVisionFrame(video, canvas) {
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  const scale = Math.min(1, maxVisionDimension / Math.max(sourceWidth, sourceHeight));
+  let width = Math.max(1, Math.round(sourceWidth * scale));
+  let height = Math.max(1, Math.round(sourceHeight * scale));
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) throw new Error('Screen capture is unavailable in this browser.');
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+    const blob = await canvasToJpeg(canvas, Math.max(.48, .82 - attempt * .05));
+    if (blob?.type === 'image/jpeg' && blob.size <= maxVisionImageBytes) {
+      return { blob, width, height };
+    }
+    if (!blob) throw new Error('The browser could not encode this screen frame.');
+    const nextScale = Math.min(.82, Math.sqrt(maxVisionImageBytes / blob.size) * .9);
+    width = Math.max(1, Math.floor(width * nextScale));
+    height = Math.max(1, Math.floor(height * nextScale));
+  }
+  throw new Error('Could not compress this screen frame below 500 KB.');
+}
+
+function readBlobAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(reader.result), { once: true });
+    reader.addEventListener('error', () => reject(new Error('The screen frame could not be prepared for sending.')), { once: true });
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function captureScreenFrame() {
   const video = elements.capturePreview;
-  if (!state.displayStream || !video.videoWidth || !video.videoHeight) {
+  if (!state.displayStream || !video.videoWidth || !video.videoHeight || state.visionFrame) {
     elements.captureStatus.textContent = 'No active screen stream is available.';
     return;
   }
-  const canvas = elements.captureCanvas;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-  canvas.toBlob((blob) => {
-    if (!blob) {
-      elements.captureStatus.textContent = 'The browser could not encode this screen frame.';
-      return;
-    }
-    if (state.captureObjectUrl) URL.revokeObjectURL(state.captureObjectUrl);
-    state.captureObjectUrl = URL.createObjectURL(blob);
+  elements.captureFrameButton.disabled = true;
+  elements.captureStatus.textContent = 'Preparing one local preview. It will not be sent until you choose Send.';
+  try {
+    const frame = await createVisionFrame(video, elements.captureCanvas);
+    state.visionFrame = frame.blob;
+    state.captureObjectUrl = URL.createObjectURL(frame.blob);
+    elements.captureFramePreview.src = state.captureObjectUrl;
+    elements.captureFramePreview.hidden = false;
     elements.downloadCapture.href = state.captureObjectUrl;
     elements.downloadCapture.hidden = false;
-    elements.captureStatus.textContent = 'Frame captured locally. Use Download capture to save it.';
-    logActivity('Screen frame captured locally');
-  }, 'image/png');
+    elements.visionQuestion.disabled = false;
+    stopScreenCapture();
+    elements.captureFrameButton.disabled = true;
+    elements.captureStatus.textContent = `Local preview ready: ${frame.width} × ${frame.height}, ${Math.ceil(frame.blob.size / 1024)} KB. Nothing has been sent.`;
+    elements.visionQuestion.focus();
+    logActivity('One screen frame captured locally');
+    updateVisionSendButton();
+  } catch (error) {
+    elements.captureStatus.textContent = error.message;
+    elements.captureFrameButton.disabled = !state.displayStream;
+  }
+}
+
+async function sendVisionFrame() {
+  if (!state.preferences.fullAccessEnabled) {
+    emergencyStopVision();
+    return;
+  }
+  if (!state.visionFrame || state.visionSending) return;
+  const question = elements.visionQuestion.value.trim();
+  if (!question || question.length > 500) {
+    elements.captureStatus.textContent = 'Enter a question of 1 to 500 characters before sending this frame.';
+    return;
+  }
+
+  state.visionSending = true;
+  const requestSequence = state.visionCaptureSequence;
+  const controller = new AbortController();
+  state.visionAbortController = controller;
+  const timeoutId = window.setTimeout(() => controller.abort(), 50_000);
+  updateVisionSendButton();
+  elements.captureStatus.textContent = 'Sending this one frame to J.A.R.V.I.S. for analysis...';
+  try {
+    const image = await readBlobAsDataUrl(state.visionFrame);
+    const response = await fetch('/api/vision', {
+      method: 'POST',
+      headers: apiHeaders(true),
+      body: JSON.stringify({ question, image }),
+      signal: controller.signal,
+    });
+    const data = await readApiResponse(response);
+    addMessage({ role: 'user', content: `[Screen Vision] ${question}` });
+    addMessage({ role: 'assistant', content: data.reply });
+    logActivity('One screen frame analyzed by J.A.R.V.I.S.');
+    elements.captureStatus.textContent = `Analysis complete via ${data.provider}.`;
+    elements.screenCaptureDialog.close();
+  } catch (error) {
+    if (elements.screenCaptureDialog.open && requestSequence === state.visionCaptureSequence) {
+      clearVisionFrame();
+      elements.captureFrameButton.disabled = false;
+      elements.captureFrameButton.textContent = 'Choose screen again';
+      elements.captureStatus.textContent = getRequestErrorMessage(error, 'Vision request');
+    }
+  } finally {
+    window.clearTimeout(timeoutId);
+    if (state.visionAbortController === controller) state.visionAbortController = null;
+    state.visionSending = false;
+    updateVisionSendButton();
+  }
 }
 
 function handleNavigation(event) {
@@ -1458,11 +1403,6 @@ function handleNavigation(event) {
     setWorkspaceView('dashboard');
     if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-system-open');
     document.querySelector('#system-title').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } else if (destination === 'news') {
-    setWorkspaceView('dashboard');
-    if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-news-open');
-    if (!elements.briefingResults.childElementCount) loadBriefing();
-    document.querySelector('#briefing-title').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } else if (destination === 'settings') {
     selectNavigation(destination);
     openSettings();
@@ -1475,9 +1415,9 @@ function handleNavigation(event) {
 }
 
 function handleDashboardFeature(event) {
-  const button = event.target.closest('[data-dashboard-feature], [data-avatar-feature]');
+  const button = event.target.closest('[data-dashboard-feature]');
   if (!button) return;
-  const destination = button.dataset.dashboardFeature || button.dataset.avatarFeature;
+  const destination = button.dataset.dashboardFeature;
   if (destination === 'chat') {
     elements.dashboardMessage.focus();
     document.querySelector('#dashboard-chat-title').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1496,53 +1436,6 @@ function handleDashboardFeature(event) {
   } else if (destination === 'more') {
     elements.moreNavigationDialog.showModal();
   }
-}
-
-async function loadBriefing() {
-  elements.briefingButton.disabled = true;
-  elements.briefingResults.replaceChildren();
-  const status = document.createElement('p');
-  status.textContent = 'Searching available web sources...';
-  elements.briefingResults.append(status);
-  try {
-    const query = state.preferences.language === 'hi' ? 'प्रौद्योगिकी समाचार' : 'latest technology news';
-    const params = new URLSearchParams({ q: query, lang: state.preferences.language });
-    const response = await fetch(`/api/search?${params}`, {
-      headers: apiHeaders(),
-      signal: AbortSignal.timeout(18_000),
-    });
-    const data = await readApiResponse(response);
-    elements.briefingResults.replaceChildren();
-    if (!data.results.length) {
-      const notice = document.createElement('p');
-      notice.textContent = data.notice || 'No source-backed headlines were returned.';
-      elements.briefingResults.append(notice);
-    }
-    for (const result of data.results.slice(0, 3)) {
-      const link = document.createElement('a');
-      link.href = result.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = result.title;
-      elements.briefingResults.append(link);
-      const snippet = document.createElement('p');
-      snippet.textContent = result.snippet;
-      elements.briefingResults.append(snippet);
-    }
-    logActivity(`Briefing retrieved: ${data.results.length} source${data.results.length === 1 ? '' : 's'}`);
-  } catch (error) {
-    elements.briefingResults.replaceChildren();
-    const notice = document.createElement('p');
-    notice.textContent = error.message;
-    elements.briefingResults.append(notice);
-    logActivity('Briefing unavailable');
-  } finally {
-    elements.briefingButton.disabled = false;
-  }
-}
-
-function updateClock() {
-  document.querySelector('#clock').textContent = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date());
 }
 
 document.querySelector('#settings-button').addEventListener('click', () => elements.settings.showModal());
@@ -1612,8 +1505,6 @@ document.querySelector('#more-tools-button').addEventListener('click', () => {
 });
 document.querySelectorAll('.primary-nav, .mobile-nav, .feature-toolbar, .right-rail').forEach((nav) => nav.addEventListener('click', handleNavigation));
 document.querySelector('.new-feature-bar').addEventListener('click', handleDashboardFeature);
-document.querySelector('.avatar-shortcuts-left').addEventListener('click', handleDashboardFeature);
-document.querySelector('.avatar-shortcuts-right').addEventListener('click', handleDashboardFeature);
 elements.moreNavigationDialog.addEventListener('click', handleNavigation);
 document.querySelector('#clear-button').addEventListener('click', () => {
   state.messages = [];
@@ -1660,17 +1551,28 @@ document.querySelector('#history-open-chat').addEventListener('click', () => {
   setWorkspaceView('chat');
   elements.message.focus();
 });
-document.querySelector('[data-quick-action="capture"]').addEventListener('click', () => {
+document.querySelectorAll('[data-quick-action="capture"]').forEach((button) => button.addEventListener('click', () => {
+  openVisionDialog();
+}));
+elements.captureFrameButton.addEventListener('click', () => {
+  if (state.displayStream) {
+    captureScreenFrame();
+    return;
+  }
   if (!state.preferences.fullAccessEnabled) return;
-  elements.captureStatus.textContent = '';
-  elements.downloadCapture.hidden = true;
-  elements.screenCaptureDialog.showModal();
-  startScreenCapture();
+  const captureSequence = ++state.visionCaptureSequence;
+  startScreenCapture(captureSequence);
 });
-elements.captureFrameButton.addEventListener('click', captureScreenFrame);
-elements.stopCaptureButton.addEventListener('click', stopScreenCapture);
+elements.visionQuestion.addEventListener('input', updateVisionSendButton);
+elements.visionSendButton.addEventListener('click', sendVisionFrame);
+elements.stopCaptureButton.addEventListener('click', emergencyStopVision);
 elements.screenCaptureDialog.addEventListener('close', () => {
+  state.visionCaptureSequence += 1;
   if (state.displayStream) stopScreenCapture();
+  elements.stopCaptureButton.disabled = true;
+  state.visionAbortController?.abort();
+  clearVisionFrame();
+  elements.captureStatus.textContent = '';
 });
 elements.focusTimerButton.addEventListener('click', toggleFocusTimer);
 document.querySelector('[data-quick-action="files"]').addEventListener('click', () => {
@@ -1733,7 +1635,6 @@ elements.fullAccessMobile.addEventListener('change', () => {
   elements.fullAccess.checked = elements.fullAccessMobile.checked;
   elements.fullAccess.dispatchEvent(new Event('change', { bubbles: true }));
 });
-elements.briefingButton.addEventListener('click', loadBriefing);
 document.querySelectorAll('[data-quick-action]').forEach((button) => button.addEventListener('click', () => {
   if (button.dataset.quickAction === 'chat') {
     setWorkspaceView('chat');
@@ -1765,7 +1666,7 @@ elements.accessToken.addEventListener('input', () => {
   state.accessToken = elements.accessToken.value.trim();
 });
 elements.aiProvider.addEventListener('change', () => {
-  elements.aiModel.value = elements.aiProvider.value === 'ollama' ? 'qwen2.5:3b' : 'gemini-3.8-flash';
+  elements.aiModel.value = elements.aiProvider.value === 'ollama' ? 'qwen2.5:3b' : 'gemini-3.5-flash-lite';
   elements.aiApiKey.value = '';
   updateAIProviderFields();
 });
@@ -1874,12 +1775,14 @@ elements.install.addEventListener('click', async () => {
 state.messages = loadHistory();
 syncSettings();
 renderMessages();
-initializeAppHubs({ onActivity: logActivity });
+initializeAppHubs({
+  onActivity: logActivity,
+  onOpenVision: openVisionDialog,
+  canLaunchIntent: () => state.preferences.fullAccessEnabled,
+});
 updateSearchMode();
 setWorkspaceView(state.workspaceView, { remember: false });
 initializeDeviceMonitor();
-updateClock();
-window.setInterval(updateClock, 30_000);
 window.setInterval(loadSystemMetrics, 30_000);
 checkServer();
 logActivity('Interface initialized');
@@ -1887,7 +1790,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=37', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=41', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

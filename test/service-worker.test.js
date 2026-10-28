@@ -69,16 +69,19 @@ async function dispatchFetch(worker, request) {
   return responsePromise;
 }
 
-test('installs the lightweight app shell without the optional untracked avatar asset', async () => {
+test('installs the lightweight app shell without avatar assets', async () => {
   const worker = createWorker();
   let installation;
   worker.listeners.get('install')({ waitUntil: (promise) => { installation = promise; } });
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=35'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=39'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/app-hub.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/search-summary.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/manifest.webmanifest'));
+  assert.equal(worker.storedResponses.has('https://jarvis.test/avatar-cues.js'), false);
+  assert.equal(worker.storedResponses.has('https://jarvis.test/ai-avatar.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/reference-face.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js'), false);
 });

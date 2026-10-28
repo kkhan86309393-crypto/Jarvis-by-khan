@@ -19,6 +19,17 @@ for (const key of ['AI_API_KEY', 'AI_BASE_URL', 'AI_MODEL', 'AI_PROVIDER', 'OLLA
 const server = createAppServer();
 let baseUrl;
 
+function makeVisionJpeg(width = 1_280, height = 720) {
+  return Buffer.from([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, 0x11,
+    0x08, (height >> 8) & 0xff, height & 0xff,
+    (width >> 8) & 0xff, width & 0xff,
+    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
+    0xff, 0xd9,
+  ]);
+}
+
 before(async () => {
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -85,7 +96,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const html = await (await fetch(baseUrl)).text();
   const client = await (await fetch(`${baseUrl}/app.js`)).text();
   const appHub = await (await fetch(`${baseUrl}/app-hub.js`)).text();
-  const avatarRuntime = await (await fetch(`${baseUrl}/avatar3d.bundle.js`)).text();
+  const searchSummary = await (await fetch(`${baseUrl}/search-summary.js`)).text();
   const interfaceSwitcher = await (await fetch(`${baseUrl}/interface-switcher.js`)).text();
   const deviceMonitor = await (await fetch(`${baseUrl}/device-monitor.js`)).text();
   const shareLink = await (await fetch(`${baseUrl}/share-link.js`)).text();
@@ -96,38 +107,30 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const styles = await (await fetch(`${baseUrl}/styles.css`)).text();
   assert.match(client, /^import \{/);
   assert.match(client, /initializeAppHubs/);
+  assert.match(client, /initializeAppHubs\(\{\s*onActivity: logActivity,\s*onOpenVision: openVisionDialog,\s*canLaunchIntent: \(\) => state\.preferences\.fullAccessEnabled,\s*\}\)/);
   assert.match(client, /from '\.\/app-hub\.js'/);
   assert.match(appHub, /jarvis\.app-hub\.v1/);
   assert.match(appHub, /function renderShortcuts/);
+  assert.match(client, /from '\.\/search-summary\.js'/);
+  assert.match(searchSummary, /createSearchSummaryPrompt/);
+  assert.match(client, /Summarize with AI/);
+  assert.match(client, /AI summaries are unavailable because no AI provider is configured/);
+  assert.match(client, /contextOverride: \[\{ role: 'user', content: prompt \}\]/);
+  const searchHandler = client.slice(client.indexOf('async function searchWeb'), client.indexOf('function summarizeSearchResults'));
+  assert.doesNotMatch(searchHandler, /\/api\/chat|summarizeSearchResults/);
   assert.match(client, /cache: 'no-store'/);
   assert.match(client, /requestSequence !== healthRequestSequence/);
-  assert.match(client, /import\('\.\/avatar3d\.bundle\.js'\)/);
   assert.doesNotMatch(client, /from '\.\/avatar3d\.bundle\.js'/);
   assert.doesNotMatch(worker, /avatar3d\.bundle\.js/);
-  assert.match(worker, /avatar-cues\.js/);
+  assert.doesNotMatch(worker, /avatar-cues\.js/);
   const selectedIds = [...client.matchAll(/querySelector\('#([\w-]+)'\)/g)].map((match) => match[1]);
   const missingIds = [...new Set(selectedIds)].filter((id) => !html.includes(`id="${id}"`));
   assert.deepEqual(missingIds, []);
-  assert.match(html, /id="ai-avatar"/);
-  assert.match(html, /class="ai-avatar is-normal" id="ai-avatar"/);
-  assert.match(html, /id="portrait-mouth"/);
-  assert.match(html, /id="avatar-model-button"/);
-  assert.match(html, /id="built-in-avatar-button">Activate stylized 3D avatar</);
-  assert.match(html, /class="portrait-blink portrait-blink-left"/);
-  assert.match(html, /class="portrait-blink portrait-blink-right"/);
-  assert.match(html, /The photographic face stays active by default/);
-  assert.match(html, /id="avatar-canvas"/);
-  assert.match(avatarRuntime, /This model has no recognized mouth-open or speech viseme morph/);
-  assert.match(avatarRuntime, /webglcontextlost/);
-  assert.match(avatarRuntime, /Stylized 3D avatar ready/);
-  assert.match(client, /utterance\.onboundary/);
+  assert.doesNotMatch(html, /ai-avatar|avatar-model|portrait-mouth|avatar-canvas|holo-stage|avatar-shortcuts/i);
+  assert.doesNotMatch(html, /News & briefing|news-button|briefing-panel|briefing-results/i);
+  assert.doesNotMatch(client, /avatar3d|setAvatarMouth|toggleAudioLipSync/);
   assert.match(client, /utterance\.onpause/);
   assert.match(client, /utterance\.onresume/);
-  assert.match(client, /function setAvatarMouth\(opening, viseme/);
-  assert.match(client, /avatar3d\?\.setViseme\(viseme\)/);
-  assert.match(avatarRuntime, /Script=Latin/);
-  assert.match(html, /id="hud-build-tag">J\.A\.R\.V\.I\.S\. · HOLOGRAPHIC CORE</);
-  assert.match(html, /<img class="ai-avatar is-normal" id="ai-avatar" src="\/ai-avatar\.jpg"/);
   assert.match(html, /id="full-access-toggle"/);
   assert.match(html, /id="full-access-mobile-toggle"/);
   assert.match(html, /class="mobile-nav"/);
@@ -139,11 +142,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="new-interface-button"[^>]*>New Interface</);
   assert.match(html, /id="old-interface-button"[^>]*>Old Interface</);
   assert.match(html, /id="dashboard-transcript"/);
-  assert.match(html, /class="left-rail"/);
   assert.match(html, /class="right-rail"/);
-  assert.match(html, /id="dashboard-chat-title">AI Chat/);
+  assert.match(html, /id="dashboard-chat-title">Command channel/);
   assert.match(html, /id="dashboard-voice-title">Voice Assistant/);
-  assert.match(html, /id="expression-title">Live status/);
+  assert.match(html, /id="activity-panel"/);
+  assert.equal([...html.matchAll(/dashboard-chat-panel/g)].length, 1);
   assert.match(html, /id="voice-waveform"/);
   assert.match(html, /id="cpu-meter-track"/);
   assert.match(html, /id="ram-meter-track"/);
@@ -155,13 +158,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="backend-connection-value"/);
   assert.match(html, /data-device-group="desktop"/);
   assert.match(html, /data-device-group="mobile"/);
-  assert.match(html, /class="new-feature-bar"/);
-  for (const feature of ['chat', 'files', 'browser', 'voice', 'system', 'settings']) {
-    assert.match(html, new RegExp(`data-avatar-feature="${feature}"`));
-  }
-  for (const feature of ['chat', 'voice', 'files', 'browser', 'system', 'more']) {
-    assert.match(html, new RegExp(`data-dashboard-feature="${feature}"`));
-  }
+  assert.doesNotMatch(html, /class="new-feature-bar"|data-avatar-feature=|data-dashboard-feature=/);
   assert.match(html, /class="feature-toolbar"/);
   const featureToolbar = html.match(/<nav class="feature-toolbar"[\s\S]*?<\/nav>/)?.[0] || '';
   assert.equal([...featureToolbar.matchAll(/<svg\b/g)].length, 7);
@@ -169,25 +166,42 @@ test('provides every client-selected element and the avatar/mobile controls', as
     'Chat', 'Voice', 'Files', 'Applications', 'System', 'Memory', 'Settings',
   ]);
   assert.doesNotMatch(featureToolbar, /toolbar-icon">/);
-  assert.match(html, /id="presence-ai-status"/);
-  assert.match(html, /id="presence-mic-status"/);
-  assert.match(html, /id="presence-memory-status"/);
-  for (const status of ['normal', 'listening', 'thinking', 'speaking', 'error']) {
-    assert.match(html, new RegExp(`data-expression="${status}"`));
-  }
+  assert.match(html, /id="left-ai-status"/);
+  assert.match(html, /id="left-mic-status"/);
+  assert.match(html, /id="left-memory-status"/);
   assert.doesNotMatch(html, /Image AI|image-generation|generate-image-button|image-prompt-input/i);
   assert.equal([...html.matchAll(/data-app-hub/g)].length, 2);
+  assert.equal([...html.matchAll(/data-hub-action="vision" data-requires-full-access/g)].length, 2);
+  assert.equal([...html.matchAll(/data-hub-action="vision"/g)].length, 2);
+  assert.equal([...html.matchAll(/id="screen-capture-dialog"/g)].length, 1);
   assert.match(html, /JARVIS APP HUB/);
   assert.match(html, /data-hub-search/);
   assert.match(html, /data-hub-apps/);
   assert.match(html, /data-hub-runner/);
   assert.match(html, /data-hub-field="icon"[^>]*accept="image\/png,image\/jpeg,image\/webp"/);
+  assert.equal([...html.matchAll(/data-quick-action="capture"/g)].length, 2);
+  assert.match(html, /id="capture-frame-preview"[^>]*hidden/);
+  assert.match(html, /id="vision-send-button"[^>]*disabled/);
+  assert.match(html, /id="stop-capture-button"[^>]*>Emergency Stop/);
+  assert.match(html, /id="vision-question"[^>]*maxlength="500"[^>]*disabled/);
+  assert.match(client, /document\.querySelectorAll\('\[data-quick-action="capture"\]'\)/);
+  assert.match(client, /elements\.visionSendButton\.addEventListener\('click', sendVisionFrame\)/);
+  assert.match(client, /fetch\('\/api\/vision'/);
+  assert.match(client, /elements\.visionQuestion\.disabled = false/);
+  assert.match(client, /function emergencyStopVision\(\)/);
+  assert.match(client, /state\.visionAbortController\?\.abort\(\)/);
+  assert.match(client, /if \(!state\.preferences\.fullAccessEnabled\) \{\s+emergencyStopVision\(\)/);
+  assert.match(client, /createSearchSummaryPrompt/);
+  assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
+  const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
+  assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
+  assert.match(html, /app\.js\?hud=39/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
   assert.match(html, /id="dashboard-mic-button"/);
   assert.match(html, /id="dashboard-mic-button"[^>]*aria-pressed="false"/);
-  assert.match(html, /class="playback-indicator"/);
+  assert.match(html, /id="voice-console-status"/);
   assert.match(html, /id="system-title">System monitor/);
   assert.match(html, /id="quick-title">Quick actions/);
   assert.match(html, /id="dashboard-attach-button"/);
@@ -228,30 +242,22 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /toggleStudyMode/);
   assert.match(client, /loadSystemMetrics/);
   assert.match(interfaceSwitcher, /LEGACY_PREFERENCE_KEYS = \['jarvis\.interface\.mode\.v6', 'jarvis\.interface\.mode\.v5', 'jarvis\.interface\.mode\.v4'\]/);
-  assert.match(styles, /\.holo-particles \{/);
   assert.match(html, /id="install-button"/);
   assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
-  assert.doesNotMatch(client, /scheduleAvatarExpression|is-talking|avatarSpeechTimer/);
-  assert.match(client, /utterance\.onboundary/);
-  assert.match(client, /setAvatarMouth\(0\)/);
+  assert.doesNotMatch(client, /avatar3d|setAvatarMouth|audioLipSync|avatarSpeechTimer/);
+  assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
   assert.match(client, /dashboardCommandForm\.addEventListener\('submit'[\s\S]*?elements\.form\.requestSubmit\(\)/);
   assert.match(client, /elements\.dashboardSend\.disabled = true/);
   assert.match(client, /dashboardRetryButton\.addEventListener\('click', retryLastChat\)/);
   assert.match(client, /function retryLastChat\(\)/);
   assert.match(client, /setDashboardChatState\('thinking'/);
   assert.match(client, /setAssistantState\('error'/);
-  assert.doesNotMatch(styles, /avatar-blink|avatar-smile|avatar-mouth|avatar-speech|is-talking/);
-  assert.match(html, /shared-tab audio drives mouth opening from live audio amplitude/i);
-  assert.match(html, /id="avatar-audio-sync-button"/);
-  assert.match(html, /id="avatar-audio-sync-status"/);
-  assert.match(html, /Female model requirements and import steps/);
-  assert.match(client, /getFloatTimeDomainData/);
-  assert.match(client, /estimateAudioMouthOpening/);
+  assert.doesNotMatch(html, /avatar|portrait|lip-sync/i);
   assert.match(client, /updateMetricGauge\(elements\.cpuMeterTrack, elements\.cpuMeter, metrics\.cpuUsagePercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.ramMeterTrack, elements\.ramMeter, metrics\.memoryPercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.diskMeterTrack, elements\.diskMeter, metrics\.diskPercent\)/);
   assert.match(client, /function handleDashboardFeature/);
-  assert.match(client, /closest\('\[data-dashboard-feature\], \[data-avatar-feature\]'\)/);
+  assert.match(client, /closest\('\[data-dashboard-feature\]'\)/);
   assert.match(client, /destination === 'settings'[\s\S]*?openSettings\(\)/);
   assert.match(client, /navigator\.permissions\.query\(\{ name: 'microphone' \}\)/);
   assert.match(client, /navigator\.getBattery\(\)/);
@@ -259,23 +265,12 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /if \(profile\.isMobile\) \{/);
   assert.match(deviceMonitor, /export function detectDeviceProfile/);
   assert.match(html, /Device details use browser-reported information/);
-  assert.match(styles, /body\.new-interface \.new-feature-bar/);
   assert.match(styles, /body\.new-interface \.right-rail[\s\S]*overflow-y: auto/);
-  assert.match(styles, /body\.new-interface \.right-rail \{ order: 2; \}/);
-  assert.match(styles, /body\.new-interface \.left-rail \{ order: 3; \}/);
-  assert.match(styles, /body\.new-interface \.holo-stage \{\s*width: min\(100%, 330px\)/);
-  assert.match(styles, /body\.new-interface \.avatar-frame \{\s*width: 78%;\s*height: 91%/);
-  assert.match(styles, /body\.new-interface \.right-rail \{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(styles, /body\.new-interface \.holo-stage \{ width: min\(57vw, 205px\); flex: 0 0 auto; margin: 0; \}/);
-  assert.match(styles, /body\.new-interface \.new-feature-bar \{\s*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
-  assert.match(styles, /body\.new-interface \.new-feature-bar button \{\s*min-width: 0;\s*min-height: 52px/);
-  assert.match(styles, /body\.new-interface \.new-feature-bar button span \{ white-space: nowrap; \}/);
-  assert.doesNotMatch(client, /activateBuiltInAvatarOnDashboard/);
-  assert.doesNotMatch(avatarRuntime, /reference\.src = '\/reference-face\.jpg'/);
-  assert.match(client, /avatarModelSelectionMade = engine\.loadBuiltInAvatar\(\) !== false/);
+  assert.match(styles, /\.dashboard-layout \{[^}]*grid-template-columns: minmax\(0, 1\.1fr\) minmax\(0, 2fr\) minmax\(280px, 1fr\)/);
+  assert.doesNotMatch(html, /avatar|portrait|lip-sync/i);
+  assert.doesNotMatch(html, /News & briefing|news-button|briefing-panel|briefing-results/i);
   assert.match(interfaceSwitcher, /dashboard\.hidden = view !== 'dashboard'/);
   assert.match(interfaceSwitcher, /conversation\.hidden = view !== 'chat'/);
-  assert.match(html, /class="holo-particles"/);
   assert.match(html, /id="install-help"/);
   assert.match(client, /beforeinstallprompt/);
   assert.match(client, /appinstalled/);
@@ -285,7 +280,6 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /jarvis-512\.png/);
   assert.match(styles, /@media \(max-width: 780px\)/);
   assert.match(styles, /\.mobile-nav \{ position: fixed/);
-  assert.match(styles, /\.ai-avatar \{[^}]*object-fit: cover;[^}]*mix-blend-mode: normal;/);
   assert.match(styles, /\.dashboard-layout \{[^}]*minmax\(220px, \.76fr\) minmax\(510px, 1\.85fr\) minmax\(270px, \.94fr\)/);
   assert.match(styles, /\.dashboard-layout \{ grid-template-columns: minmax\(140px, \.72fr\) minmax\(240px, 1\.32fr\) minmax\(170px, \.82fr\)/);
   assert.match(styles, /@media \(min-width: 1101px\) and \(max-width: 1399px\)/);
@@ -300,17 +294,19 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.mobile-news-open \.right-rail \.briefing-panel/);
   assert.match(styles, /body\.mobile-activity-open \.left-rail \.activity-panel/);
   assert.match(styles, /\.presence \{[^}]*grid-template-rows: auto minmax\(260px, 1fr\)/);
-  assert.match(html, /styles\.css\?hud=31/);
+  assert.match(html, /styles\.css\?hud=32/);
   assert.match(html, /diagnostics\.js\?hud=27/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(diagnostics, /JavaScript errors:/);
   assert.match(diagnostics, /get\('diagnostics'\) === '1'/);
-  assert.match(worker, /jarvis-shell-v37/);
+  assert.match(worker, /jarvis-shell-v42/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=31/);
+  assert.match(worker, /styles\.css\?hud=32/);
   assert.match(worker, /diagnostics\.js\?hud=27/);
-  assert.match(worker, /app\.js\?hud=35/);
+  assert.match(worker, /app\.js\?hud=39/);
+  assert.doesNotMatch(worker, /avatar-cues\.js|ai-avatar\.jpg/);
   assert.match(worker, /app-hub\.js/);
+  assert.match(worker, /search-summary\.js/);
   assert.match(worker, /NETWORK_TIMEOUT_MS = 4_000/);
   assert.match(worker, /response\.status >= 500 && cached/);
   assert.ok(worker.includes("requestUrl.pathname.startsWith('/api/')"));
@@ -318,8 +314,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=37/);
-  assert.match(client, /AbortSignal\.timeout\(125_000\)/);
+  assert.match(client, /service-worker\.js\?hud=41/);
+  assert.match(client, /AbortSignal\.timeout\(50_000\)/);
   assert.match(client, /feature-toolbar, \.right-rail/);
   assert.match(client, /updateAvatarExpression/);
   assert.match(styles, /\.feature-toolbar \{ display: none; \}/);
@@ -507,7 +503,7 @@ test('prefers server cloud credentials over an implicit Ollama URL without expos
     assert.equal(response.status, 200);
     assert.equal(health.provider, 'openai-compatible');
     assert.equal(health.providerSource, 'environment');
-    assert.equal(health.model, 'gemini-3.8-flash');
+    assert.equal(health.model, 'gemini-3.5-flash-lite');
     assert.equal(health.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/openai/');
     assert.doesNotMatch(JSON.stringify(health), new RegExp(apiKey));
   } finally {
@@ -551,6 +547,105 @@ test('rejects invalid chat payloads and reports a missing provider honestly', as
   });
   assert.equal(unavailable.status, 503);
   assert.match((await unavailable.json()).error, /No AI provider is configured/);
+
+});
+
+test('rejects invalid, oversized, and over-dimension Vision images', async () => {
+  const invalidMime = await fetch(`${baseUrl}/api/vision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'What is this?', image: 'data:image/png;base64,AAAA' }),
+  });
+  assert.equal(invalidMime.status, 400);
+
+  const oversizedDimensions = await fetch(`${baseUrl}/api/vision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      question: 'What is this?',
+      image: `data:image/jpeg;base64,${makeVisionJpeg(1_920, 1_080).toString('base64')}`,
+    }),
+  });
+  assert.equal(oversizedDimensions.status, 400);
+  assert.match((await oversizedDimensions.json()).error, /1280 pixels/);
+
+  const oversizedImage = await fetch(`${baseUrl}/api/vision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      question: 'What is this?',
+      image: `data:image/jpeg;base64,${Buffer.alloc(500 * 1024 + 1).toString('base64')}`,
+    }),
+  });
+  assert.equal(oversizedImage.status, 400);
+
+  const oversizedBody = await fetch(`${baseUrl}/api/vision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'What is this?', image: `data:image/jpeg;base64,${'A'.repeat(700_100)}` }),
+  });
+  assert.equal(oversizedBody.status, 413);
+});
+
+test('sends one explicitly requested Vision image to the configured provider without returning credentials', async () => {
+  const previousEnvironment = new Map(
+    ['AI_API_KEY', 'AI_MODEL', 'AI_BASE_URL', 'AI_PROVIDER'].map((key) => [key, process.env[key]]),
+  );
+  const apiKey = 'test-only-vision-provider-secret';
+  process.env.AI_API_KEY = apiKey;
+  process.env.AI_MODEL = 'gemini-3.5-flash-lite';
+  process.env.AI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  delete process.env.AI_PROVIDER;
+
+  const originalFetch = globalThis.fetch;
+  let upstreamRequest;
+  let upstreamAuthorization;
+  globalThis.fetch = async (input, options) => {
+    if (String(input) === 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions') {
+      upstreamRequest = JSON.parse(options.body);
+      upstreamAuthorization = options.headers.authorization;
+      assert.equal(options.signal.aborted, false);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'A settings window is open.' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return originalFetch(input, options);
+  };
+
+  try {
+    const image = `data:image/jpeg;base64,${makeVisionJpeg().toString('base64')}`;
+    const response = await originalFetch(`${baseUrl}/api/vision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question: 'What is visible?', image }),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(result.reply, 'A settings window is open.');
+    assert.equal(result.provider, 'gemini-3.5-flash-lite');
+    assert.equal(upstreamAuthorization, `Bearer ${apiKey}`);
+    assert.equal(upstreamRequest.model, 'gemini-3.5-flash-lite');
+    assert.equal(upstreamRequest.max_tokens, 256);
+    assert.equal(upstreamRequest.messages.at(-1).content.length, 2);
+    assert.equal(upstreamRequest.messages.at(-1).content[0].text, 'What is visible?');
+    assert.equal(upstreamRequest.messages.at(-1).content[1].image_url.url, image);
+    assert.doesNotMatch(JSON.stringify(result), new RegExp(apiKey));
+
+    const limited = await originalFetch(`${baseUrl}/api/vision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question: 'What is visible?', image }),
+    });
+    assert.equal(limited.status, 429);
+    assert.match((await limited.json()).error, /five requests per minute/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of previousEnvironment) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('routes chat to Ollama and returns its actual response', async () => {
@@ -575,7 +670,7 @@ test('routes chat to Ollama and returns its actual response', async () => {
     const response = await originalFetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'user', content: 'नमस्ते' }], language: 'hi', mode: 'study' }),
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'नमस्ते' }], language: 'hi', mode: 'study', max_tokens: 256 }),
     });
     const data = await response.json();
     assert.equal(response.status, 200);
@@ -583,6 +678,7 @@ test('routes chat to Ollama and returns its actual response', async () => {
     assert.equal(data.provider, 'Ollama / qwen2.5:3b');
     assert.equal(requestBody.model, 'qwen2.5:3b');
     assert.equal(requestBody.stream, false);
+    assert.deepEqual(requestBody.options, { num_predict: 256 });
     assert.ok(requestBody.messages.some((message) => message.content.includes('Reply in Hindi')));
     assert.ok(requestBody.messages.some((message) => message.content.includes('Study Mode')));
     assert.deepEqual(requestBody.messages.at(-1), { role: 'user', content: 'नमस्ते' });
@@ -763,6 +859,8 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     assert.equal(chat.provider, 'gemini-3.8-flash');
     assert.equal(providerAuthorization, `Bearer ${apiKey}`);
     assert.equal(providerRequest.model, 'gemini-3.8-flash');
+    assert.equal(providerRequest.reasoning_effort, 'low');
+    assert.equal(providerRequest.max_tokens, undefined);
     assert.deepEqual(providerRequest.messages.at(-1), { role: 'user', content: 'hello' });
     assert.doesNotMatch(JSON.stringify(chat), new RegExp(apiKey));
   } finally {
@@ -979,6 +1077,12 @@ test('requires the configured server access token for chat and search', async ()
   };
   const missing = await fetch(`${baseUrl}/api/chat`, chatRequest);
   assert.equal(missing.status, 401);
+  const missingVision = await fetch(`${baseUrl}/api/vision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ question: 'What is visible?', image: 'data:image/jpeg;base64,AAAA' }),
+  });
+  assert.equal(missingVision.status, 401);
   const protectedSettings = await fetch(`${baseUrl}/api/settings/ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

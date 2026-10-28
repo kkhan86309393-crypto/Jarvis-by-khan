@@ -199,7 +199,7 @@ function button(label, action, className = '') {
   return element;
 }
 
-function renderShortcuts(root, shortcuts, query) {
+function renderShortcuts(root, shortcuts, query, canLaunchIntent) {
   const list = root.querySelector('[data-hub-apps]');
   const normalizedQuery = query.trim().toLowerCase();
   const matches = shortcuts.filter((shortcut) => `${shortcut.name} ${shortcut.url}`.toLowerCase().includes(normalizedQuery));
@@ -229,6 +229,10 @@ function renderShortcuts(root, shortcuts, query) {
     actions.className = 'app-hub-card-actions';
     const launch = button('Open', 'launch', 'app-hub-launch');
     launch.dataset.shortcutId = shortcut.id;
+    launch.disabled = shortcut.kind === 'intent' && !canLaunchIntent(shortcut);
+    if (shortcut.kind === 'intent') {
+      launch.title = launch.disabled ? 'Enable Full Access to launch Android apps' : 'Open Android app link';
+    }
     actions.append(launch);
     if (shortcut.fallbackUrl) {
       const fallback = button('Fallback', 'fallback', 'app-hub-small-action');
@@ -306,9 +310,9 @@ function readIconFile(file) {
   });
 }
 
-function renderAll(roots, shortcuts) {
+function renderAll(roots, shortcuts, canLaunchIntent) {
   for (const root of roots) {
-    renderShortcuts(root, shortcuts, root.querySelector('[data-hub-search]').value);
+    renderShortcuts(root, shortcuts, root.querySelector('[data-hub-search]').value, canLaunchIntent);
   }
 }
 
@@ -317,13 +321,15 @@ export function initializeAppHubs({
   storage = globalThis.localStorage,
   openWindow = (...args) => globalThis.window.open(...args),
   onActivity = () => {},
+  onOpenVision = () => {},
+  canLaunchIntent = () => false,
 } = {}) {
   const roots = [...documentObject.querySelectorAll('[data-app-hub]')];
   if (!roots.length) return;
   let shortcuts;
   try {
     shortcuts = readShortcuts(storage);
-    renderAll(roots, shortcuts);
+    renderAll(roots, shortcuts, canLaunchIntent);
   } catch (error) {
     for (const root of roots) setStatus(root, error.message, true);
     return;
@@ -332,7 +338,7 @@ export function initializeAppHubs({
   const persist = () => {
     try {
       shortcuts = writeShortcuts(shortcuts, storage);
-      renderAll(roots, shortcuts);
+      renderAll(roots, shortcuts, canLaunchIntent);
       return true;
     } catch (error) {
       for (const root of roots) setStatus(root, error.message, true);
@@ -343,7 +349,7 @@ export function initializeAppHubs({
   for (const root of roots) {
     root.addEventListener('input', (event) => {
       if (event.target.matches('[data-hub-search]')) {
-        renderShortcuts(root, shortcuts, event.target.value);
+        renderShortcuts(root, shortcuts, event.target.value, canLaunchIntent);
       }
     });
 
@@ -357,6 +363,10 @@ export function initializeAppHubs({
             root.querySelector('[data-hub-field="run-url"]').value,
             root.querySelector('[data-hub-field="run-fallback"]').value,
           );
+          if (destination.kind === 'intent' && !canLaunchIntent(destination)) {
+            setStatus(root, 'Enable Full Access before launching an Android app link.', true);
+            return;
+          }
           const result = openAppDestination(destination, openWindow);
           setStatus(root, result.opened
             ? result.usedFallback
@@ -415,9 +425,15 @@ export function initializeAppHubs({
         setFormMode(root);
         root.querySelector('[data-hub-form]').hidden = false;
         root.querySelector('[data-hub-field="name"]').focus();
+      } else if (action === 'vision') {
+        onOpenVision();
       } else if (action === 'cancel') {
         setFormMode(root);
       } else if (action === 'launch' && shortcut) {
+        if (shortcut.kind === 'intent' && !canLaunchIntent(shortcut)) {
+          setStatus(root, 'Enable Full Access before launching an Android app link.', true);
+          return;
+        }
         const result = openAppDestination(shortcut, openWindow);
         setStatus(root, result.opened
           ? result.usedFallback
@@ -468,5 +484,9 @@ export function initializeAppHubs({
     } catch (error) {
       for (const root of roots) setStatus(root, error.message, true);
     }
+  });
+
+  globalThis.addEventListener?.('jarvis:full-access-change', () => {
+    renderAll(roots, shortcuts, canLaunchIntent);
   });
 }
