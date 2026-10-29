@@ -7,9 +7,11 @@ import {
   getSpeechRecognitionConstructor,
   getSpeechRecognitionLanguage,
   getSpeechRecognitionStartError,
+  getSpeechSynthesisErrorMessage,
   isPageForeground,
   matchWakeWord,
   nextWakeWordRestartDelay,
+  primeSpeechSynthesis,
   readSpeechRecognitionResult,
   resolveVoiceOutputEnabled,
   selectSpeechSynthesisVoice,
@@ -49,6 +51,41 @@ test('enables spoken replies by default only when synthesis is supported and pre
   assert.equal(resolveVoiceOutputEnabled(false, true), false);
   assert.equal(resolveVoiceOutputEnabled(true, true), true);
   assert.equal(resolveVoiceOutputEnabled(true, false), false);
+});
+
+test('primes speech synthesis silently for English and Hindi user gestures', () => {
+  const spoken = [];
+  let resumed = 0;
+  class FakeUtterance {
+    constructor(text) {
+      this.text = text;
+      this.volume = 1;
+      this.lang = '';
+    }
+  }
+  const synthesis = {
+    resume() { resumed += 1; },
+    speak(utterance) { spoken.push(utterance); },
+  };
+
+  assert.equal(primeSpeechSynthesis(synthesis, FakeUtterance, 'en'), true);
+  assert.equal(primeSpeechSynthesis(synthesis, FakeUtterance, 'hi'), true);
+  assert.deepEqual(spoken.map(({ text, volume, lang }) => ({ text, volume, lang })), [
+    { text: ' ', volume: 0, lang: 'en-US' },
+    { text: ' ', volume: 0, lang: 'hi-IN' },
+  ]);
+  assert.equal(resumed, 2);
+  assert.equal(primeSpeechSynthesis({}, FakeUtterance, 'en'), false);
+  assert.equal(primeSpeechSynthesis(synthesis, null, 'en'), false);
+  assert.equal(primeSpeechSynthesis({ speak() { throw new Error('blocked'); } }, FakeUtterance, 'en'), false);
+});
+
+test('maps Android speech synthesis restrictions to actionable feedback', () => {
+  assert.match(getSpeechSynthesisErrorMessage('not-allowed'), /tap Preview voice/i);
+  assert.match(getSpeechSynthesisErrorMessage('voice-unavailable'), /System default/i);
+  assert.match(getSpeechSynthesisErrorMessage('language-not-supported'), /text-to-speech settings/i);
+  assert.match(getSpeechSynthesisErrorMessage('synthesis-failed'), /device text-to-speech/i);
+  assert.equal(getSpeechSynthesisErrorMessage('canceled'), '');
 });
 
 test('does not submit earlier final speech while the changed result is interim', () => {

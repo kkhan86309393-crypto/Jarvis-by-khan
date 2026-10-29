@@ -29,6 +29,33 @@ export function resolveVoiceOutputEnabled(savedPreference, speechSynthesisSuppor
   return typeof savedPreference === 'boolean' ? savedPreference : true;
 }
 
+export function primeSpeechSynthesis(synthesis, UtteranceConstructor, language) {
+  if (typeof synthesis?.speak !== 'function' || typeof UtteranceConstructor !== 'function') return false;
+  try {
+    const utterance = new UtteranceConstructor(' ');
+    utterance.lang = getSpeechRecognitionLanguage(language);
+    utterance.volume = 0;
+    try { synthesis.resume?.(); } catch {}
+    synthesis.speak(utterance);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getSpeechSynthesisErrorMessage(error) {
+  const messages = {
+    'not-allowed': 'Speech was blocked by the browser. Tap Preview voice in Settings, then send another message.',
+    'voice-unavailable': 'The selected speech voice is unavailable. Choose System default or install a voice for this language in device settings.',
+    'language-not-supported': 'No speech voice supports the selected language. Install an English or Hindi voice in device text-to-speech settings.',
+    'synthesis-failed': 'Speech synthesis failed. Check that device text-to-speech is enabled, then try Preview voice in Settings.',
+    network: 'The device speech service could not be reached. Check the connection and text-to-speech settings.',
+  };
+
+  if (error === 'canceled' || error === 'interrupted') return '';
+  return messages[error] || 'Speech output could not start on this device. Try Preview voice in Settings.';
+}
+
 export function matchWakeWord(transcript) {
   const text = String(transcript || '').normalize('NFC');
   const match = /(?:^|\s)(?:hey[\s,!?]+jarvis|हे[\s,!?]+जार्विस)(?=\s|[,.:;!?]|$)/iu.exec(text);
