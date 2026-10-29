@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?hud=32">
+    <link rel="stylesheet" href="/styles.css?hud=34">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -47,6 +47,7 @@
           <button class="nav-item" type="button" data-nav="study"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 8 9-5 9 5-9 5-9-5Zm3 2v6c3.5 3 8.5 3 12 0v-6m3-2v7"/></svg><span>Study mode</span><span class="nav-state" id="study-mode-indicator">OFF</span></button>
           <button class="nav-item" type="button" data-nav="productivity"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6m-3 0v3"/></svg><span>Productivity</span></button>
           <button class="nav-item" type="button" data-nav="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>System monitor</span></button>
+          <button class="nav-item" type="button" data-nav="news" data-requires-full-access><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8m-8 4h8m-8 3h5"/></svg><span>News &amp; Briefing</span></button>
           <button class="nav-item" type="button" data-nav="memory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5"/></svg><span>Memory</span></button>
           <button class="nav-item" type="button" data-nav="activity"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/><path d="M8 6h12M8 12h12M8 18h12"/></svg><span>Activity</span></button>
           <div class="nav-spacer"></div>
@@ -60,41 +61,49 @@
 
       <main class="workspace">
         <div class="dashboard-layout" id="dashboard-layout" hidden>
-          <section class="dashboard-panel dashboard-chat-panel" aria-labelledby="dashboard-chat-title">
-            <div class="panel-heading dashboard-chat-heading"><div><span class="eyebrow" id="assistant-state">J.A.R.V.I.S. · READY</span><h1 id="dashboard-chat-title">Command channel</h1></div><span class="live-label" id="connection-status-dashboard">CONNECTING</span></div>
-            <p class="dashboard-provider-note" id="provider-note">Configure a local model or server-side AI provider to begin.</p>
-            <div class="dashboard-transcript" id="dashboard-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
-            <p class="assistant-feedback dashboard-feedback" id="dashboard-feedback" role="status" aria-live="polite"></p>
-            <div class="dashboard-chat-state" id="dashboard-chat-state" role="status" aria-live="polite" hidden>
-              <span id="dashboard-chat-state-label"></span>
-              <button class="dashboard-retry-button" id="dashboard-retry-button" type="button" hidden>Retry request</button>
+          <section class="presence" aria-labelledby="presence-title">
+            <div class="presence-topline"><span>PERSONAL ASSISTANT</span><span>J.A.R.V.I.S.</span></div>
+            <div class="avatar-hero">
+              <div class="holo-stage" id="holo-stage">
+                <div class="holo-sphere-shell" aria-hidden="true"><i></i></div>
+                <div class="holo-emitter" aria-hidden="true"></div>
+                <div class="orbit orbit-one" aria-hidden="true"></div>
+                <div class="orbit orbit-two" aria-hidden="true"></div>
+                <div class="holo-particles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="avatar-frame">
+                  <img class="ai-avatar is-normal" id="ai-avatar" src="/5234e417739a8221c0d6ce9c25d690ff69dd8de1860b0b9394bad1a30df599e4.png" alt="J.A.R.V.I.S. female assistant portrait" width="1254" height="1254" fetchpriority="high" decoding="async" draggable="false">
+                  <span class="portrait-scanline" aria-hidden="true"></span>
+                </div>
+                <span class="playback-indicator" aria-hidden="true"></span>
+              </div>
             </div>
-            <form class="dashboard-command" id="dashboard-command-form">
-              <label class="sr-only" for="dashboard-message">Send a message to J.A.R.V.I.S.</label>
-              <input id="dashboard-message" type="text" maxlength="4000" autocomplete="off" placeholder="Ask J.A.R.V.I.S.">
-              <button type="submit" aria-label="Send command" title="Send command"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-7-8-1Zm8 1 8-9"/></svg></button>
-            </form>
-            <p class="briefing-note dashboard-chat-note">Replies stay in this browser session. Search results and sources are available from the Search control.</p>
-            <button class="briefing-button dashboard-open-chat" type="button" data-nav="chat">Open full AI chat <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+            <div class="holo-waveform" id="holo-waveform" role="img" aria-label="Voice activity idle">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="presence-copy">
+              <p class="eyebrow" id="assistant-state">SYSTEM STANDBY</p>
+              <h1 id="presence-title">At your service.</h1>
+              <p class="presence-note" id="provider-note">Configure a local model or server-side AI provider to begin.</p>
+            </div>
+            <div class="capability-strip" aria-label="Assistant capabilities">
+              <span><i class="cap-dot" aria-hidden="true"></i>PRIVATE HISTORY</span>
+              <span><i class="cap-dot" aria-hidden="true"></i>BROWSER VOICE</span>
+              <span><i class="cap-dot" aria-hidden="true"></i>WEB LOOKUP</span>
+            </div>
           </section>
-          <div class="panel-heading dashboard-chat-heading"><div><span class="eyebrow" id="assistant-state">J.A.R.V.I.S. · READY</span><h1 id="dashboard-chat-title">Command channel</h1></div><span class="live-label" id="connection-status-dashboard">CONNECTING</span></div>
-          <p class="dashboard-provider-note" id="provider-note">Configure a local model or server-side AI provider to begin.</p>
-          <div class="dashboard-transcript" id="dashboard-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
-          <p class="assistant-feedback dashboard-feedback" id="dashboard-feedback" role="status" aria-live="polite"></p>
-          <div class="dashboard-chat-state" id="dashboard-chat-state" role="status" aria-live="polite" hidden>
-            <span id="dashboard-chat-state-label"></span>
-            <button class="dashboard-retry-button" id="dashboard-retry-button" type="button" hidden>Retry request</button>
-          </div>
-          <form class="dashboard-command" id="dashboard-command-form">
-            <label class="sr-only" for="dashboard-message">Send a message to J.A.R.V.I.S.</label>
-            <input id="dashboard-message" type="text" maxlength="4000" autocomplete="off" placeholder="Ask J.A.R.V.I.S.">
-            <button type="submit" aria-label="Send command" title="Send command"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-7-8-1Zm8 1 8-9"/></svg></button>
-          </form>
-          <p class="briefing-note dashboard-chat-note">Replies stay in this browser session. Search results and sources are available from the Search control.</p>
-          <button class="briefing-button dashboard-open-chat" type="button" data-nav="chat">Open full AI chat <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
-        </section>
 
         <aside class="right-rail" aria-label="System monitor and tools">
+            <section class="dashboard-panel dashboard-chat-panel" aria-labelledby="dashboard-chat-title">
+              <div class="panel-heading dashboard-chat-heading"><div><span class="eyebrow">AI CHANNEL</span><h2 id="dashboard-chat-title">Chat with me</h2></div><span class="live-label" id="connection-status-dashboard">CONNECTING</span></div>
+              <div class="dashboard-transcript" id="dashboard-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
+              <p class="assistant-feedback dashboard-feedback" id="dashboard-feedback" role="status" aria-live="polite"></p>
+              <div class="dashboard-chat-state" id="dashboard-chat-state" role="status" aria-live="polite" hidden>
+                <span id="dashboard-chat-state-label"></span>
+                <button class="dashboard-retry-button" id="dashboard-retry-button" type="button" hidden>Retry request</button>
+              </div>
+              <p class="briefing-note dashboard-chat-note">Replies stay in this browser session. Search results and sources are available from the Search control.</p>
+              <button class="briefing-button dashboard-open-chat" type="button" data-nav="chat">Open full AI chat <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+            </section>
           <section class="dashboard-panel dashboard-voice-panel" aria-labelledby="dashboard-voice-title">
             <div class="panel-heading"><div><span class="eyebrow">BROWSER SPEECH</span><h2 id="dashboard-voice-title">Voice Assistant</h2></div><i class="status-pulse"></i></div>
             <div class="voice-console" aria-label="Voice controls">
@@ -103,14 +112,13 @@
                 <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
               </div>
               <div class="voice-console-controls">
-                <button class="voice-console-button primary" id="dashboard-mic-button" type="button" aria-label="Start voice input" aria-pressed="false" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Talk to J.A.R.V.I.S.</span></button>
                 <button class="voice-console-button" id="dashboard-voice-toggle" type="button" aria-pressed="false" title="Toggle spoken responses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span id="dashboard-voice-label">Voice off</span></button>
                 <button class="voice-console-icon" id="dashboard-settings-button" type="button" aria-label="Open voice settings" title="Voice settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg></button>
               </div>
             </div>
           </section>
           <section class="dashboard-panel system-panel" id="system-panel" aria-labelledby="system-title">
-            <div class="panel-heading"><div><span class="eyebrow">LIVE STATUS</span><h2 id="system-title">System monitor</h2></div><i class="status-pulse"></i></div>
+            <div class="panel-heading"><div><span class="eyebrow">LIVE STATUS</span><h2 id="system-title">Real-Time Info</h2></div><i class="status-pulse"></i></div>
             <div class="monitor-grid">
               <div class="metric-readout server-metric" data-device-group="desktop"><span id="cpu-label">SERVER CPU</span><strong id="cpu-value">Checking</strong><div class="metric-track" id="cpu-meter-track" hidden><i id="cpu-meter"></i></div></div>
               <div class="metric-readout server-metric" data-device-group="desktop"><span id="ram-label">SERVER RAM</span><strong id="ram-value">Checking</strong><div class="metric-track" id="ram-meter-track" hidden><i id="ram-meter"></i></div></div>
@@ -127,6 +135,12 @@
               <div><span>AI BACKEND</span><strong id="model-value">Not configured</strong></div>
             </div>
             <p class="monitor-context" id="monitor-context">Device details use browser-reported information. Hardware readings describe the J.A.R.V.I.S. server.</p>
+          </section>
+          <section class="dashboard-panel briefing-panel" aria-labelledby="briefing-title">
+            <div class="panel-heading"><div><span class="eyebrow">RETRIEVED SOURCES</span><h2 id="briefing-title">News &amp; Briefing</h2></div></div>
+            <p class="briefing-note">Source-linked web results with a Wikipedia fallback; coverage may be limited.</p>
+            <button class="briefing-button" id="news-button" type="button" data-requires-full-access>Fetch a news briefing <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+            <div class="briefing-results" id="briefing-results" aria-live="polite"></div>
           </section>
           <section class="dashboard-panel upload-panel" aria-labelledby="upload-title">
             <div class="panel-heading"><div><span class="eyebrow">LOCAL DOCUMENTS</span><h2 id="upload-title">File upload</h2></div></div>
@@ -172,7 +186,7 @@
             <div class="mini-readout"><span>MEMORY</span><strong id="left-memory-status">LOCAL</strong></div>
           </section>
           <section class="dashboard-panel quick-panel" aria-labelledby="quick-title">
-            <div class="panel-heading"><div><span class="eyebrow">SHORTCUTS</span><h2 id="quick-title">Quick actions</h2></div></div>
+            <div class="panel-heading"><div><span class="eyebrow">SHORTCUTS</span><h2 id="quick-title">Quick Actions</h2></div></div>
             <div class="quick-actions">
               <button type="button" data-quick-action="capture" data-requires-full-access><span>01</span>Capture screen</button>
               <button type="button" data-quick-action="files"><span>02</span>Search attached files</button>
@@ -184,11 +198,35 @@
             </div>
           </section>
           <section class="dashboard-panel activity-panel" id="activity-panel" aria-labelledby="activity-title">
-            <div class="panel-heading"><div><span class="eyebrow">SESSION TRACE</span><h2 id="activity-title">Activity</h2></div><span class="live-label">LOCAL</span></div>
-            <ol id="activity-log" class="activity-log"><li><i></i><span>Interface initialized</span><time>NOW</time></li></ol>
+            <div class="panel-heading"><div><span class="eyebrow">SESSION TRACE</span><h2 id="activity-title">Activity feed</h2></div><span class="live-label">LOCAL</span></div>
+            <ol id="activity-log" class="activity-log" aria-live="polite"><li><i aria-hidden="true"></i><span>Interface initialized</span><time>NOW</time></li></ol>
           </section>
         </aside>
+        <div class="holo-state-strip" id="holo-state-strip" role="group" aria-label="Assistant states">
+          <span class="holo-state" data-holo-state="listening"><i aria-hidden="true"></i><span>Listening</span></span>
+          <span class="holo-state" data-holo-state="thinking"><i aria-hidden="true"></i><span>Thinking</span></span>
+          <span class="holo-state" data-holo-state="speaking"><i aria-hidden="true"></i><span>Speaking</span></span>
+          <span class="holo-state" data-holo-state="online"><i aria-hidden="true"></i><span>Online</span></span>
         </div>
+        <p class="sr-only" id="holo-state-announcement" role="status" aria-live="polite">Waiting for server status.</p>
+        <div class="dashboard-commandbar">
+          <form class="dashboard-command" id="dashboard-command-form">
+            <button class="voice-console-button primary dashboard-command-mic" id="dashboard-mic-button" type="button" aria-label="Start voice input" aria-pressed="false" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span class="sr-only">Talk to J.A.R.V.I.S.</span></button>
+            <label class="sr-only" for="dashboard-message">Send a message to J.A.R.V.I.S.</label>
+            <input id="dashboard-message" type="text" maxlength="4000" autocomplete="off" placeholder="Ask J.A.R.V.I.S.">
+            <button type="submit" aria-label="Send command" title="Send command"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-7-8-1Zm8 1 8-9"/></svg></button>
+          </form>
+        </div>
+        </div>
+
+        <nav class="new-feature-bar" aria-label="Dashboard quick navigation">
+          <button type="button" data-dashboard-feature="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>Chat</span></button>
+          <button type="button" data-dashboard-feature="voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Voice</span></button>
+          <button type="button" data-dashboard-feature="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4z"/><path d="M8 13h8m-8 3h6"/></svg><span>Files</span></button>
+          <button type="button" data-dashboard-feature="browser"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span>App Hub</span></button>
+          <button type="button" data-dashboard-feature="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Monitor</span></button>
+          <button type="button" data-dashboard-feature="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
+        </nav>
 
         <section class="conversation" id="conversation-view" aria-label="Assistant conversation">
           <div class="conversation-heading">
@@ -338,7 +376,18 @@
     </dialog>
     <dialog class="settings-dialog" id="more-navigation-dialog" aria-labelledby="more-navigation-title">
       <form method="dialog" class="settings-head"><div><span class="eyebrow">WORKSPACE</span><h2 id="more-navigation-title">More tools</h2></div><button class="icon-button subtle" aria-label="Close more tools" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
-      <div class="settings-content more-navigation-list"><div class="access-control mobile-access-control"><div class="access-copy"><span>FULL ACCESS</span><small>Explicit in-app actions</small></div><label class="switch"><input id="full-access-mobile-toggle" type="checkbox"><span></span><b class="sr-only">Enable in-app quick actions</b></label></div><button class="nav-item" type="button" data-nav="history">Conversation history</button><button class="nav-item" type="button" data-nav="files">Files</button><button class="nav-item" type="button" data-nav="applications">Applications</button><button class="nav-item" type="button" data-nav="study">Study mode</button><button class="nav-item" type="button" data-nav="productivity">Productivity</button><button class="nav-item" type="button" data-nav="system">System monitor</button><button class="nav-item" type="button" data-nav="activity">Activity log</button><button class="nav-item" type="button" data-nav="memory">Memory</button></div>
+      <div class="settings-content more-navigation-list">
+        <div class="access-control mobile-access-control"><div class="access-copy"><span>FULL ACCESS</span><small>Explicit in-app actions</small></div><label class="switch"><input id="full-access-mobile-toggle" type="checkbox"><span></span><b class="sr-only">Enable in-app quick actions</b></label></div>
+        <button class="nav-item" type="button" data-nav="history">Conversation history</button>
+        <button class="nav-item" type="button" data-nav="files">Files</button>
+        <button class="nav-item" type="button" data-nav="applications">Applications</button>
+        <button class="nav-item" type="button" data-nav="study">Study mode</button>
+        <button class="nav-item" type="button" data-nav="productivity">Productivity</button>
+        <button class="nav-item" type="button" data-nav="system">System monitor</button>
+        <button class="nav-item" type="button" data-nav="news" data-requires-full-access>News &amp; Briefing</button>
+        <button class="nav-item" type="button" data-nav="activity">Activity feed</button>
+        <button class="nav-item" type="button" data-nav="memory">Memory</button>
+      </div>
     </dialog>
     <aside class="runtime-diagnostics" id="runtime-diagnostics" hidden aria-label="J.A.R.V.I.S. diagnostics">
       <div class="runtime-diagnostics-heading">

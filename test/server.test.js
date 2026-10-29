@@ -128,8 +128,19 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const selectedIds = [...client.matchAll(/querySelector\('#([\w-]+)'\)/g)].map((match) => match[1]);
   const missingIds = [...new Set(selectedIds)].filter((id) => !html.includes(`id="${id}"`));
   assert.deepEqual(missingIds, []);
-  assert.doesNotMatch(html, /ai-avatar|avatar-model|portrait-mouth|avatar-canvas|holo-stage|avatar-shortcuts/i);
-  assert.doesNotMatch(html, /News & briefing|news-button|briefing-panel|briefing-results/i);
+  const documentIds = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(documentIds).size, documentIds.length, 'HTML IDs must be unique');
+  assert.match(html, /class="presence"/);
+  assert.match(html, /id="holo-stage"/);
+  assert.match(html, /id="ai-avatar" src="\/5234e417739a8221c0d6ce9c25d690ff69dd8de1860b0b9394bad1a30df599e4\.png"/);
+  assert.doesNotMatch(html, /ai-avatar\.jpg/);
+  assert.doesNotMatch(html, /avatar-shortcuts/);
+  assert.equal((html.match(/class="orbit orbit-(?:one|two)"/g) || []).length, 2);
+  assert.match(html, /class="holo-sphere-shell" aria-hidden="true"/);
+  assert.match(html, /class="holo-emitter" aria-hidden="true"/);
+  assert.doesNotMatch(html, /class="orbit orbit-three"|class="holo-grid"|class="core-halo"/);
+  assert.doesNotMatch(html, /avatar-model-controls|avatar-canvas|Load local 3D model/i);
+  assert.match(html, /News &amp; Briefing|news-button|briefing-panel|briefing-results/i);
   assert.doesNotMatch(client, /avatar3d|setAvatarMouth|toggleAudioLipSync/);
   assert.match(client, /utterance\.onpause/);
   assert.match(client, /utterance\.onresume/);
@@ -145,8 +156,31 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="old-interface-button"[^>]*>Old Interface</);
   assert.match(html, /id="dashboard-transcript"/);
   assert.match(html, /class="right-rail"/);
-  assert.match(html, /id="dashboard-chat-title">Command channel/);
+  assert.match(html, /id="dashboard-chat-title">Chat with me/);
+  assert.match(html, /id="system-title">Real-Time Info/);
+  assert.match(html, /id="quick-title">Quick Actions/);
+  assert.match(html, /id="dashboard-command-form"/);
+  assert.match(html, /id="dashboard-mic-button"/);
+  assert.match(html, /id="dashboard-message"/);
+  assert.ok(html.indexOf('class="presence"') < html.indexOf('class="right-rail"'));
+  assert.ok(html.indexOf('class="right-rail"') < html.indexOf('id="holo-state-strip"'));
+  assert.ok(html.indexOf('id="holo-state-strip"') < html.indexOf('id="dashboard-command-form"'));
+  assert.doesNotMatch(html, /file_00000000f9a4821182e42efc9a2e93a0\.png/);
+  assert.match(html, /id="presence-title">At your service\./);
+  assert.match(html, /class="holo-sphere-shell"/);
+  assert.match(html, /class="holo-emitter"/);
+  assert.match(html, /alt="J\.A\.R\.V\.I\.S\. female assistant portrait"/);
+  assert.match(html, /id="holo-waveform"[^>]+role="img"/);
+  assert.deepEqual([...html.matchAll(/data-holo-state="([^"]+)"/g)].map((match) => match[1]), [
+    'listening', 'thinking', 'speaking', 'online',
+  ]);
+  assert.match(html, /id="holo-state-announcement"[^>]+aria-live="polite"/);
   assert.match(html, /id="dashboard-voice-title">Voice Assistant/);
+  assert.match(html, /id="briefing-title">News &amp; Briefing/);
+  assert.match(html, /id="news-button"[^>]*data-requires-full-access/);
+  assert.match(html, /id="briefing-results"[^>]*aria-live="polite"/);
+  assert.match(html, /id="activity-title">Activity feed/);
+  assert.match(html, /aria-label="Dashboard quick navigation"/);
   assert.match(html, /id="activity-panel"/);
   assert.equal([...html.matchAll(/dashboard-chat-panel/g)].length, 1);
   assert.match(html, /id="voice-waveform"/);
@@ -160,7 +194,15 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="backend-connection-value"/);
   assert.match(html, /data-device-group="desktop"/);
   assert.match(html, /data-device-group="mobile"/);
-  assert.doesNotMatch(html, /class="new-feature-bar"|data-avatar-feature=|data-dashboard-feature=/);
+  assert.match(html, /class="new-feature-bar"/);
+  assert.match(html, /data-nav="chat"/);
+  assert.match(html, /data-dashboard-feature="chat"/);
+  assert.match(client, /closest\('\[data-dashboard-feature\], \[data-avatar-feature\]'\)/);
+  assert.match(client, /document\.querySelector\('\.new-feature-bar'\)\.addEventListener\('click', handleDashboardFeature\)/);
+  assert.match(client, /document\.querySelector\('\.avatar-hero'\)\.addEventListener\('click', handleDashboardFeature\)/);
+  assert.match(client, /async function loadBriefing\(\)/);
+  assert.match(client, /briefingButton\.addEventListener\('click', loadBriefing\)/);
+  assert.match(client, /destination === 'news'[\s\S]*?mobile-news-open[\s\S]*?loadBriefing\(\)/);
   assert.match(html, /class="feature-toolbar"/);
   const featureToolbar = html.match(/<nav class="feature-toolbar"[\s\S]*?<\/nav>/)?.[0] || '';
   assert.equal([...featureToolbar.matchAll(/<svg\b/g)].length, 7);
@@ -204,8 +246,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="dashboard-mic-button"/);
   assert.match(html, /id="dashboard-mic-button"[^>]*aria-pressed="false"/);
   assert.match(html, /id="voice-console-status"/);
-  assert.match(html, /id="system-title">System monitor/);
-  assert.match(html, /id="quick-title">Quick actions/);
+  assert.match(html, /id="system-title">Real-Time Info/);
+  assert.match(html, /id="quick-title">Quick Actions/);
   assert.match(html, /id="dashboard-attach-button"/);
   assert.match(html, /id="dashboard-attach-button"/);
   assert.match(html, /id="dashboard-command-form"/);
@@ -276,13 +318,19 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /setDashboardChatState\('thinking'/);
   assert.match(client, /setAssistantState\('error'/);
   assert.match(client, /elements\.message\.addEventListener\('keydown',[\s\S]*?event\.key === 'Enter' && !event\.shiftKey && !event\.isComposing[\s\S]*?elements\.form\.requestSubmit\(\)/);
-  assert.doesNotMatch(html, /avatar|portrait|lip-sync/i);
+  assert.match(html, /id="ai-avatar" src="\/5234e417739a8221c0d6ce9c25d690ff69dd8de1860b0b9394bad1a30df599e4\.png"/);
+  assert.doesNotMatch(html, /avatar-model-controls|avatar-canvas|lip-sync/i);
   assert.match(styles, /button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible \{ outline: 2px solid/);
   assert.match(client, /updateMetricGauge\(elements\.cpuMeterTrack, elements\.cpuMeter, metrics\.cpuUsagePercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.ramMeterTrack, elements\.ramMeter, metrics\.memoryPercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.diskMeterTrack, elements\.diskMeter, metrics\.diskPercent\)/);
   assert.match(client, /function handleDashboardFeature/);
-  assert.match(client, /closest\('\[data-dashboard-feature\]'\)/);
+  assert.match(client, /function updateHologramState\(\)/);
+  assert.match(client, /elements\.holoWaveform\.classList\.toggle\('is-active', voiceActive\)/);
+  assert.match(client, /state\.assistantMode = supportedModes\.includes\(mode\) \? mode : 'normal';[\s\S]*?updateHologramState\(\)/);
+  assert.match(client, /state\.holoOnline = true;\s*updateHologramState\(\)/);
+  assert.match(client, /state\.holoOnline = false;\s*updateHologramState\(\)/);
+  assert.match(client, /closest\('\[data-dashboard-feature\], \[data-avatar-feature\]'\)/);
   assert.match(client, /destination === 'settings'[\s\S]*?openSettings\(\)/);
   assert.match(client, /navigator\.permissions\.query\(\{ name: 'microphone' \}\)/);
   assert.match(client, /navigator\.getBattery\(\)/);
@@ -291,8 +339,12 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(deviceMonitor, /export function detectDeviceProfile/);
   assert.match(html, /Device details use browser-reported information/);
   assert.match(styles, /body\.new-interface \.right-rail[\s\S]*overflow-y: auto/);
-  assert.doesNotMatch(html, /avatar|portrait|lip-sync/i);
-  assert.doesNotMatch(html, /News & briefing|news-button|briefing-panel|briefing-results/i);
+  assert.match(html, /class="avatar-frame"/);
+  assert.match(html, /id="ai-avatar" src="\/5234e417739a8221c0d6ce9c25d690ff69dd8de1860b0b9394bad1a30df599e4\.png"/);
+  assert.doesNotMatch(html, /ai-avatar\.jpg/);
+  assert.doesNotMatch(html, /avatar3d|avatar-model-controls|avatar-canvas|lip-sync/i);
+  assert.match(html, /News &amp; Briefing/);
+  assert.match(html, /data-nav="news" data-requires-full-access/);
   assert.match(interfaceSwitcher, /dashboard\.hidden = view !== 'dashboard'/);
   assert.match(interfaceSwitcher, /conversation\.hidden = view !== 'chat'/);
   assert.match(html, /id="install-help"/);
@@ -304,28 +356,39 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /jarvis-512\.png/);
   assert.match(styles, /@media \(max-width: 780px\)/);
   assert.match(styles, /\.mobile-nav \{ position: fixed/);
-  assert.match(styles, /\.dashboard-layout \{[^}]*minmax\(220px, \.76fr\) minmax\(510px, 1\.85fr\) minmax\(270px, \.94fr\)/);
-  assert.match(styles, /\.dashboard-layout \{ grid-template-columns: minmax\(140px, \.72fr\) minmax\(240px, 1\.32fr\) minmax\(170px, \.82fr\)/);
-  assert.match(styles, /@media \(min-width: 1101px\) and \(max-width: 1399px\)/);
-  assert.match(styles, /@media \(min-width: 901px\) and \(max-width: 1100px\)/);
-  assert.match(styles, /\.holo-stage \{ width: min\(100%, 630px\)/);
-  assert.match(styles, /\.orbit-three \{ width: 121%; height: 121%;/);
-  assert.match(styles, /\.orbit-two \{[^}]*perspective\(850px\) rotateX\(67deg\)/);
-  assert.match(styles, /\.avatar-frame \{ width: 87%; height: 98%;/);
+  const dashboardStyles = styles.slice(styles.indexOf(
+    'body.new-interface .main-frame {',
+    styles.indexOf('.app-hub-dialog-toolbar'),
+  ));
+  assert.match(dashboardStyles, /grid-template-columns: 190px minmax\(0, 1fr\)/);
+  assert.match(dashboardStyles, /grid-template-areas:[\s\S]*?"presence info"[\s\S]*?"status status"[\s\S]*?"command command"/);
+  assert.match(dashboardStyles, /grid-template-areas: "presence" "status" "command" "info"/);
+  assert.match(dashboardStyles, /body\.new-interface \.right-rail \{[^}]*display: flex/);
+  assert.match(dashboardStyles, /body\.new-interface \.mobile-nav \{ display: grid; \}/);
+  assert.match(dashboardStyles, /body\.new-interface \.new-feature-bar \{ display: none; \}/);
+  assert.match(dashboardStyles, /body\.new-interface \.holo-stage \{[\s\S]*?width: min\(100%, 590px, 60dvh\)/);
+  assert.match(dashboardStyles, /body\.new-interface \.avatar-frame \{[\s\S]*?width: 84%;[\s\S]*?height: 92%/);
+  assert.match(dashboardStyles, /body\.new-interface \.holo-sphere-shell \{[\s\S]*?width: 100%;[\s\S]*?height: 100%/);
+  assert.doesNotMatch(dashboardStyles, /orbit-three|holo-grid|core-halo|hud-build-tag/);
+  assert.match(dashboardStyles, /body\.new-interface \.dashboard-command \{[\s\S]*?grid-template-columns: 44px minmax\(0, 1fr\) 44px/);
+  assert.match(dashboardStyles, /body\.new-interface \.dashboard-layout > \.holo-state-strip \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /@keyframes holo-wave/);
+  assert.match(styles, /\.holo-state\.is-current/);
   assert.match(styles, /\.activity-log \{ min-height: 150px; flex: 1/);
-  assert.match(styles, /\.left-rail, \.right-rail \{ display: none; \}/);
-  assert.match(styles, /body\.mobile-system-open \.dashboard-layout > \.right-rail/);
-  assert.match(styles, /body\.mobile-news-open \.right-rail \.briefing-panel/);
-  assert.match(styles, /body\.mobile-activity-open \.left-rail \.activity-panel/);
-  assert.match(styles, /\.presence \{[^}]*grid-template-rows: auto minmax\(260px, 1fr\)/);
-  assert.match(html, /styles\.css\?hud=32/);
+  assert.match(styles, /body\.new-interface \.presence \{[^}]*display: grid/);
+  assert.match(styles, /body\.new-interface \.ai-avatar \{[^}]*object-fit: cover;[^}]*filter: none;/);
+  assert.match(styles, /body\.new-interface \.holo-waveform\.is-active i/);
+  assert.match(styles, /body\.new-interface \.holo-emitter/);
+  assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: sticky/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(html, /styles\.css\?hud=34/);
   assert.match(html, /diagnostics\.js\?hud=27/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(diagnostics, /JavaScript errors:/);
   assert.match(diagnostics, /get\('diagnostics'\) === '1'/);
-  assert.match(worker, /jarvis-shell-v42/);
+  assert.match(worker, /jarvis-shell-v44/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=32/);
+  assert.match(worker, /styles\.css\?hud=34/);
   assert.match(worker, /diagnostics\.js\?hud=27/);
   assert.match(worker, /app\.js\?hud=39/);
   assert.doesNotMatch(worker, /avatar-cues\.js|ai-avatar\.jpg/);
@@ -338,7 +401,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=41/);
+  assert.match(client, /service-worker\.js\?hud=42/);
   assert.match(client, /AbortSignal\.timeout\(50_000\)/);
   assert.match(client, /feature-toolbar, \.right-rail/);
   assert.match(styles, /\.feature-toolbar \{ display: none; \}/);
@@ -347,6 +410,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /\.dashboard-command \{/);
   assert.match(styles, /\.ai-avatar\.is-thinking/);
   assert.match(styles, /@media \(max-width: 780px\)/);
+  assert.match(styles, /body\.new-interface \.presence \{[^}]*min-height: 0;[^}]*display: grid/);
   assert.match(styles, /@media \(min-width: 781px\) and \(max-width: 1100px\)/);
   const mobileNavigation = html.match(/<nav class="mobile-nav"[\s\S]*?<\/nav>/)?.[0] || '';
   assert.equal([...mobileNavigation.matchAll(/<svg\b/g)].length, 6);
@@ -456,13 +520,15 @@ test('serves valid 192px and 512px PNG installation icons', async () => {
   }
 });
 
-test('serves the photographic portrait as a local JPEG asset', async () => {
-  const response = await fetch(`${baseUrl}/ai-avatar.jpg`);
-  const image = new Uint8Array(await response.arrayBuffer());
+test('serves the approved J.A.R.V.I.S. avatar as a local PNG asset', async () => {
+  const response = await fetch(`${baseUrl}/5234e417739a8221c0d6ce9c25d690ff69dd8de1860b0b9394bad1a30df599e4.png`);
+  const image = Buffer.from(await response.arrayBuffer());
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /image\/jpeg/);
-  assert.ok(image.length > 20_000);
-  assert.deepEqual([...image.slice(0, 3)], [0xff, 0xd8, 0xff]);
+  assert.match(response.headers.get('content-type'), /image\/png/);
+  assert.ok(image.length > 200_000);
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(image.readUInt32BE(16), 1_254);
+  assert.equal(image.readUInt32BE(20), 1_254);
 });
 
 test('serves and retains the bundled avatar face reference as a local JPEG asset', async () => {
@@ -513,11 +579,15 @@ test('reports provider and access configuration without exposing credentials', a
   assert.equal(health.search, 'DuckDuckGo Instant Answers with Wikipedia search fallback');
 });
 
-test('prefers server cloud credentials over an implicit Ollama URL without exposing the key', async () => {
-  const keys = ['AI_API_KEY', 'AI_PROVIDER', 'OLLAMA_BASE_URL'];
+test('configures Gemini from server environment without exposing its key', async () => {
+  const keys = ['AI_API_KEY', 'AI_BASE_URL', 'AI_MODEL', 'AI_PROVIDER', 'OLLAMA_BASE_URL'];
   const previousEnvironment = new Map(keys.map((key) => [key, process.env[key]]));
   const apiKey = 'test-only-gemini-environment-secret';
+  const geminiBaseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  const geminiModel = 'gemini-3.5-flash-lite';
   process.env.AI_API_KEY = apiKey;
+  process.env.AI_BASE_URL = geminiBaseUrl;
+  process.env.AI_MODEL = geminiModel;
   process.env.OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
   delete process.env.AI_PROVIDER;
   try {
@@ -526,8 +596,8 @@ test('prefers server cloud credentials over an implicit Ollama URL without expos
     assert.equal(response.status, 200);
     assert.equal(health.provider, 'openai-compatible');
     assert.equal(health.providerSource, 'environment');
-    assert.equal(health.model, 'gemini-3.5-flash-lite');
-    assert.equal(health.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/openai/');
+    assert.equal(health.model, geminiModel);
+    assert.equal(health.baseUrl, geminiBaseUrl);
     assert.doesNotMatch(JSON.stringify(health), new RegExp(apiKey));
   } finally {
     for (const [key, value] of previousEnvironment) {

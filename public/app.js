@@ -10,9 +10,11 @@ import {
   getSpeechRecognitionConstructor,
   getSpeechRecognitionLanguage,
   getSpeechRecognitionStartError,
+  getSpeechSynthesisErrorMessage,
   isPageForeground,
   matchWakeWord,
   nextWakeWordRestartDelay,
+  primeSpeechSynthesis,
   readSpeechRecognitionResult,
   resolveVoiceOutputEnabled,
   selectSpeechSynthesisVoice,
@@ -51,6 +53,9 @@ const elements = {
   dashboardTranscript: document.querySelector('#dashboard-transcript'),
   dashboardFeedback: document.querySelector('#dashboard-feedback'),
   assistantState: document.querySelector('#assistant-state'),
+  holoWaveform: document.querySelector('#holo-waveform'),
+  holoStateAnnouncement: document.querySelector('#holo-state-announcement'),
+  holoStates: document.querySelectorAll('[data-holo-state]'),
   dashboardConnection: document.querySelector('#connection-status-dashboard'),
   providerNote: document.querySelector('#provider-note'),
   connection: document.querySelector('#connection-status'),
@@ -136,6 +141,8 @@ const elements = {
   cpuLabel: document.querySelector('#cpu-label'),
   ramLabel: document.querySelector('#ram-label'),
   diskLabel: document.querySelector('#disk-label'),
+  briefingButton: document.querySelector('#news-button'),
+  briefingResults: document.querySelector('#briefing-results'),
   fileSearchDialog: document.querySelector('#file-search-dialog'),
   fileSearchQuery: document.querySelector('#file-search-query'),
   fileSearchResults: document.querySelector('#file-search-results'),
@@ -223,6 +230,7 @@ const state = {
   visionAbortController: null,
   visionCaptureSequence: 0,
   assistantMode: 'normal',
+  holoOnline: false,
   microphonePermission: 'unknown',
   lastChatFailure: null,
   aiSettingsLoaded: false,
@@ -312,6 +320,31 @@ function setAssistantState(mode, label) {
     error: 'Assistant request failed',
     offline: 'Assistant connection unavailable',
   })[state.assistantMode] || 'Voice channel idle');
+  updateHologramState();
+}
+
+function updateHologramState() {
+  const activeMode = ['listening', 'thinking', 'speaking'].includes(state.assistantMode)
+    ? state.assistantMode
+    : state.holoOnline ? 'online' : '';
+  const announcement = activeMode || 'offline';
+  elements.holoStates.forEach((item) => {
+    const active = item.dataset.holoState === activeMode;
+    item.classList.toggle('is-current', active);
+    if (active) item.setAttribute('aria-current', 'true');
+    else item.removeAttribute('aria-current');
+  });
+  const voiceActive = ['listening', 'speaking'].includes(state.assistantMode);
+  elements.holoWaveform.classList.toggle('is-active', voiceActive);
+  elements.holoWaveform.classList.toggle('is-listening', state.assistantMode === 'listening');
+  elements.holoWaveform.classList.toggle('is-speaking', state.assistantMode === 'speaking');
+  elements.holoWaveform.setAttribute('aria-label', voiceActive
+    ? `Voice activity ${state.assistantMode}`
+    : 'Voice activity idle');
+  elements.holoStateAnnouncement.textContent = announcement === 'online'
+    ? 'J.A.R.V.I.S. is online.'
+    : announcement === 'offline' ? 'J.A.R.V.I.S. is offline.'
+      : `J.A.R.V.I.S. is ${announcement}.`;
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
@@ -448,6 +481,7 @@ function apiHeaders(json = false) {
 
 async function sendChat(text, { retry = false, contextOverride = null, maxTokens = null, singleAttempt = false } = {}) {
   const context = contextOverride || selectRecentChatContext(state.messages);
+  if (state.preferences.voiceEnabled) primeVoiceOutput();
   if (!retry) state.lastChatFailure = null;
   setDashboardChatState('thinking', 'J.A.R.V.I.S. is processing your message.');
   setAssistantState('thinking', 'PROCESSING REQUEST');
@@ -612,6 +646,15 @@ function selectedVoice() {
   return selectSpeechSynthesisVoice(state.voices, state.preferences.language, state.preferences.voiceURI);
 }
 
+function primeVoiceOutput() {
+  if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return false;
+  return primeSpeechSynthesis(
+    window.speechSynthesis,
+    window.SpeechSynthesisUtterance || globalThis.SpeechSynthesisUtterance,
+    state.preferences.language,
+  );
+}
+
 function pageIsFocused() {
   try {
     return typeof document.hasFocus === 'function' && document.hasFocus();
@@ -636,7 +679,9 @@ function speak(text) {
   const playbackId = ++state.speechPlaybackId;
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
   state.pendingSpeechText = null;
-  window.speechSynthesis.cancel();
+  try {
+    window.speechSynthesis.cancel();
+  } catch {}
   let utterance;
   try {
     utterance = new SpeechSynthesisUtterance(text);
@@ -674,11 +719,12 @@ function speak(text) {
     if (playbackId !== state.speechPlaybackId) return;
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
-    showFeedback(event.error === 'canceled' || event.error === 'interrupted'
-      ? ''
-      : 'Speech output is unavailable for the selected voice on this device.');
+    showFeedback(getSpeechSynthesisErrorMessage(event.error));
     resumeWakeWordDetection();
   };
+  try {
+    window.speechSynthesis.resume?.();
+  } catch {}
   try {
     window.speechSynthesis.speak(utterance);
   } catch {
@@ -692,7 +738,9 @@ function speak(text) {
 function stopSpeechOutput() {
   state.pendingSpeechText = null;
   state.speechPlaybackId += 1;
-  window.speechSynthesis.cancel();
+  try {
+    window.speechSynthesis.cancel();
+  } catch {}
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
   resumeWakeWordDetection();
 }
@@ -983,6 +1031,8 @@ async function checkServer() {
   loadSystemMetrics();
   if (!navigator.onLine) {
     if (requestSequence !== healthRequestSequence) return;
+    state.holoOnline = false;
+    updateHologramState();
     elements.backendConnectionValue.textContent = 'Offline';
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'OFFLINE';
@@ -999,6 +1049,8 @@ async function checkServer() {
     });
     const data = await readApiResponse(response);
     if (requestSequence !== healthRequestSequence) return;
+    state.holoOnline = true;
+    updateHologramState();
     state.aiConfigured = data.aiConfigured === true;
     state.accessRequired = data.accessRequired === true;
     const ollamaSelected = data.provider === 'ollama';
@@ -1050,6 +1102,8 @@ async function checkServer() {
     elements.footerStatus.textContent = aiReady ? 'SERVER AI · LOCAL HISTORY · PERMISSION-BOUND' : 'AI UNAVAILABLE · LOCAL HISTORY · PERMISSION-BOUND';
   } catch {
     if (requestSequence !== healthRequestSequence) return;
+    state.holoOnline = false;
+    updateHologramState();
     elements.connection.className = 'connection-indicator is-offline';
     elements.connection.lastElementChild.textContent = 'SERVER OFFLINE';
     elements.dashboardConnection.textContent = 'SERVER OFFLINE';
@@ -1670,6 +1724,12 @@ function handleNavigation(event) {
     setWorkspaceView('dashboard');
     if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-system-open');
     document.querySelector('#system-title').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } else if (destination === 'news') {
+    setWorkspaceView('dashboard');
+    selectNavigation('news');
+    if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-news-open');
+    if (!elements.briefingResults.childElementCount) loadBriefing();
+    document.querySelector('#briefing-title').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } else if (destination === 'settings') {
     selectNavigation(destination);
     openSettings();
@@ -1682,9 +1742,9 @@ function handleNavigation(event) {
 }
 
 function handleDashboardFeature(event) {
-  const button = event.target.closest('[data-dashboard-feature]');
+  const button = event.target.closest('[data-dashboard-feature], [data-avatar-feature]');
   if (!button) return;
-  const destination = button.dataset.dashboardFeature;
+  const destination = button.dataset.dashboardFeature || button.dataset.avatarFeature;
   if (destination === 'chat') {
     elements.dashboardMessage.focus();
     document.querySelector('#dashboard-chat-title').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1702,6 +1762,50 @@ function handleDashboardFeature(event) {
     openSettings();
   } else if (destination === 'more') {
     elements.moreNavigationDialog.showModal();
+  }
+}
+
+async function loadBriefing() {
+  elements.briefingButton.disabled = true;
+  elements.briefingResults.replaceChildren();
+  const status = document.createElement('p');
+  status.textContent = 'Searching available web sources...';
+  elements.briefingResults.append(status);
+  try {
+    const query = state.preferences.language === 'hi' ? 'प्रौद्योगिकी समाचार' : 'latest technology news';
+    const params = new URLSearchParams({ q: query, lang: state.preferences.language });
+    const response = await fetch(`/api/search?${params}`, {
+      headers: apiHeaders(),
+      signal: AbortSignal.timeout(18_000),
+    });
+    const data = await readApiResponse(response);
+    const results = Array.isArray(data.results) ? data.results.slice(0, 3) : [];
+    elements.briefingResults.replaceChildren();
+    if (!results.length) {
+      const notice = document.createElement('p');
+      notice.textContent = data.notice || 'No source-backed headlines were returned.';
+      elements.briefingResults.append(notice);
+    }
+    for (const result of results) {
+      const link = document.createElement('a');
+      link.href = result.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = result.title;
+      elements.briefingResults.append(link);
+      const snippet = document.createElement('p');
+      snippet.textContent = result.snippet;
+      elements.briefingResults.append(snippet);
+    }
+    logActivity(`Briefing retrieved: ${results.length} source${results.length === 1 ? '' : 's'}`);
+  } catch (error) {
+    elements.briefingResults.replaceChildren();
+    const notice = document.createElement('p');
+    notice.textContent = getRequestErrorMessage(error, 'news briefing');
+    elements.briefingResults.append(notice);
+    logActivity('Briefing unavailable');
+  } finally {
+    elements.briefingButton.disabled = false;
   }
 }
 
@@ -1785,6 +1889,8 @@ document.querySelector('#more-tools-button').addEventListener('click', () => {
 });
 document.querySelectorAll('.primary-nav, .mobile-nav, .feature-toolbar, .right-rail').forEach((nav) => nav.addEventListener('click', handleNavigation));
 document.querySelector('.new-feature-bar').addEventListener('click', handleDashboardFeature);
+document.querySelector('.avatar-hero').addEventListener('click', handleDashboardFeature);
+elements.briefingButton.addEventListener('click', loadBriefing);
 elements.moreNavigationDialog.addEventListener('click', handleNavigation);
 document.querySelector('#clear-button').addEventListener('click', () => {
   state.messages = [];
@@ -1971,6 +2077,7 @@ elements.voiceEnabled.addEventListener('change', () => {
   elements.dashboardVoiceToggle.setAttribute('aria-pressed', String(state.preferences.voiceEnabled));
   elements.dashboardVoiceLabel.textContent = state.preferences.voiceEnabled ? 'Voice on' : 'Voice off';
   if (!state.preferences.voiceEnabled && 'speechSynthesis' in window) stopSpeechOutput();
+  else primeVoiceOutput();
   savePreferences();
 });
 elements.wakeWordEnabled.addEventListener('change', () => {
@@ -2110,7 +2217,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=41', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=42', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }
