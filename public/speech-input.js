@@ -1,0 +1,162 @@
+export function readSpeechRecognitionResult(event) {
+  const results = event?.results || [];
+  let transcript = '';
+  for (let index = 0; index < results.length; index += 1) {
+    transcript += results[index][0]?.transcript || '';
+  }
+
+  const firstChangedResult = Number.isInteger(event?.resultIndex)
+    ? Math.min(event.resultIndex, results.length)
+    : 0;
+  let finalResult = firstChangedResult < results.length;
+  for (let index = firstChangedResult; index < results.length; index += 1) {
+    finalResult &&= Boolean(results[index].isFinal);
+  }
+
+  return { transcript: transcript.trim(), finalResult };
+}
+
+export function getSpeechRecognitionConstructor(browserWindow) {
+  return browserWindow?.SpeechRecognition || browserWindow?.webkitSpeechRecognition || null;
+}
+
+export function getSpeechRecognitionLanguage(language) {
+  return language === 'hi' ? 'hi-IN' : 'en-US';
+}
+
+export function resolveVoiceOutputEnabled(savedPreference, speechSynthesisSupported) {
+  if (!speechSynthesisSupported) return false;
+  return typeof savedPreference === 'boolean' ? savedPreference : true;
+}
+
+export function matchWakeWord(transcript) {
+  const text = String(transcript || '').normalize('NFC');
+  const match = /(?:^|\s)(?:hey[\s,!?]+jarvis|हे[\s,!?]+जार्विस)(?=\s|[,.:;!?]|$)/iu.exec(text);
+  if (!match) return { matched: false, command: '' };
+
+  let command = text.slice(match.index + match[0].length).replace(/^[\s,.:;!?-]+/u, '');
+  const repeatedWakeWord = /^[\s,.:;!?-]*(?:hey[\s,!?]+jarvis|हे[\s,!?]+जार्विस)(?=$|[\s,.:;!?-])/iu;
+  while (repeatedWakeWord.test(command)) {
+    command = command.replace(repeatedWakeWord, '').replace(/^[\s,.:;!?-]+/u, '');
+  }
+  return { matched: true, command };
+}
+
+export function nextWakeWordRestartDelay(delay) {
+  const currentDelay = Number.isFinite(delay) ? Math.max(600, delay) : 600;
+  return Math.min(currentDelay * 2, 8_000);
+}
+
+export function isPageForeground(visibilityState, focused) {
+  return visibilityState !== 'hidden' && focused === true;
+}
+
+export function shouldPlaySpeech(visibilityState, focused) {
+  return isPageForeground(visibilityState, focused);
+}
+
+export function shouldRunWakeWord(enabled, visibilityState, lifecyclePaused = false, microphonePermission = 'unknown', focused = true) {
+  return enabled === true
+    && isPageForeground(visibilityState, focused)
+    && lifecyclePaused !== true
+    && microphonePermission !== 'denied';
+}
+
+export function selectSpeechSynthesisVoice(voices, language, preferredVoiceURI = '') {
+  const languageCode = language === 'hi' ? 'hi' : 'en';
+  const locale = languageCode === 'hi' ? 'hi-IN' : 'en-US';
+  const normalizedLanguage = (voice) => String(voice.lang || '').replace('_', '-').toLowerCase();
+  const compatibleVoices = voices.filter((voice) => (
+    normalizedLanguage(voice) === languageCode || normalizedLanguage(voice).startsWith(`${languageCode}-`)
+  ));
+  const exactLocaleVoices = compatibleVoices.filter((voice) => normalizedLanguage(voice) === locale.toLowerCase());
+
+  return compatibleVoices.find((voice) => voice.voiceURI === preferredVoiceURI)
+    || exactLocaleVoices.find((voice) => voice.default)
+    || exactLocaleVoices[0]
+    || compatibleVoices.find((voice) => voice.default)
+    || compatibleVoices[0]
+    || null;
+}
+
+export function getSpeechRecognitionErrorMessage(error) {
+  const messages = {
+    'not-allowed': 'Microphone permission was denied. Allow microphone access in your browser settings to use voice input.',
+    'service-not-allowed': 'The browser speech service is unavailable or blocked for this site.',
+    'no-speech': 'No speech was detected. Try again when you are ready.',
+    'network': 'Browser speech recognition is unavailable over the current network.',
+    'audio-capture': 'No microphone is available. Connect or enable a microphone, then try again.',
+    'language-not-supported': 'Speech recognition does not support the selected language on this device.',
+  };
+
+  if (error === 'aborted') return '';
+  return messages[error] || `Voice input stopped: ${error || 'unknown error'}.`;
+}
+
+export function getSpeechRecognitionStartError(error) {
+  if (error?.name === 'NotAllowedError') {
+    return {
+      permissionDenied: true,
+      message: 'Microphone permission was denied. Allow microphone access in your browser settings to use voice input.',
+    };
+  }
+  if (error?.name === 'SecurityError') {
+    return {
+      permissionDenied: false,
+      message: 'Voice input requires a secure HTTPS connection or localhost.',
+    };
+  }
+  return {
+    permissionDenied: false,
+    message: 'The microphone could not be started. Check browser permissions and try again.',
+  };
+}
+
+export function createRecognitionLifecycle() {
+  let activeRecognition = null;
+  let stopping = false;
+
+  return {
+    begin(recognition) {
+      if (activeRecognition) return false;
+      activeRecognition = recognition;
+      stopping = false;
+      return true;
+    },
+    isCurrent(recognition) {
+      return activeRecognition === recognition;
+    },
+    isStopping(recognition) {
+      return activeRecognition === recognition && stopping;
+    },
+    requestStop(recognition) {
+      if (activeRecognition !== recognition || stopping) return false;
+      stopping = true;
+      return true;
+    },
+    finish(recognition) {
+      if (activeRecognition !== recognition) return false;
+      activeRecognition = null;
+      stopping = false;
+      return true;
+    },
+  };
+}
+
+export function createMicrophonePermissionGuard() {
+  let version = 0;
+
+  return {
+    begin() {
+      version += 1;
+      return version;
+    },
+    invalidate() {
+      version += 1;
+      return version;
+    },
+    isCurrent(requestVersion) {
+      return version === requestVersion;
+    },
+  };
+}

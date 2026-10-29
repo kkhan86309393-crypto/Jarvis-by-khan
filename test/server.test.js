@@ -107,7 +107,9 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const styles = await (await fetch(`${baseUrl}/styles.css`)).text();
   assert.match(client, /^import \{/);
   assert.match(client, /initializeAppHubs/);
-  assert.match(client, /initializeAppHubs\(\{\s*onActivity: logActivity,\s*onOpenVision: openVisionDialog,\s*canLaunchIntent: \(\) => state\.preferences\.fullAccessEnabled,\s*\}\)/);
+  assert.match(client, /initializeAppHubs\(\{\s*onActivity: logActivity,\s*onOpenVision: openVisionDialog,\s*canLaunchIntent: \(\) => state\.preferences\.fullAccessEnabled,\s*openDesktopExternal: window\.jarvisDesktop\?\.openExternalUrl\.bind\(window\.jarvisDesktop\),\s*copyUserText: copyTextToClipboard,\s*\}\)/);
+  assert.match(client, /window\.jarvisDesktop\?\.copyText/);
+  assert.match(html, /data-hub-action="copy-text"/);
   assert.match(client, /from '\.\/app-hub\.js'/);
   assert.match(appHub, /jarvis\.app-hub\.v1/);
   assert.match(appHub, /function renderShortcuts/);
@@ -246,13 +248,36 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
   assert.doesNotMatch(client, /avatar3d|setAvatarMouth|audioLipSync|avatarSpeechTimer/);
   assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
+  assert.match(html, /id="wake-word-enabled"/);
+  assert.match(client, /wakeWordEnabled: false/);
+  assert.match(client, /if \(state\.preferences\.wakeWordEnabled && !elements\.wakeWordEnabled\.disabled\) startListening\('wake'\)/);
+  assert.match(client, /recognition\.continuous = purpose === 'wake'/);
+  assert.match(client, /matchWakeWord\(transcript\)/);
+  assert.match(client, /document\.addEventListener\('visibilitychange'/);
+  assert.match(client, /window\.addEventListener\('blur', pauseVoiceForPageLifecycle\)/);
+  assert.match(client, /window\.addEventListener\('focus', resumeVoiceForPageLifecycle\)/);
+  assert.match(client, /window\.addEventListener\('pagehide', pauseVoiceForPageLifecycle\)/);
+  assert.match(client, /window\.addEventListener\('pageshow'/);
+  assert.match(client, /function pageIsFocused\(\)/);
+  assert.match(client, /if \(!isPageForeground\(document\.visibilityState, focused\)\) \{\s*pauseVoiceForPageLifecycle\(\);\s*return;/);
+  assert.match(client, /status\.state === 'denied'[\s\S]*?requestStopListening\(\)/);
+  assert.match(client, /if \(state\.assistantMode === 'listening'\) setAssistantState\('', 'SYSTEM STANDBY'\)/);
+  assert.match(client, /shouldRunWakeWord\(state\.preferences\.wakeWordEnabled, document\.visibilityState, state\.wakeWordPagePaused, state\.microphonePermission, pageIsFocused\(\)\)/);
+  assert.match(client, /shouldPlaySpeech\(document\.visibilityState, pageIsFocused\(\)\)/);
+  assert.match(client, /Voice playback stopped when J\.A\.R\.V\.I\.S\. lost focus/);
+  assert.match(client, /window\.speechSynthesis\?\.paused/);
+  assert.match(client, /if \(state\.recognitionWakeSession\) \{\s*state\.wakeWordResumePending = state\.preferences\.wakeWordEnabled;\s*requestStopListening\(\);\s*\}/);
+  assert.match(client, /if \(wakeSession && wakeWasTriggered && state\.preferences\.wakeWordEnabled && !state\.pending[\s\S]*?isPageForeground\(document\.visibilityState, pageIsFocused\(\)\) && state\.microphonePermission !== 'denied'\)/);
+  assert.match(client, /const manualTakeoverPending = state\.wakeWordManualTakeoverPending;\s*state\.wakeWordManualTakeoverPending = false;\s*if \(manualTakeoverPending && !state\.preferences\.wakeWordEnabled && isPageForeground/);
   assert.match(client, /dashboardCommandForm\.addEventListener\('submit'[\s\S]*?elements\.form\.requestSubmit\(\)/);
   assert.match(client, /elements\.dashboardSend\.disabled = true/);
   assert.match(client, /dashboardRetryButton\.addEventListener\('click', retryLastChat\)/);
   assert.match(client, /function retryLastChat\(\)/);
   assert.match(client, /setDashboardChatState\('thinking'/);
   assert.match(client, /setAssistantState\('error'/);
+  assert.match(client, /elements\.message\.addEventListener\('keydown',[\s\S]*?event\.key === 'Enter' && !event\.shiftKey && !event\.isComposing[\s\S]*?elements\.form\.requestSubmit\(\)/);
   assert.doesNotMatch(html, /avatar|portrait|lip-sync/i);
+  assert.match(styles, /button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible \{ outline: 2px solid/);
   assert.match(client, /updateMetricGauge\(elements\.cpuMeterTrack, elements\.cpuMeter, metrics\.cpuUsagePercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.ramMeterTrack, elements\.ramMeter, metrics\.memoryPercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.diskMeterTrack, elements\.diskMeter, metrics\.diskPercent\)/);
@@ -266,7 +291,6 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(deviceMonitor, /export function detectDeviceProfile/);
   assert.match(html, /Device details use browser-reported information/);
   assert.match(styles, /body\.new-interface \.right-rail[\s\S]*overflow-y: auto/);
-  assert.match(styles, /\.dashboard-layout \{[^}]*grid-template-columns: minmax\(0, 1\.1fr\) minmax\(0, 2fr\) minmax\(280px, 1fr\)/);
   assert.doesNotMatch(html, /avatar|portrait|lip-sync/i);
   assert.doesNotMatch(html, /News & briefing|news-button|briefing-panel|briefing-results/i);
   assert.match(interfaceSwitcher, /dashboard\.hidden = view !== 'dashboard'/);
@@ -317,7 +341,6 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /service-worker\.js\?hud=41/);
   assert.match(client, /AbortSignal\.timeout\(50_000\)/);
   assert.match(client, /feature-toolbar, \.right-rail/);
-  assert.match(client, /updateAvatarExpression/);
   assert.match(styles, /\.feature-toolbar \{ display: none; \}/);
   assert.match(styles, /\.feature-toolbar \.toolbar-icon \{ width: 18px; height: 18px;/);
   assert.match(styles, /\.mobile-nav button \{ min-width: 0; min-height: 44px;/);
@@ -670,7 +693,16 @@ test('routes chat to Ollama and returns its actual response', async () => {
     const response = await originalFetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'user', content: 'नमस्ते' }], language: 'hi', mode: 'study', max_tokens: 256 }),
+      body: JSON.stringify({
+        messages: [
+          { role: 'user', content: 'My name is Ada.' },
+          { role: 'assistant', content: 'Nice to meet you, Ada.' },
+          { role: 'user', content: 'नमस्ते, मुझे आगे क्या सीखना चाहिए?' },
+        ],
+        language: 'hi',
+        mode: 'study',
+        max_tokens: 256,
+      }),
     });
     const data = await response.json();
     assert.equal(response.status, 200);
@@ -679,9 +711,14 @@ test('routes chat to Ollama and returns its actual response', async () => {
     assert.equal(requestBody.model, 'qwen2.5:3b');
     assert.equal(requestBody.stream, false);
     assert.deepEqual(requestBody.options, { num_predict: 256 });
-    assert.ok(requestBody.messages.some((message) => message.content.includes('Reply in Hindi')));
+    assert.match(requestBody.messages[0].content, /Reply in Hindi naturally/);
+    assert.match(requestBody.messages[0].content, /use relevant conversation history/);
     assert.ok(requestBody.messages.some((message) => message.content.includes('Study Mode')));
-    assert.deepEqual(requestBody.messages.at(-1), { role: 'user', content: 'नमस्ते' });
+    assert.deepEqual(requestBody.messages.slice(1), [
+      { role: 'user', content: 'My name is Ada.' },
+      { role: 'assistant', content: 'Nice to meet you, Ada.' },
+      { role: 'user', content: 'नमस्ते, मुझे आगे क्या सीखना चाहिए?' },
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.AI_PROVIDER;

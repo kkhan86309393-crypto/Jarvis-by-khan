@@ -1,5 +1,8 @@
-import { app, BrowserWindow, desktopCapturer, dialog, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, session, shell } from 'electron';
 import { createAppServer } from '../server.js';
+import { getAllowedExternalUrl } from './external-links.js';
+import { isTrustedDesktopIpcEvent, getApprovedClipboardText, getApprovedDesktopExternalUrl } from './ipc-validation.js';
+import { fileURLToPath } from 'node:url';
 
 let server;
 let desktopOrigin;
@@ -27,6 +30,48 @@ if (!gotSingleInstanceLock) {
       const { port } = server.address();
       const appUrl = `http://127.0.0.1:${port}/?desktop-app=1`;
       desktopOrigin = new URL(appUrl).origin;
+      ipcMain.on('jarvis:open-external-url', (event, value) => {
+        if (!isTrustedDesktopIpcEvent(event, desktopOrigin)) return;
+        const externalUrl = getApprovedDesktopExternalUrl(event, desktopOrigin, value);
+        if (!externalUrl) {
+          if (typeof value === 'string' && /^intent:/i.test(value)) {
+            dialog.showMessageBox({
+              type: 'info',
+              title: 'Android app link unavailable',
+              message: 'Android intent links are not supported by this desktop shell. Open J.A.R.V.I.S. in a compatible Android browser to use this link.',
+              buttons: ['OK'],
+            }).catch(() => {});
+          }
+          return;
+        }
+        try {
+          Promise.resolve(shell.openExternal(externalUrl)).catch(() => {
+            dialog.showMessageBox({
+              type: 'warning',
+              title: 'Unable to open link',
+              message: 'Your operating system could not open this link. Check that a compatible browser, dialer, or messaging app is available.',
+              buttons: ['OK'],
+            }).catch(() => {});
+          });
+        } catch {
+          dialog.showMessageBox({
+            type: 'warning',
+            title: 'Unable to open link',
+            message: 'Your operating system could not open this link. Check that a compatible browser, dialer, or messaging app is available.',
+            buttons: ['OK'],
+          }).catch(() => {});
+        }
+      });
+      ipcMain.handle('jarvis:copy-text', (event, value) => {
+        const text = getApprovedClipboardText(event, desktopOrigin, value);
+        if (text === null) return false;
+        try {
+          clipboard.writeText(text);
+          return true;
+        } catch {
+          return false;
+        }
+      });
       session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
         let requestingOrigin;
         try {
@@ -56,6 +101,7 @@ if (!gotSingleInstanceLock) {
         minHeight: 600,
         title: 'J.A.R.V.I.S.',
         webPreferences: {
+          preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -95,13 +141,31 @@ if (!gotSingleInstanceLock) {
         }
       });
       window.webContents.setWindowOpenHandler(({ url }) => {
-        try {
-          const target = new URL(url);
-          if (target.protocol === 'https:') {
-            shell.openExternal(target.href);
+        const externalUrl = getAllowedExternalUrl(url);
+        if (!externalUrl) {
+          if (/^intent:/i.test(url)) {
+            dialog.showMessageBox(window, {
+              type: 'info',
+              title: 'Android app link unavailable',
+              message: 'Android intent links are not supported by this desktop shell. Open J.A.R.V.I.S. in a compatible Android browser to use this link.',
+              buttons: ['OK'],
+            }).catch(() => {});
           }
+          return { action: 'deny' };
+        }
+
+        const showExternalOpenFailure = () => {
+          dialog.showMessageBox(window, {
+            type: 'warning',
+            title: 'Unable to open link',
+            message: 'Your operating system could not open this link. Check that a compatible browser, dialer, or messaging app is available.',
+            buttons: ['OK'],
+          });
+        };
+        try {
+          shell.openExternal(externalUrl).catch(showExternalOpenFailure);
         } catch {
-          dialog.showErrorBox('Unable to open link', 'The requested link is not a valid HTTPS address.');
+          showExternalOpenFailure();
         }
         return { action: 'deny' };
       });

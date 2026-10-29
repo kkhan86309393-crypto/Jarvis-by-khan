@@ -1107,7 +1107,7 @@ body.new-interface .new-feature-bar button svg {
 .app-hub-form input[type="file"]::file-selector-button { min-height: 30px; margin-right: 8px; padding: 0 9px; border: 1px solid rgba(92, 152, 218, .32); border-radius: 6px; background: rgba(13, 36, 69, .62); color: var(--text); }
 .app-hub-icon-status { color: var(--faint); font-size: 8px; }
 .app-hub-form-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.app-hub-runner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 7px; padding-top: 9px; border-top: 1px solid rgba(91, 150, 221, .15); }
+.app-hub-runner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; align-items: end; gap: 7px; padding-top: 9px; border-top: 1px solid rgba(91, 150, 221, .15); }
 .app-hub-runner .app-hub-primary { min-height: 38px; white-space: nowrap; }
 .app-hub-status { min-height: 14px; margin: 0; color: var(--mint); font-size: 9px; line-height: 1.45; }
 .app-hub-status[data-state="error"] { color: #ffabb7; }
@@ -1118,7 +1118,7 @@ body.new-interface .new-feature-bar button svg {
 .app-hub-dialog-list { max-height: min(36vh, 310px); grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); }
 .app-hub-dialog .app-hub-card { grid-template-columns: 38px minmax(0, 1fr); }
 .app-hub-dialog .app-hub-card-actions { grid-column: 1 / -1; justify-content: flex-start; }
-.app-hub-dialog .app-hub-runner { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+.app-hub-dialog .app-hub-runner { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; }
 #capture-preview,
 #capture-frame-preview { width: 100%; max-height: 42vh; border-radius: 4px; background: #020711; object-fit: contain; }
 #capture-frame-preview[hidden] { display: none; }

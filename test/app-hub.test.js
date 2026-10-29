@@ -4,6 +4,7 @@ import {
   normalizeShortcut,
   normalizeWebUrl,
   initializeAppHubs,
+  dispatchAppDestination,
   openAppDestination,
   parseAppDestination,
   readShortcuts,
@@ -54,6 +55,73 @@ test('accepts explicit Android intent links with safe fallbacks and rejects unsa
     'javascript:alert(1)',
   ));
   assert.throws(() => parseAppDestination('whatsapp://send?text=hello'));
+});
+
+test('normalizes tel links for the dialer and sms links for a reviewed message draft', () => {
+  const call = parseAppDestination('tel:+1 (555) 123-4567');
+  assert.equal(call.kind, 'call');
+  assert.equal(call.url, 'tel:+15551234567');
+
+  const message = parseAppDestination('sms:+15551234567?body=Meet me at 5!');
+  assert.equal(message.kind, 'message');
+  assert.equal(new URL(message.url).pathname, '+15551234567');
+  assert.equal(new URL(message.url).searchParams.get('body'), 'Meet me at 5!');
+
+  const emptyDraft = parseAppDestination('sms:+15551234567');
+  assert.equal(emptyDraft.url, 'sms:+15551234567');
+});
+
+test('rejects unsafe call and message URI parameters and invalid phone numbers', () => {
+  for (const value of [
+    'tel:911?automatic=true',
+    'tel:+12',
+    'sms:5551234567?to=5557654321',
+    'sms:5551234567?body=one&body=two',
+    'sms:5551234567?body=ok#fragment',
+    `sms:5551234567?body=${'x'.repeat(2_001)}`,
+    'javascript:alert(1)',
+  ]) {
+    assert.throws(() => parseAppDestination(value), TypeError, value);
+  }
+});
+
+test('hands call and message links to the browser without sending them from JARVIS', () => {
+  const opened = [];
+  const launch = (value) => openAppDestination(value, (url, target) => {
+    opened.push({ url, target });
+    return {};
+  });
+
+  assert.equal(launch('tel:+15551234567').opened, true);
+  assert.equal(launch('sms:+15551234567?body=Hello').opened, true);
+  assert.deepEqual(opened, [
+    { url: 'tel:+15551234567', target: '_blank' },
+    { url: 'sms:+15551234567?body=Hello', target: '_blank' },
+  ]);
+
+  const unavailable = openAppDestination('tel:+15551234567', () => null);
+  assert.equal(unavailable.opened, false);
+  assert.equal(unavailable.handoffAttempted, true);
+});
+
+test('handles browsers that throw or block navigation without escaping the launcher', () => {
+  assert.equal(openAppDestination('https://example.com', () => { throw new Error('blocked'); }).opened, false);
+  const blockedCall = openAppDestination('tel:+15551234567', () => { throw new Error('unsupported scheme'); });
+  assert.equal(blockedCall.opened, false);
+  assert.equal(blockedCall.handoffAttempted, false);
+});
+
+test('dispatches approved destinations through the explicit desktop callback', () => {
+  const opened = [];
+  const result = dispatchAppDestination(
+    parseAppDestination('https://example.com/path'),
+    () => { throw new Error('browser fallback should not run'); },
+    (url) => { opened.push(url); return true; },
+  );
+
+  assert.equal(result.handoffAttempted, true);
+  assert.equal(result.destination.kind, 'web');
+  assert.deepEqual(opened, ['https://example.com/path']);
 });
 
 test('persists default examples and edited/reordered shortcuts in browser storage', () => {
@@ -233,6 +301,11 @@ test('adds, edits, deletes, runs a URL, and saves an uploaded shortcut icon', as
   });
   writeShortcuts([...readShortcuts(storage), intentShortcut], storage);
   const openedUrls = [];
+  const desktopRequestedUrls = [];
+  let desktopBridgeEnabled = false;
+  let blockNextOpen = false;
+  let clipboardAllowed = true;
+  let copiedText = '';
   let fullAccessEnabled = false;
   const globalListeners = new Map();
   const previousDocument = globalThis.document;
@@ -261,7 +334,23 @@ test('adds, edits, deletes, runs a URL, and saves an uploaded shortcut icon', as
     initializeAppHubs({
       documentObject,
       storage,
-      openWindow: (url) => { openedUrls.push(url); return {}; },
+      openWindow: (url) => {
+        openedUrls.push(url);
+        if (blockNextOpen) {
+          blockNextOpen = false;
+          return null;
+        }
+        return {};
+      },
+      copyUserText: async (text) => {
+        copiedText = text;
+        return clipboardAllowed;
+      },
+      openDesktopExternal: (url) => {
+        if (!desktopBridgeEnabled) return false;
+        desktopRequestedUrls.push(url);
+        return true;
+      },
       canLaunchIntent: () => fullAccessEnabled,
     });
 
@@ -306,6 +395,41 @@ test('adds, edits, deletes, runs a URL, and saves an uploaded shortcut icon', as
     root.fields.get('run-url').value = 'https://example.org/path';
     await submit(root.runner);
     assert.equal(openedUrls.at(-1), 'https://example.org/path');
+
+    root.fields.get('run-url').value = 'tel:+15551234567';
+    await submit(root.runner);
+    assert.equal(openedUrls.at(-1), 'tel:+15551234567');
+    assert.match(root.status.textContent, /does not place calls/i);
+
+    root.fields.get('run-url').value = 'sms:+15551234567?body=Hello';
+    await submit(root.runner);
+    assert.equal(openedUrls.at(-1), 'sms:+15551234567?body=Hello');
+    assert.match(root.status.textContent, /does not send messages/i);
+
+    desktopBridgeEnabled = true;
+    root.fields.get('run-url').value = 'https://system-browser.example/path';
+    await submit(root.runner);
+    assert.deepEqual(desktopRequestedUrls, ['https://system-browser.example/path']);
+    assert.match(root.status.textContent, /default browser was asked/i);
+
+    root.fields.get('run-url').value = 'Copy this user-entered text';
+    await click('copy-text');
+    assert.equal(copiedText, 'Copy this user-entered text');
+    assert.match(root.status.textContent, /copied to the clipboard/i);
+
+    clipboardAllowed = false;
+    await click('copy-text');
+    assert.match(root.status.textContent, /Clipboard access was denied/i);
+
+    root.fields.get('run-url').value = '';
+    await click('copy-text');
+    assert.match(root.status.textContent, /Enter text in URL Runner/i);
+
+    desktopBridgeEnabled = false;
+    blockNextOpen = true;
+    root.fields.get('run-url').value = 'https://external.example/path';
+    await submit(root.runner);
+    assert.match(root.status.textContent, /could not confirm navigation.*blocked or handed off externally/i);
 
     click('delete', shortcutId);
     assert.equal(readShortcuts(storage).length, 5);

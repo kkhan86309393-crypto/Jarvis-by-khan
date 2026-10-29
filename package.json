@@ -21,10 +21,10 @@
     "build:avatar": "esbuild public/avatar3d.js --bundle --format=esm --minify --legal-comments=inline --outfile=public/avatar3d.bundle.js",
     "pretest": "npm run build:avatar",
     "test": "node --test",
-    "check": "npm run build:avatar && node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check desktop/main.js && node --check public/app.js && node --check public/app-hub.js && node --check public/search-summary.js && node --check public/avatar-cues.js && node --check public/avatar3d.js && node --check public/interface-switcher.js && node --check public/device-monitor.js && node --check public/diagnostics.js && node --check public/service-worker.js"
+    "check": "npm run build:avatar && node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check desktop/main.js && node --check desktop/external-links.js && node --check desktop/ipc-validation.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/app-hub.js && node --check public/search-summary.js && node --check public/speech-input.js && node --check public/chat-context.js && node --check public/avatar-cues.js && node --check public/avatar3d.js && node --check public/interface-switcher.js && node --check public/device-monitor.js && node --check public/diagnostics.js && node --check public/service-worker.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.5",
@@ -44,6 +44,9 @@
     },
     "files": [
       "desktop/main.js",
+      "desktop/external-links.js",
+      "desktop/ipc-validation.js",
+      "desktop/preload.cjs",
       "server.js",
       "public/**/*",
       "package.json"

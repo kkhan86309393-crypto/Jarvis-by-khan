@@ -3,6 +3,23 @@ import { detectDeviceProfile } from './device-monitor.js';
 import { getPublicShareUrl } from './share-link.js';
 import { initializeAppHubs } from './app-hub.js';
 import { createSearchSummaryPrompt } from './search-summary.js';
+import {
+  createMicrophonePermissionGuard,
+  createRecognitionLifecycle,
+  getSpeechRecognitionErrorMessage,
+  getSpeechRecognitionConstructor,
+  getSpeechRecognitionLanguage,
+  getSpeechRecognitionStartError,
+  isPageForeground,
+  matchWakeWord,
+  nextWakeWordRestartDelay,
+  readSpeechRecognitionResult,
+  resolveVoiceOutputEnabled,
+  selectSpeechSynthesisVoice,
+  shouldPlaySpeech,
+  shouldRunWakeWord,
+} from './speech-input.js';
+import { selectRecentChatContext } from './chat-context.js';
 
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
@@ -13,7 +30,8 @@ const defaults = {
   language: 'en',
   voiceURI: '',
   speechRate: 1,
-  voiceEnabled: false,
+  voiceEnabled: 'speechSynthesis' in window,
+  wakeWordEnabled: false,
   memoryEnabled: true,
   fullAccessEnabled: false,
   studyMode: false,
@@ -57,6 +75,8 @@ const elements = {
   speechRate: document.querySelector('#speech-rate'),
   speechRateValue: document.querySelector('#speech-rate-value'),
   voiceEnabled: document.querySelector('#voice-enabled'),
+  wakeWordEnabled: document.querySelector('#wake-word-enabled'),
+  wakeWordSupport: document.querySelector('#wake-word-support'),
   memoryEnabled: document.querySelector('#memory-enabled'),
   install: document.querySelector('#install-button'),
   installHelp: document.querySelector('#install-help'),
@@ -155,7 +175,8 @@ function loadPreferences() {
     language: stored.language === 'hi' ? 'hi' : 'en',
     speechRate: Number.isFinite(Number(stored.speechRate)) ? Math.min(1.3, Math.max(.7, Number(stored.speechRate))) : 1,
     voiceURI: typeof stored.voiceURI === 'string' ? stored.voiceURI : '',
-    voiceEnabled: stored.voiceEnabled === true,
+    voiceEnabled: resolveVoiceOutputEnabled(stored.voiceEnabled, 'speechSynthesis' in window),
+    wakeWordEnabled: stored.wakeWordEnabled === true,
     memoryEnabled: stored.memoryEnabled !== false,
     fullAccessEnabled: stored.fullAccessEnabled === true,
     studyMode: stored.studyMode === true,
@@ -177,7 +198,16 @@ const state = {
   pending: false,
   searchMode: false,
   recognition: null,
+  recognitionPurpose: null,
+  recognitionWakeSession: false,
+  wakeWordTriggered: false,
+  wakeWordResumePending: false,
+  wakeWordManualTakeoverPending: false,
+  wakeWordPagePaused: false,
+  wakeWordRestartTimer: null,
+  wakeWordRestartDelay: 600,
   listening: false,
+  pendingSpeechText: null,
   installPrompt: null,
   accessRequired: false,
   accessToken: '',
@@ -200,6 +230,8 @@ const state = {
 };
 
 let healthRequestSequence = 0;
+const recognitionLifecycle = createRecognitionLifecycle();
+const microphonePermissionGuard = createMicrophonePermissionGuard();
 
 function loadHistory() {
   if (!state.preferences.memoryEnabled) return [];
@@ -415,10 +447,7 @@ function apiHeaders(json = false) {
 }
 
 async function sendChat(text, { retry = false, contextOverride = null, maxTokens = null, singleAttempt = false } = {}) {
-  const context = contextOverride || state.messages
-    .filter((message) => !message.kind && ['user', 'assistant'].includes(message.role))
-    .slice(-20)
-    .map(({ role, content }) => ({ role, content }));
+  const context = contextOverride || selectRecentChatContext(state.messages);
   if (!retry) state.lastChatFailure = null;
   setDashboardChatState('thinking', 'J.A.R.V.I.S. is processing your message.');
   setAssistantState('thinking', 'PROCESSING REQUEST');
@@ -465,6 +494,7 @@ async function sendChat(text, { retry = false, contextOverride = null, maxTokens
     if (state.assistantMode === 'thinking' && (!state.preferences.voiceEnabled || !('speechSynthesis' in window))) {
       setAssistantState('', 'SYSTEM STANDBY');
     }
+    resumeWakeWordDetection();
   }
 }
 
@@ -513,6 +543,7 @@ async function searchWeb(query) {
     elements.dashboardSend.disabled = false;
     document.querySelectorAll('.search-summary-button').forEach((button) => { button.disabled = false; });
     if (state.assistantMode === 'thinking') setAssistantState('', 'SYSTEM STANDBY');
+    resumeWakeWordDetection();
   }
 }
 
@@ -557,6 +588,10 @@ function submitMessage(event) {
   elements.attachmentNote.textContent = '';
   elements.fileInput.value = '';
   showFeedback('');
+  if (state.recognitionWakeSession) {
+    state.wakeWordResumePending = state.preferences.wakeWordEnabled;
+    requestStopListening();
+  }
   addMessage({ role: 'user', content: outgoingText });
   state.pending = true;
   elements.send.disabled = true;
@@ -574,15 +609,44 @@ function updateSearchMode() {
 }
 
 function selectedVoice() {
-  return state.voices.find((voice) => voice.voiceURI === state.preferences.voiceURI) || null;
+  return selectSpeechSynthesisVoice(state.voices, state.preferences.language, state.preferences.voiceURI);
+}
+
+function pageIsFocused() {
+  try {
+    return typeof document.hasFocus === 'function' && document.hasFocus();
+  } catch {
+    return false;
+  }
 }
 
 function speak(text) {
   if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return;
+  if (!shouldPlaySpeech(document.visibilityState, pageIsFocused())) {
+    state.pendingSpeechText = null;
+    setAssistantState('', 'SYSTEM STANDBY');
+    showFeedback('Voice output was skipped while J.A.R.V.I.S. was unfocused or in the background. The text reply is available.');
+    return;
+  }
+  if (state.recognition) {
+    state.pendingSpeechText = text;
+    requestStopListening();
+    return;
+  }
   const playbackId = ++state.speechPlaybackId;
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
+  state.pendingSpeechText = null;
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
+  let utterance;
+  try {
+    utterance = new SpeechSynthesisUtterance(text);
+  } catch {
+    state.speechPlaybackId += 1;
+    setAssistantState('', 'SYSTEM STANDBY');
+    showFeedback('Speech output could not start on this device.');
+    resumeWakeWordDetection();
+    return;
+  }
   utterance.lang = state.preferences.language === 'hi' ? 'hi-IN' : 'en-US';
   utterance.rate = state.preferences.speechRate;
   utterance.voice = selectedVoice();
@@ -604,6 +668,7 @@ function speak(text) {
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     logActivity('Voice response complete');
+    resumeWakeWordDetection();
   };
   utterance.onerror = (event) => {
     if (playbackId !== state.speechPlaybackId) return;
@@ -612,6 +677,7 @@ function speak(text) {
     showFeedback(event.error === 'canceled' || event.error === 'interrupted'
       ? ''
       : 'Speech output is unavailable for the selected voice on this device.');
+    resumeWakeWordDetection();
   };
   try {
     window.speechSynthesis.speak(utterance);
@@ -619,13 +685,16 @@ function speak(text) {
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
+    resumeWakeWordDetection();
   }
 }
 
 function stopSpeechOutput() {
+  state.pendingSpeechText = null;
   state.speechPlaybackId += 1;
   window.speechSynthesis.cancel();
   if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
+  resumeWakeWordDetection();
 }
 
 function updateVoiceList() {
@@ -636,32 +705,134 @@ function updateVoiceList() {
     return;
   }
   state.voices = window.speechSynthesis.getVoices();
-  const oldValue = state.preferences.voiceURI;
   elements.voice.replaceChildren(new Option('System default', ''));
   for (const voice of state.voices) {
     const label = `${voice.name} (${voice.lang})${voice.default ? ' · default' : ''}`;
     elements.voice.add(new Option(label, voice.voiceURI));
   }
-  elements.voice.value = state.voices.some((voice) => voice.voiceURI === oldValue) ? oldValue : '';
+  elements.voice.value = selectedVoice()?.voiceURI || '';
   elements.voiceSupport.textContent = state.voices.length ? `${state.voices.length} voice${state.voices.length === 1 ? '' : 's'} available on this device` : 'No system voices are available';
 }
 
-function startListening() {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+function updateWakeWordSupport() {
+  const supported = Boolean(getSpeechRecognitionConstructor(window));
+  if (!supported || window.isSecureContext === false) {
+    elements.wakeWordEnabled.disabled = true;
+    elements.wakeWordEnabled.checked = false;
+    state.preferences.wakeWordEnabled = false;
+    savePreferences();
+    elements.wakeWordSupport.textContent = supported
+      ? 'Wake-word detection requires HTTPS or localhost.'
+      : 'Wake-word detection is not supported by this browser.';
+    return false;
+  }
+  elements.wakeWordEnabled.disabled = false;
+  elements.wakeWordEnabled.checked = state.preferences.wakeWordEnabled;
+  elements.wakeWordSupport.textContent = 'Say "Hey JARVIS" or "हे जार्विस" while this app is open. Requires microphone permission; recognition may use your browser speech service.';
+  return true;
+}
+
+function disableWakeWord(message = '') {
+  state.preferences.wakeWordEnabled = false;
+  state.wakeWordResumePending = false;
+  state.wakeWordRestartDelay = 600;
+  elements.wakeWordEnabled.checked = false;
+  window.clearTimeout(state.wakeWordRestartTimer);
+  state.wakeWordRestartTimer = null;
+  savePreferences();
+  if (message) showFeedback(message);
+}
+
+function resumeWakeWordDetection() {
+  if (!state.wakeWordResumePending || !state.preferences.wakeWordEnabled) return;
+  if (!shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, pageIsFocused())) return;
+  if (state.recognition || state.pending || isSpeechOutputBusy()) return;
+  state.wakeWordResumePending = false;
+  window.clearTimeout(state.wakeWordRestartTimer);
+  const restartDelay = state.wakeWordRestartDelay;
+  state.wakeWordRestartTimer = window.setTimeout(() => {
+    state.wakeWordRestartTimer = null;
+    if (!state.preferences.wakeWordEnabled) return;
+    if (!shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, pageIsFocused())) {
+      state.wakeWordResumePending = true;
+      return;
+    }
+    if (state.recognition || state.pending || isSpeechOutputBusy()) {
+      state.wakeWordResumePending = true;
+      resumeWakeWordDetection();
+      return;
+    }
+    state.wakeWordResumePending = false;
+    startListening('wake');
+  }, restartDelay);
+}
+
+function isSpeechOutputBusy() {
+  return state.assistantMode === 'speaking'
+    || Boolean(window.speechSynthesis?.speaking)
+    || Boolean(window.speechSynthesis?.pending);
+}
+
+function startListening(purpose = 'command') {
+  const Recognition = getSpeechRecognitionConstructor(window);
   if (!Recognition) {
-    showFeedback('Voice input is not supported by this browser. Try a current Chrome-based browser over HTTPS.');
+    const message = 'Voice input is not supported by this browser. Try a current Chrome-based browser over HTTPS.';
+    if (purpose === 'wake') disableWakeWord(message);
+    else showFeedback(message);
     setAssistantState('error', 'VOICE INPUT UNAVAILABLE');
     return;
   }
-  if (state.listening) {
-    state.recognition?.stop();
+  if (state.recognition) {
+    if (purpose === 'wake') {
+      state.wakeWordResumePending = true;
+      return;
+    }
+    if (state.recognitionWakeSession) {
+      disableWakeWord('Wake-word detection is off. Listening for your request.');
+      state.wakeWordManualTakeoverPending = true;
+      requestStopListening();
+    } else if (state.listening && !recognitionLifecycle.isStopping(state.recognition)) {
+      requestStopListening();
+    }
     return;
   }
-
-  const recognition = new Recognition();
-  recognition.lang = state.preferences.language === 'hi' ? 'hi-IN' : 'en-US';
+  if (purpose === 'wake' && !state.preferences.wakeWordEnabled) return;
+  if (purpose === 'wake' && !shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, pageIsFocused())) {
+    state.wakeWordResumePending = true;
+    return;
+  }
+  if (purpose === 'wake' && (state.pending || isSpeechOutputBusy())) {
+    state.wakeWordResumePending = true;
+    return;
+  }
+  if (window.isSecureContext === false) {
+    const message = 'Voice input requires a secure HTTPS connection or localhost.';
+    if (purpose === 'wake') disableWakeWord(message);
+    else showFeedback(message);
+    setAssistantState('error', 'MICROPHONE UNAVAILABLE');
+    return;
+  }
+  if (purpose === 'command' && 'speechSynthesis' in window) stopSpeechOutput();
+  let recognition;
+  try {
+    recognition = new Recognition();
+  } catch {
+    const message = 'The browser could not initialize speech recognition. Check microphone permissions and try again.';
+    if (purpose === 'wake') disableWakeWord(message);
+    else showFeedback(message);
+    setAssistantState('error', 'MICROPHONE UNAVAILABLE');
+    return;
+  }
+  if (!recognitionLifecycle.begin(recognition)) return;
+  window.clearTimeout(state.wakeWordRestartTimer);
+  state.wakeWordRestartTimer = null;
+  state.wakeWordResumePending = false;
+  state.recognitionPurpose = purpose;
+  state.recognitionWakeSession = purpose === 'wake';
+  state.wakeWordTriggered = false;
+  recognition.lang = getSpeechRecognitionLanguage(state.preferences.language);
   recognition.interimResults = true;
-  recognition.continuous = false;
+  recognition.continuous = purpose === 'wake';
   state.recognition = recognition;
   state.listening = true;
   elements.mic.classList.add('is-active');
@@ -670,40 +841,84 @@ function startListening() {
   elements.dashboardMicButton.classList.add('is-active');
   elements.dashboardMicButton.setAttribute('aria-label', 'Stop voice input');
   elements.dashboardMicButton.setAttribute('aria-pressed', 'true');
-  setAssistantState('listening', 'LISTENING');
-  showFeedback('Listening. Your browser may ask for microphone permission.');
+  setAssistantState('listening', purpose === 'wake' ? 'WAITING FOR WAKE WORD' : 'LISTENING');
+  showFeedback(purpose === 'wake'
+    ? 'Wake-word detection is active while this app is open. Your browser may ask for microphone permission.'
+    : 'Listening. Your browser may ask for microphone permission.');
 
   recognition.onresult = (event) => {
-    let transcript = '';
-    let finalResult = false;
-    for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      transcript += event.results[index][0].transcript;
-      finalResult ||= event.results[index].isFinal;
+    if (!recognitionLifecycle.isCurrent(recognition) || recognitionLifecycle.isStopping(recognition)) return;
+    const { transcript, finalResult } = readSpeechRecognitionResult(event);
+    if (state.recognitionWakeSession) {
+      const wakeMatch = matchWakeWord(transcript);
+      if (!state.wakeWordTriggered && !wakeMatch.matched) return;
+      if (!state.wakeWordTriggered) {
+        state.wakeWordTriggered = true;
+        state.recognitionPurpose = 'wake-command';
+        showFeedback('Wake word detected. Listening for your request.');
+        setAssistantState('listening', 'JARVIS ACTIVATED');
+      }
+      elements.message.value = wakeMatch.command;
+    } else {
+      elements.message.value = transcript;
     }
-    elements.message.value = transcript.trim();
-    if (finalResult && elements.message.value) elements.form.requestSubmit();
+    if (finalResult && elements.message.value) {
+      requestStopListening(recognition);
+      elements.form.requestSubmit();
+    }
   };
   recognition.onerror = (event) => {
-    const messages = {
-      'not-allowed': 'Microphone permission was denied. Allow access in your browser settings to use voice input.',
-      'no-speech': 'No speech was detected. Try again when you are ready.',
-      'network': 'Browser speech recognition is unavailable over the current network.',
-    };
-    showFeedback(messages[event.error] || `Voice input stopped: ${event.error}.`);
-    setAssistantState('error', 'VOICE INPUT ERROR');
-    stopListening();
+    if (state.recognition !== recognition) return;
+    const message = getSpeechRecognitionErrorMessage(event.error);
+    const wakeSession = state.recognitionWakeSession;
+    if (event.error === 'not-allowed') {
+      microphonePermissionGuard.invalidate();
+      state.microphonePermission = 'denied';
+      renderMicrophoneStatus();
+    }
+    if (wakeSession && event.error !== 'no-speech' && event.error !== 'aborted') {
+      disableWakeWord(message);
+    } else if (!wakeSession || event.error !== 'no-speech') {
+      showFeedback(message);
+    }
+    if (message && event.error !== 'no-speech' && event.error !== 'aborted') setAssistantState('error', 'VOICE INPUT ERROR');
+    stopListening(recognition);
   };
-  recognition.onend = stopListening;
+  recognition.onend = () => stopListening(recognition);
   try {
     recognition.start();
-  } catch {
-    showFeedback('The microphone could not be started. Check browser permissions and try again.');
-    setAssistantState('error', 'MICROPHONE UNAVAILABLE');
-    stopListening();
+  } catch (error) {
+    const startError = getSpeechRecognitionStartError(error);
+    const message = startError.message;
+    if (startError.permissionDenied) {
+      microphonePermissionGuard.invalidate();
+      state.microphonePermission = 'denied';
+      renderMicrophoneStatus();
+    }
+    if (purpose === 'wake') disableWakeWord(message);
+    else showFeedback(message);
+    setAssistantState('error', startError.permissionDenied ? 'MICROPHONE PERMISSION DENIED' : 'MICROPHONE UNAVAILABLE');
+    stopListening(recognition);
   }
 }
 
-function stopListening() {
+function requestStopListening(recognition = state.recognition) {
+  if (!recognition || recognition !== state.recognition || !recognitionLifecycle.requestStop(recognition)) return;
+  try {
+    recognition.stop();
+  } catch {
+    stopListening(recognition);
+  }
+}
+
+function stopListening(recognition = state.recognition) {
+  if (recognition && (recognition !== state.recognition || !recognitionLifecycle.finish(recognition))) return;
+  const wakeSession = state.recognitionWakeSession;
+  const wakeWasTriggered = state.wakeWordTriggered;
+  state.recognition = null;
+  state.recognitionPurpose = null;
+  state.recognitionWakeSession = false;
+  state.wakeWordTriggered = false;
   state.listening = false;
   elements.mic.classList.remove('is-active');
   elements.mic.setAttribute('aria-label', 'Start voice input');
@@ -711,7 +926,31 @@ function stopListening() {
   elements.dashboardMicButton.classList.remove('is-active');
   elements.dashboardMicButton.setAttribute('aria-label', 'Start voice input');
   elements.dashboardMicButton.setAttribute('aria-pressed', 'false');
-  if (elements.assistantState.textContent === 'LISTENING') setAssistantState('', 'SYSTEM STANDBY');
+  if (state.assistantMode === 'listening') setAssistantState('', 'SYSTEM STANDBY');
+  const manualTakeoverPending = state.wakeWordManualTakeoverPending;
+  state.wakeWordManualTakeoverPending = false;
+  if (manualTakeoverPending && !state.preferences.wakeWordEnabled && isPageForeground(document.visibilityState, pageIsFocused())) {
+    startListening('command');
+    return;
+  }
+  const pendingSpeechText = state.pendingSpeechText;
+  if (pendingSpeechText) {
+    state.wakeWordResumePending ||= wakeSession;
+    speak(pendingSpeechText);
+    return;
+  }
+  if (wakeSession && wakeWasTriggered) state.wakeWordRestartDelay = 600;
+  if (wakeSession && wakeWasTriggered && state.preferences.wakeWordEnabled && !state.pending
+    && isPageForeground(document.visibilityState, pageIsFocused()) && state.microphonePermission !== 'denied') {
+    state.wakeWordResumePending = true;
+    startListening('command');
+    return;
+  }
+  if ((wakeSession || state.wakeWordResumePending) && state.preferences.wakeWordEnabled) {
+    state.wakeWordResumePending = true;
+    if (!wakeWasTriggered) state.wakeWordRestartDelay = nextWakeWordRestartDelay(state.wakeWordRestartDelay);
+    resumeWakeWordDetection();
+  }
 }
 
 function syncSettings() {
@@ -719,9 +958,10 @@ function syncSettings() {
   elements.speechRate.value = String(state.preferences.speechRate);
   elements.speechRateValue.textContent = Number(state.preferences.speechRate).toFixed(1);
   elements.voiceEnabled.checked = state.preferences.voiceEnabled;
+  updateWakeWordSupport();
   elements.memoryEnabled.checked = state.preferences.memoryEnabled;
   elements.leftMemoryStatus.textContent = state.preferences.memoryEnabled ? 'LOCAL' : 'OFF';
-  elements.leftMicStatus.textContent = window.SpeechRecognition || window.webkitSpeechRecognition ? 'AVAILABLE' : 'UNSUPPORTED';
+  elements.leftMicStatus.textContent = getSpeechRecognitionConstructor(window) ? 'AVAILABLE' : 'UNSUPPORTED';
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
   elements.leftModeStatus.textContent = state.preferences.studyMode ? 'STUDY' : 'STANDARD';
   elements.studyIndicator.textContent = state.preferences.studyMode ? 'ON' : 'OFF';
@@ -874,7 +1114,7 @@ function updateDeviceMonitor() {
 }
 
 function renderMicrophoneStatus() {
-  const recognitionSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const recognitionSupported = Boolean(getSpeechRecognitionConstructor(window));
   const text = !recognitionSupported
     ? 'Not available'
     : state.assistantMode === 'listening' ? 'Listening'
@@ -886,8 +1126,9 @@ function renderMicrophoneStatus() {
 }
 
 async function updateMicrophonePermission(permissionStatus) {
+  const requestVersion = microphonePermissionGuard.begin();
   if (!elements.voiceValue) return;
-  const recognitionSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const recognitionSupported = Boolean(getSpeechRecognitionConstructor(window));
   if (!recognitionSupported) {
     elements.voiceValue.textContent = 'Not available';
     return;
@@ -898,10 +1139,17 @@ async function updateMicrophonePermission(permissionStatus) {
   }
   try {
     const status = permissionStatus || await navigator.permissions.query({ name: 'microphone' });
+    if (!microphonePermissionGuard.isCurrent(requestVersion)) return;
     state.microphonePermission = status.state;
     renderMicrophoneStatus();
-    if (!permissionStatus) status.addEventListener('change', () => updateMicrophonePermission(status));
+    if (status.state === 'denied') {
+      if (state.preferences.wakeWordEnabled) disableWakeWord('Microphone permission was denied. Wake-word detection is off until permission is granted again.');
+      if (state.recognition) requestStopListening();
+      renderMicrophoneStatus();
+    }
+    if (!permissionStatus) status.addEventListener?.('change', () => updateMicrophonePermission(status));
   } catch {
+    if (!microphonePermissionGuard.isCurrent(requestVersion)) return;
     state.microphonePermission = 'unknown';
     renderMicrophoneStatus();
   }
@@ -968,6 +1216,25 @@ function initializeDeviceMonitor() {
 
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   connection?.addEventListener?.('change', updateDeviceMonitor);
+}
+
+function pauseVoiceForPageLifecycle() {
+  state.wakeWordPagePaused = true;
+  window.clearTimeout(state.wakeWordRestartTimer);
+  state.wakeWordRestartTimer = null;
+  if (state.pendingSpeechText || state.assistantMode === 'speaking'
+    || window.speechSynthesis?.speaking || window.speechSynthesis?.pending || window.speechSynthesis?.paused) {
+    stopSpeechOutput();
+    showFeedback('Voice playback stopped when J.A.R.V.I.S. lost focus. The text reply is still available.');
+  }
+  if (state.recognitionWakeSession && state.preferences.wakeWordEnabled) {
+    state.wakeWordResumePending = true;
+    showFeedback('Wake-word detection paused while J.A.R.V.I.S. is unfocused or in the background.');
+  }
+  if (state.recognition) {
+    if (!state.recognitionWakeSession) showFeedback('Voice input paused while J.A.R.V.I.S. is unfocused or in the background. Tap the microphone to resume.');
+    requestStopListening();
+  }
 }
 
 function openSettings() {
@@ -1449,19 +1716,24 @@ if (publicShareUrl) {
   elements.copyLinkButton.disabled = true;
 }
 
-async function copyPublicLink() {
-  if (!publicShareUrl) return;
+async function copyTextToClipboard(text) {
+  if (window.jarvisDesktop?.copyText) {
+    try {
+      if (await window.jarvisDesktop.copyText(text)) return true;
+    } catch {
+      // Fall back to the browser clipboard APIs.
+    }
+  }
   if (navigator.clipboard?.writeText) {
     try {
-      await navigator.clipboard.writeText(publicShareUrl);
-      elements.shareStatus.textContent = 'Public JARVIS link copied. No keys or private settings were included.';
-      return;
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch {
       // Try the browser's legacy clipboard API below.
     }
   }
   const input = document.createElement('textarea');
-  input.value = publicShareUrl;
+  input.value = text;
   input.setAttribute('readonly', '');
   input.style.position = 'fixed';
   input.style.opacity = '0';
@@ -1469,7 +1741,15 @@ async function copyPublicLink() {
   input.select();
   const copied = document.execCommand('copy');
   input.remove();
-  if (!copied) throw new Error('Clipboard access was denied. Copy the HTTPS address from the browser address bar instead.');
+  if (!copied) return false;
+  return true;
+}
+
+async function copyPublicLink() {
+  if (!publicShareUrl) return;
+  if (!await copyTextToClipboard(publicShareUrl)) {
+    throw new Error('Clipboard access was denied. Copy the HTTPS address from the browser address bar instead.');
+  }
   elements.shareStatus.textContent = 'Public JARVIS link copied. No keys or private settings were included.';
 }
 
@@ -1660,7 +1940,9 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => button.addE
 elements.language.addEventListener('change', () => {
   state.preferences.language = elements.language.value;
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
+  updateVoiceList();
   savePreferences();
+  if (state.recognitionWakeSession) requestStopListening();
 });
 elements.accessToken.addEventListener('input', () => {
   state.accessToken = elements.accessToken.value.trim();
@@ -1691,6 +1973,20 @@ elements.voiceEnabled.addEventListener('change', () => {
   if (!state.preferences.voiceEnabled && 'speechSynthesis' in window) stopSpeechOutput();
   savePreferences();
 });
+elements.wakeWordEnabled.addEventListener('change', () => {
+  state.preferences.wakeWordEnabled = elements.wakeWordEnabled.checked;
+  state.wakeWordResumePending = false;
+  window.clearTimeout(state.wakeWordRestartTimer);
+  state.wakeWordRestartTimer = null;
+  savePreferences();
+  if (state.preferences.wakeWordEnabled) {
+    state.wakeWordManualTakeoverPending = false;
+    startListening('wake');
+  } else {
+    if (state.recognitionWakeSession) requestStopListening();
+    showFeedback('Wake-word detection is off.');
+  }
+});
 elements.dashboardMicButton.addEventListener('click', () => {
   startListening();
 });
@@ -1717,6 +2013,27 @@ document.querySelector('#preview-voice').addEventListener('click', () => {
 });
 window.addEventListener('online', checkServer);
 window.addEventListener('offline', checkServer);
+const resumeVoiceForPageLifecycle = () => {
+  const focused = pageIsFocused();
+  if (!isPageForeground(document.visibilityState, focused)) {
+    pauseVoiceForPageLifecycle();
+    return;
+  }
+  state.wakeWordPagePaused = false;
+  if (shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, focused)) {
+    state.wakeWordResumePending = true;
+    resumeWakeWordDetection();
+  }
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    pauseVoiceForPageLifecycle();
+  } else resumeVoiceForPageLifecycle();
+});
+window.addEventListener('blur', pauseVoiceForPageLifecycle);
+window.addEventListener('focus', resumeVoiceForPageLifecycle);
+window.addEventListener('pagehide', pauseVoiceForPageLifecycle);
+window.addEventListener('pageshow', resumeVoiceForPageLifecycle);
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
   state.installPrompt = event;
@@ -1774,11 +2091,14 @@ elements.install.addEventListener('click', async () => {
 
 state.messages = loadHistory();
 syncSettings();
+if (state.preferences.wakeWordEnabled && !elements.wakeWordEnabled.disabled) startListening('wake');
 renderMessages();
 initializeAppHubs({
   onActivity: logActivity,
   onOpenVision: openVisionDialog,
   canLaunchIntent: () => state.preferences.fullAccessEnabled,
+  openDesktopExternal: window.jarvisDesktop?.openExternalUrl.bind(window.jarvisDesktop),
+  copyUserText: copyTextToClipboard,
 });
 updateSearchMode();
 setWorkspaceView(state.workspaceView, { remember: false });

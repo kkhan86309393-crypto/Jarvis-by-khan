@@ -1,0 +1,1 @@
+export { getAllowedExternalUrl } from '../public/app-hub.js';

@@ -30,10 +30,49 @@ export function normalizeWebUrl(value) {
   return url.href;
 }
 
+function normalizePhoneNumber(value) {
+  if (typeof value !== 'string' || !/^\+?[0-9](?:[0-9(). -]*[0-9])?$/.test(value)) {
+    throw new TypeError('Enter a valid phone number using digits and optional +, spaces, parentheses, dots, or hyphens.');
+  }
+  const normalized = value.replace(/[(). -]/g, '');
+  if (!/^\+?\d{3,15}$/.test(normalized)) {
+    throw new TypeError('Phone numbers must contain between 3 and 15 digits.');
+  }
+  return normalized;
+}
+
+function parsePhoneAction(trimmed, fallbackValue) {
+  let url;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new TypeError('Enter a valid tel: or sms: phone link.');
+  }
+
+  const phoneNumber = normalizePhoneNumber(url.pathname);
+  const fallbackUrl = fallbackValue ? normalizeWebUrl(fallbackValue) : '';
+  if (url.protocol === 'tel:') {
+    if (url.search || url.hash) throw new TypeError('Phone dialer links cannot include query strings or fragments.');
+    return { url: `tel:${phoneNumber}`, kind: 'call', fallbackUrl, packageName: '' };
+  }
+
+  const parameters = [...url.searchParams.entries()];
+  if (url.hash || parameters.some(([key]) => key !== 'body') || parameters.filter(([key]) => key === 'body').length > 1) {
+    throw new TypeError('Message links may include only one body parameter and no fragment.');
+  }
+  const body = url.searchParams.get('body') || '';
+  if (body.length > 2_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(body)) {
+    throw new TypeError('Message drafts must be under 2,000 characters and cannot contain control characters.');
+  }
+  const messageQuery = body ? `?${new URLSearchParams({ body })}` : '';
+  return { url: `sms:${phoneNumber}${messageQuery}`, kind: 'message', fallbackUrl, packageName: '' };
+}
+
 export function parseAppDestination(value, fallbackValue = '') {
   if (typeof value !== 'string') throw new TypeError('Enter a website URL or supported Android intent link.');
   const trimmed = value.trim();
-  if (trimmed.length > 2_048 || /[\u0000-\u0020\u007f]/.test(trimmed)) {
+  const phoneAction = /^(?:tel|sms):/i.test(trimmed);
+  if (trimmed.length > 2_048 || /[\u0000-\u001f\u007f]/.test(trimmed) || (!phoneAction && /\u0020/.test(trimmed))) {
     throw new TypeError('The destination URL is too long or contains invalid characters.');
   }
 
@@ -71,12 +110,26 @@ export function parseAppDestination(value, fallbackValue = '') {
     return { url: launchUrl, kind: 'intent', fallbackUrl, packageName };
   }
 
+  if (/^(?:tel|sms):/i.test(trimmed)) return parsePhoneAction(trimmed, fallbackValue);
+
   return {
     url: normalizeWebUrl(trimmed),
     kind: 'web',
     fallbackUrl: fallbackValue ? normalizeWebUrl(fallbackValue) : '',
     packageName: '',
   };
+}
+
+export function getAllowedExternalUrl(value) {
+  try {
+    const destination = parseAppDestination(value);
+    if (destination.kind === 'call' || destination.kind === 'message') return destination.url;
+    return destination.kind === 'web' && new URL(destination.url).protocol === 'https:'
+      ? destination.url
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeIcon(value) {
@@ -157,10 +210,28 @@ export function openAppDestination(value, openWindow = (...args) => globalThis.w
     ? parseAppDestination(value)
     : parseAppDestination(value.url, value.fallbackUrl || '');
   const openSafely = (url) => {
-    const opened = openWindow(url, '_blank');
-    if (opened && typeof opened === 'object') opened.opener = null;
-    return Boolean(opened);
+    try {
+      const opened = openWindow(url, '_blank');
+      if (opened && typeof opened === 'object') opened.opener = null;
+      return Boolean(opened);
+    } catch {
+      return false;
+    }
   };
+
+  if (destination.kind === 'call' || destination.kind === 'message') {
+    try {
+      const opened = openWindow(destination.url, '_blank');
+      if (opened && typeof opened === 'object') opened.opener = null;
+      return { opened: Boolean(opened), handoffAttempted: true, usedFallback: false, destination };
+    } catch {
+      if (destination.fallbackUrl && openSafely(destination.fallbackUrl)) {
+        return { opened: true, handoffAttempted: false, usedFallback: true, destination };
+      }
+      return { opened: false, handoffAttempted: false, usedFallback: false, destination };
+    }
+  }
+
   if (openSafely(destination.url)) return { opened: true, usedFallback: false, destination };
   if (destination.fallbackUrl && openSafely(destination.fallbackUrl)) {
     return { opened: true, usedFallback: true, destination };
@@ -168,10 +239,60 @@ export function openAppDestination(value, openWindow = (...args) => globalThis.w
   return { opened: false, usedFallback: false, destination };
 }
 
+export function dispatchAppDestination(destination, openWindow, openDesktopExternal) {
+  if (typeof openDesktopExternal === 'function') {
+    const externalUrl = getAllowedExternalUrl(destination.url);
+    if (externalUrl) {
+      try {
+        if (openDesktopExternal(externalUrl)) {
+          return { opened: false, handoffAttempted: true, usedFallback: false, destination };
+        }
+      } catch {
+        // Fall back to the browser's normal user-gesture navigation.
+      }
+    }
+  }
+  return openAppDestination(destination, openWindow);
+}
+
 function setStatus(root, message, isError = false) {
   const status = root.querySelector('[data-hub-status]');
   status.textContent = message;
   status.dataset.state = isError ? 'error' : 'ready';
+}
+
+function destinationLabel(destination) {
+  if (destination.kind === 'intent') return 'Android app link';
+  if (destination.kind === 'call') return 'Phone dialer link';
+  if (destination.kind === 'message') return 'Message draft link';
+  return new URL(destination.url).hostname;
+}
+
+function destinationOpenedMessage(destination, usedFallback = false) {
+  if (usedFallback) return 'The link could not be opened; its safe fallback was opened instead.';
+  if (destination.kind === 'call') return 'Call link opened by the browser. Review the number in your dialer; no call was placed.';
+  if (destination.kind === 'message') return 'Message draft link opened by the browser. Review and send it in your messaging app; nothing was sent.';
+  if (destination.kind === 'intent') return 'Android app link sent to your browser or operating system; support depends on this device and browser.';
+  return 'Website link requested. Check your browser or desktop browser for the page.';
+}
+
+function destinationHandoffMessage(destination) {
+  if (destination.kind === 'call') return 'The browser was asked to open your dialer. Check the dialer before calling; JARVIS does not place calls.';
+  if (destination.kind === 'message') return 'The browser was asked to open your messaging app. Review and send the draft there; JARVIS does not send messages.';
+  return 'Your default browser was asked to open this website. Check the browser; JARVIS cannot confirm that it opened.';
+}
+
+function destinationFailureMessage(destination) {
+  if (destination.kind === 'call') return 'The browser could not confirm the dialer handoff. If nothing opened, try an Android browser. No call was placed.';
+  if (destination.kind === 'message') return 'The browser could not confirm the messaging-app handoff. If nothing opened, try an Android browser. No message was sent.';
+  return 'The browser could not confirm navigation. The link may have been blocked or handed off externally; check for a new tab or desktop app.';
+}
+
+function destinationActivityLabel(destination) {
+  if (destination.kind === 'call') return 'phone dialer link';
+  if (destination.kind === 'message') return 'message draft link';
+  if (destination.kind === 'intent') return 'Android app link';
+  return `website: ${new URL(destination.url).hostname}`;
 }
 
 function iconElement(shortcut) {
@@ -221,7 +342,7 @@ function renderShortcuts(root, shortcuts, query, canLaunchIntent) {
     const title = document.createElement('strong');
     title.textContent = shortcut.name;
     const address = document.createElement('span');
-    address.textContent = shortcut.kind === 'intent' ? 'Android app link' : new URL(shortcut.url).hostname;
+    address.textContent = destinationLabel(shortcut);
     description.append(title, address);
     card.append(description);
 
@@ -323,6 +444,8 @@ export function initializeAppHubs({
   onActivity = () => {},
   onOpenVision = () => {},
   canLaunchIntent = () => false,
+  openDesktopExternal = null,
+  copyUserText = null,
 } = {}) {
   const roots = [...documentObject.querySelectorAll('[data-app-hub]')];
   if (!roots.length) return;
@@ -367,15 +490,13 @@ export function initializeAppHubs({
             setStatus(root, 'Enable Full Access before launching an Android app link.', true);
             return;
           }
-          const result = openAppDestination(destination, openWindow);
-          setStatus(root, result.opened
-            ? result.usedFallback
-              ? 'The link could not be opened; its safe fallback was opened instead.'
-              : destination.kind === 'intent'
-                ? 'Android app link sent to your browser or operating system; support depends on this device and browser.'
-                : 'Website opened in a new tab.'
-            : 'The browser blocked the new tab. Allow pop-ups and try again.', !result.opened);
-          if (result.opened) onActivity(`Opened ${destination.kind === 'intent' ? 'Android app link' : 'website'}: ${new URL(destination.fallbackUrl || destination.url).hostname}`);
+          const result = dispatchAppDestination(destination, openWindow, openDesktopExternal);
+          setStatus(root, result.handoffAttempted
+            ? destinationHandoffMessage(destination)
+            : result.opened
+              ? destinationOpenedMessage(destination, result.usedFallback)
+              : destinationFailureMessage(destination), !result.opened && !result.handoffAttempted);
+          if (result.opened || result.handoffAttempted) onActivity(`Requested ${destinationActivityLabel(destination)}`);
         } catch (error) {
           setStatus(root, error.message, true);
         }
@@ -415,7 +536,7 @@ export function initializeAppHubs({
       }
     });
 
-    root.addEventListener('click', (event) => {
+    root.addEventListener('click', async (event) => {
       const actionButton = event.target.closest('[data-hub-action]');
       if (!actionButton) return;
       const action = actionButton.dataset.hubAction;
@@ -427,6 +548,23 @@ export function initializeAppHubs({
         root.querySelector('[data-hub-field="name"]').focus();
       } else if (action === 'vision') {
         onOpenVision();
+      } else if (action === 'copy-text') {
+        const text = root.querySelector('[data-hub-field="run-url"]').value;
+        if (!text.trim()) {
+          setStatus(root, 'Enter text in URL Runner before copying it.', true);
+          return;
+        }
+        if (typeof copyUserText !== 'function') {
+          setStatus(root, 'Clipboard copy is unavailable in this browser.', true);
+          return;
+        }
+        try {
+          const copied = await copyUserText(text);
+          if (!copied) throw new Error('Clipboard access was denied.');
+          setStatus(root, 'URL Runner text copied to the clipboard.');
+        } catch {
+          setStatus(root, 'Clipboard access was denied. Select and copy the URL Runner text manually.', true);
+        }
       } else if (action === 'cancel') {
         setFormMode(root);
       } else if (action === 'launch' && shortcut) {
@@ -434,18 +572,18 @@ export function initializeAppHubs({
           setStatus(root, 'Enable Full Access before launching an Android app link.', true);
           return;
         }
-        const result = openAppDestination(shortcut, openWindow);
-        setStatus(root, result.opened
-          ? result.usedFallback
-            ? 'The app link could not be opened; its fallback was opened instead.'
-            : shortcut.kind === 'intent'
-              ? 'Android app link sent to your browser or operating system; support depends on this device and browser.'
-              : `Opened ${shortcut.name} in a new tab.`
-          : 'The browser blocked the new tab. Allow pop-ups and try again.', !result.opened);
-        if (result.opened) onActivity(`Opened App Hub shortcut: ${shortcut.name}`);
+        const result = dispatchAppDestination(shortcut, openWindow, openDesktopExternal);
+        setStatus(root, result.handoffAttempted
+          ? destinationHandoffMessage(shortcut)
+          : result.opened
+            ? destinationOpenedMessage(shortcut, result.usedFallback)
+            : destinationFailureMessage(shortcut), !result.opened && !result.handoffAttempted);
+        if (result.opened || result.handoffAttempted) onActivity(`Requested App Hub shortcut: ${shortcut.name}`);
       } else if (action === 'fallback' && shortcut?.fallbackUrl) {
-        const result = openAppDestination(shortcut.fallbackUrl, openWindow);
-        setStatus(root, result.opened ? 'Fallback website or Play Store opened in a new tab.' : 'The browser blocked the new tab.', !result.opened);
+        const result = dispatchAppDestination(parseAppDestination(shortcut.fallbackUrl), openWindow, openDesktopExternal);
+        setStatus(root, result.opened
+          ? 'Fallback link requested. Check your browser or desktop browser for it.'
+          : destinationFailureMessage(parseAppDestination(shortcut.fallbackUrl)), !result.opened);
       } else if (action === 'edit' && shortcut) {
         setFormMode(root, shortcut);
         root.querySelector('[data-hub-field="name"]').focus();

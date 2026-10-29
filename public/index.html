@@ -136,7 +136,7 @@
           </section>
           <section class="dashboard-panel app-hub-panel" aria-labelledby="app-hub-panel-title" data-app-hub>
             <div class="panel-heading"><div><span class="eyebrow">PERSONAL LAUNCHER</span><h2 id="app-hub-panel-title">JARVIS APP HUB</h2></div><div class="app-hub-panel-actions"><button class="app-hub-add" type="button" data-hub-action="vision" data-requires-full-access title="Enable Full Access to use Vision">Vision</button><button class="app-hub-add" type="button" data-hub-action="add">Add App</button></div></div>
-            <p class="app-hub-note">Your shortcuts are saved on this device. Websites open in a new tab; Android app links depend on browser and device support.</p>
+            <p class="app-hub-note">Your shortcuts are saved on this device. Websites open in a new tab; Android app, dialer, and message links depend on browser and device support.</p>
             <div class="app-hub-tools">
               <label class="sr-only" for="app-hub-search-panel">Search saved apps</label>
               <input id="app-hub-search-panel" data-hub-search type="search" placeholder="Search My Apps">
@@ -145,17 +145,18 @@
             <form class="app-hub-form" data-hub-form hidden>
               <strong class="app-hub-form-title">Add or edit shortcut</strong>
               <label>Name<input data-hub-field="name" maxlength="32" autocomplete="off" required></label>
-              <label>Website or Android intent URL<input data-hub-field="url" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com" required></label>
+              <label>Website, Android app, call, or message link<input data-hub-field="url" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com, tel:+15551234567, or sms:+15551234567?body=Hello" required></label>
               <label>Fallback website (optional)<input data-hub-field="fallback" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com"></label>
               <label>App icon (optional)<input data-hub-field="icon" type="file" accept="image/png,image/jpeg,image/webp"></label>
               <span class="app-hub-icon-status" data-hub-icon-status>PNG, JPEG, or WebP; up to 256 KB.</span>
               <div class="app-hub-form-actions"><button class="app-hub-primary" type="submit">Save shortcut</button><button type="button" data-hub-action="cancel">Cancel</button></div>
             </form>
             <form class="app-hub-runner" data-hub-runner>
-              <label>URL Runner<input data-hub-field="run-url" type="text" inputmode="url" maxlength="2048" placeholder="Paste a website or Android intent link" required></label>
+              <label>URL Runner<input data-hub-field="run-url" type="text" inputmode="url" maxlength="2048" placeholder="Website, intent://, tel:, or sms: link" required></label>
               <label class="sr-only" for="app-hub-run-fallback-panel">Optional fallback website</label>
               <input id="app-hub-run-fallback-panel" data-hub-field="run-fallback" type="text" inputmode="url" maxlength="2048" placeholder="Optional fallback website">
               <button class="app-hub-primary" type="submit">Open / Run</button>
+              <button class="app-hub-primary" type="button" data-hub-action="copy-text">Copy text</button>
             </form>
             <p class="app-hub-status" data-hub-status role="status" aria-live="polite"></p>
             <p class="app-hub-safety">Websites and Android links open outside JARVIS when supported. APKs and native apps cannot run inside a website; uploaded icons are images only and are never executed.</p>
@@ -273,6 +274,7 @@
         <label class="setting-row" for="voice-select"><span><strong>Speech voice</strong><small id="voice-support">Available voices depend on your device</small></span><select id="voice-select"><option value="">System default</option></select></label>
         <label class="setting-row range-row" for="speech-rate"><span><strong>Speech speed</strong><small><span id="speech-rate-value">1.0</span>x playback rate</small></span><input id="speech-rate" type="range" min="0.7" max="1.3" step="0.1" value="1"></label>
         <div class="setting-row"><span><strong>Voice output</strong><small>Speak assistant replies aloud</small></span><label class="switch"><input id="voice-enabled" type="checkbox"><span></span><b class="sr-only">Enable voice output</b></label></div>
+        <div class="setting-row"><span><strong>Wake-word detection</strong><small id="wake-word-support">Say "Hey JARVIS" or "हे जार्विस" while this app is open. Requires microphone permission; browser support varies.</small></span><label class="switch"><input id="wake-word-enabled" type="checkbox"><span></span><b class="sr-only">Enable wake-word detection</b></label></div>
         <div class="setting-row"><span><strong>Save conversation history</strong><small>Stored only in this browser on this device</small></span><label class="switch"><input id="memory-enabled" type="checkbox" checked><span></span><b class="sr-only">Save conversation history</b></label></div>
         <div class="setting-actions"><button class="secondary-button" id="preview-voice" type="button">Preview voice</button><button class="secondary-button" id="more-tools-button" type="button">More tools</button><button class="secondary-button danger-button" id="settings-clear" type="button">Clear saved data</button></div>
         <p class="settings-disclaimer">Microphone access and available voices are controlled by your browser and operating system. This app cannot control your computer or phone outside the permissions your browser provides.</p>
@@ -300,17 +302,18 @@
         <form class="app-hub-form" data-hub-form hidden>
           <strong class="app-hub-form-title">Add or edit shortcut</strong>
           <label>Name<input data-hub-field="name" maxlength="32" autocomplete="off" required></label>
-          <label>Website or Android intent URL<input data-hub-field="url" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com" required></label>
+          <label>Website, Android app, call, or message link<input data-hub-field="url" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com, tel:+15551234567, or sms:+15551234567?body=Hello" required></label>
           <label>Fallback website (optional)<input data-hub-field="fallback" type="text" inputmode="url" maxlength="2048" placeholder="https://example.com"></label>
           <label>App icon (optional)<input data-hub-field="icon" type="file" accept="image/png,image/jpeg,image/webp"></label>
           <span class="app-hub-icon-status" data-hub-icon-status>PNG, JPEG, or WebP; up to 256 KB.</span>
           <div class="app-hub-form-actions"><button class="app-hub-primary" type="submit">Save shortcut</button><button type="button" data-hub-action="cancel">Cancel</button></div>
         </form>
         <form class="app-hub-runner app-hub-dialog-runner" data-hub-runner>
-          <label>URL Runner<input data-hub-field="run-url" type="text" inputmode="url" maxlength="2048" placeholder="Paste a website or Android intent link" required></label>
+          <label>URL Runner<input data-hub-field="run-url" type="text" inputmode="url" maxlength="2048" placeholder="Website, intent://, tel:, or sms: link" required></label>
           <label class="sr-only" for="app-hub-run-fallback-dialog">Optional fallback website</label>
           <input id="app-hub-run-fallback-dialog" data-hub-field="run-fallback" type="text" inputmode="url" maxlength="2048" placeholder="Optional fallback website">
           <button class="app-hub-primary" type="submit">Open / Run</button>
+          <button class="app-hub-primary" type="button" data-hub-action="copy-text">Copy text</button>
         </form>
         <p class="app-hub-status" data-hub-status role="status" aria-live="polite"></p>
         <p class="app-hub-safety">Only HTTP/HTTPS websites and explicit Android intent links are accepted. APKs or native applications cannot run inside JARVIS; uploaded files are restricted to image icons and are never executed.</p>
