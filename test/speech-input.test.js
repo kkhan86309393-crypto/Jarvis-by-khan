@@ -398,6 +398,14 @@ test('matches dotted speech-recognition spellings of the English wake phrase', (
     matched: true,
     command: 'what time is it?',
   });
+  assert.deepEqual(matchWakeWord('Hey J A R V I S, what time is it?'), {
+    matched: true,
+    command: 'what time is it?',
+  });
+  assert.deepEqual(matchWakeWord('Hey J-A-R-V-I-S, what time is it?'), {
+    matched: true,
+    command: 'what time is it?',
+  });
   assert.deepEqual(matchWakeWord('Hey. Jarvis, what time is it?'), {
     matched: true,
     command: 'what time is it?',
@@ -413,6 +421,10 @@ test('does not activate for partial phrases and collapses repeated wake phrases'
   assert.deepEqual(matchWakeWord('Jarvis, tell me a joke'), { matched: false, command: '' });
   assert.deepEqual(matchWakeWord('Hey there, Jarvis'), { matched: false, command: '' });
   assert.deepEqual(matchWakeWord('Hey Jarvis, hey JARVIS, hello'), {
+    matched: true,
+    command: 'hello',
+  });
+  assert.deepEqual(matchWakeWord('Hey J-A-R-V-I-S, hey J A R V I S, hello'), {
     matched: true,
     command: 'hello',
   });

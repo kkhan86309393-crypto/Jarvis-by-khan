@@ -138,11 +138,11 @@ export function getSpeechSynthesisErrorMessage(error) {
 
 export function matchWakeWord(transcript) {
   const text = String(transcript || '').normalize('NFC');
-  const match = /(?:^|[\s,!?।])(?:hey[\s,!?।.-]+j[\s.]*a[\s.]*r[\s.]*v[\s.]*i[\s.]*s|हे[\s,!?।.:;-]+ज[\s‌‍]*ा[\s‌‍]*र्?[\s‌‍]*व[\s‌‍]*ि[\s‌‍]*स)(?=\s|[,.:;!?।]|$)/iu.exec(text);
+  const match = /(?:^|[\s,!?।])(?:hey[\s,!?।.-]+j[\s.,-]*a[\s.,-]*r[\s.,-]*v[\s.,-]*i[\s.,-]*s|हे[\s,!?।.:;-]+ज[\s‌‍]*ा[\s‌‍]*र्?[\s‌‍]*व[\s‌‍]*ि[\s‌‍]*स)(?=\s|[,.:;!?।]|$)/iu.exec(text);
   if (!match) return { matched: false, command: '' };
 
   let command = text.slice(match.index + match[0].length).replace(/^[\s,.:;!?-]+/u, '');
-  const repeatedWakeWord = /^[\s,.:;!?-]*(?:hey[\s,!?।.-]+j[\s.]*a[\s.]*r[\s.]*v[\s.]*i[\s.]*s|हे[\s,!?।.:;-]+ज[\s‌‍]*ा[\s‌‍]*र्?[\s‌‍]*व[\s‌‍]*ि[\s‌‍]*स)(?=$|[\s,.:;!?-])/iu;
+  const repeatedWakeWord = /^[\s,.:;!?-]*(?:hey[\s,!?।.-]+j[\s.,-]*a[\s.,-]*r[\s.,-]*v[\s.,-]*i[\s.,-]*s|हे[\s,!?।.:;-]+ज[\s‌‍]*ा[\s‌‍]*र्?[\s‌‍]*व[\s‌‍]*ि[\s‌‍]*स)(?=$|[\s,.:;!?-])/iu;
   while (repeatedWakeWord.test(command)) {
     command = command.replace(repeatedWakeWord, '').replace(/^[\s,.:;!?-]+/u, '');
   }
