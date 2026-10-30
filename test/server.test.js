@@ -1,7 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createAppServer } from '../server.js';
+import { createAppServer, getAssistantText } from '../server.js';
 import { getForwardedUrl, getServerEnvironment } from '../scripts/codespaces.js';
 import {
   readWorkspaceView,
@@ -59,6 +59,17 @@ test('serves the app shell with restrictive browser security headers', async () 
   assert.match(html, /Use temporarily/);
   assert.match(html, /Use deployment environment/);
   assert.match(html, /cannot change deployment secrets/);
+});
+
+test('normalizes Gemini text parts and rejects empty provider text', () => {
+  assert.equal(getAssistantText('  Plain response.  '), 'Plain response.');
+  assert.equal(getAssistantText([
+    { type: 'text', text: 'First ' },
+    { type: 'image_url', image_url: { url: 'https://example.invalid/image.png' } },
+    { type: 'text', text: 'second.' },
+  ]), 'First second.');
+  assert.equal(getAssistantText([]), '');
+  assert.equal(getAssistantText({ text: 'not an OpenAI text part' }), '');
 });
 
 test('detects mobile, tablet, Windows, browser, and platform hints', () => {
@@ -156,15 +167,27 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="old-interface-button"[^>]*>Old Interface</);
   assert.match(html, /id="dashboard-transcript"/);
   assert.match(html, /class="right-rail"/);
-  assert.match(html, /id="dashboard-chat-title">Chat with me/);
+  assert.match(html, /class="assistant-greeting"/);
+  assert.match(html, /class="assistant-identity"/);
+  assert.match(html, /class="dashboard-panel state-panel"/);
+  assert.match(html, /id="state-panel-live"/);
+  assert.match(html, /id="dashboard-voice-mic-button"/);
+  assert.match(html, /id="dashboard-chat-title">Chat History/);
   assert.match(html, /id="system-title">Real-Time Info/);
   assert.match(html, /id="quick-title">Quick Actions/);
   assert.match(html, /id="dashboard-command-form"/);
   assert.match(html, /id="dashboard-mic-button"/);
   assert.match(html, /id="dashboard-message"/);
   assert.ok(html.indexOf('class="presence"') < html.indexOf('class="right-rail"'));
-  assert.ok(html.indexOf('class="right-rail"') < html.indexOf('id="holo-state-strip"'));
+  assert.ok(html.indexOf('class="presence"') < html.indexOf('class="dashboard-panel state-panel"'));
+  assert.ok(html.indexOf('class="dashboard-panel state-panel"') < html.indexOf('class="right-rail"'));
+  assert.ok(html.indexOf('class="presence"') < html.indexOf('id="holo-state-strip"'));
+  assert.ok(html.indexOf('id="holo-state-strip"') < html.indexOf('class="right-rail"'));
   assert.ok(html.indexOf('id="holo-state-strip"') < html.indexOf('id="dashboard-command-form"'));
+  assert.ok(html.indexOf('id="dashboard-command-form"') < html.indexOf('class="right-rail"'));
+  assert.ok(html.indexOf('id="dashboard-voice-title"') < html.indexOf('id="dashboard-chat-title"'));
+  assert.ok(html.indexOf('id="dashboard-chat-title"') < html.indexOf('id="system-title"'));
+  assert.ok(html.indexOf('id="system-title"') < html.indexOf('id="quick-title"'));
   assert.doesNotMatch(html, /file_00000000f9a4821182e42efc9a2e93a0\.png/);
   assert.match(html, /id="presence-title">At your service\./);
   assert.match(html, /class="holo-sphere-shell"/);
@@ -192,7 +215,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="battery-value"/);
   assert.match(html, /id="browser-memory-value"/);
   assert.match(html, /id="backend-connection-value"/);
-  assert.match(html, /data-device-group="desktop"/);
+  assert.match(html, /class="metric-section-heading"><span>SERVER<\/span>/);
+  assert.match(html, /class="metric-section-heading"><span>THIS DEVICE<\/span>/);
   assert.match(html, /data-device-group="mobile"/);
   assert.match(html, /class="new-feature-bar"/);
   assert.match(html, /data-nav="chat"/);
@@ -239,7 +263,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?hud=39/);
+  assert.match(html, /app\.js\?hud=48/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -290,11 +314,27 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
   assert.doesNotMatch(client, /avatar3d|setAvatarMouth|audioLipSync|avatarSpeechTimer/);
   assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
+  assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\(\);\s*primeVoiceOutput\(\);\s*\}/);
+  assert.match(client, /monitorSpeechSynthesisStart\(window\.speechSynthesis/);
+  assert.match(client, /speechOutputTexts\.has\(speechText\)/);
+  const speakImplementation = client.match(/function speak\(text[^)]*\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  const sendChatImplementation = client.match(/async function sendChat\(text,[\s\S]*?\n\}/)?.[0] || '';
+  assert.doesNotMatch(speakImplementation, /speechSynthesis\.cancel/);
+  assert.doesNotMatch(sendChatImplementation, /primeVoiceOutput/);
+  assert.match(client, /if \(event\.submitter === elements\.send\) primeVoiceOutput\(\)/);
   assert.match(html, /id="wake-word-enabled"/);
   assert.match(client, /wakeWordEnabled: false/);
   assert.match(client, /if \(state\.preferences\.wakeWordEnabled && !elements\.wakeWordEnabled\.disabled\) startListening\('wake'\)/);
   assert.match(client, /recognition\.continuous = purpose === 'wake'/);
-  assert.match(client, /matchWakeWord\(transcript\)/);
+  assert.match(client, /recognition\.maxAlternatives = purpose === 'wake' \? 3 : 1/);
+  assert.match(client, /recognition\.onstart = \(\) =>/);
+  assert.match(client, /readSpeechRecognitionAlternatives\(event\)[\s\S]*?find\(\(candidate\) => matchWakeWord\(candidate\)\.matched\)/);
+  assert.match(client, /readWakeWordCommand\(\s*wakeTranscript,\s*state\.wakeWordTriggered,\s*state\.wakeWordTriggered \? elements\.message\.value : ''/);
+  assert.match(client, /if \(wakeResult\.activated\)/);
+  assert.match(client, /No speech detected\. Restarting wake-word listening shortly\./);
+  assert.match(client, /if \(!wakeHandoff\) state\.wakeWordResumePending = false/);
+  assert.match(client, /startListening\('command', true\)/);
+  assert.match(client, /recognitionStartTimer = window\.setTimeout/);
   assert.match(client, /document\.addEventListener\('visibilitychange'/);
   assert.match(client, /window\.addEventListener\('blur', pauseVoiceForPageLifecycle\)/);
   assert.match(client, /window\.addEventListener\('focus', resumeVoiceForPageLifecycle\)/);
@@ -326,6 +366,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /updateMetricGauge\(elements\.diskMeterTrack, elements\.diskMeter, metrics\.diskPercent\)/);
   assert.match(client, /function handleDashboardFeature/);
   assert.match(client, /function updateHologramState\(\)/);
+  assert.match(client, /elements\.statePanelLive\.textContent = announcement\.toUpperCase\(\)/);
   assert.match(client, /elements\.holoWaveform\.classList\.toggle\('is-active', voiceActive\)/);
   assert.match(client, /state\.assistantMode = supportedModes\.includes\(mode\) \? mode : 'normal';[\s\S]*?updateHologramState\(\)/);
   assert.match(client, /state\.holoOnline = true;\s*updateHologramState\(\)/);
@@ -335,7 +376,9 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /navigator\.permissions\.query\(\{ name: 'microphone' \}\)/);
   assert.match(client, /navigator\.getBattery\(\)/);
   assert.match(client, /performance\.memory/);
-  assert.match(client, /if \(profile\.isMobile\) \{/);
+  assert.match(client, /if \(profile\.isMobile\) updateBatteryStatus\(\);/);
+  assert.match(client, /async function loadSystemMetrics\(\) \{\s*try \{\s*const response = await fetch\('\/api\/system'/);
+  assert.match(client, /dashboardVoiceMicButton\.addEventListener\('click', \(\) => \{\s*startListeningFromUserGesture\(\);/);
   assert.match(deviceMonitor, /export function detectDeviceProfile/);
   assert.match(html, /Device details use browser-reported information/);
   assert.match(styles, /body\.new-interface \.right-rail[\s\S]*overflow-y: auto/);
@@ -371,7 +414,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(dashboardStyles, /body\.new-interface \.holo-sphere-shell \{[\s\S]*?width: 100%;[\s\S]*?height: 100%/);
   assert.doesNotMatch(dashboardStyles, /orbit-three|holo-grid|core-halo|hud-build-tag/);
   assert.match(dashboardStyles, /body\.new-interface \.dashboard-command \{[\s\S]*?grid-template-columns: 44px minmax\(0, 1fr\) 44px/);
-  assert.match(dashboardStyles, /body\.new-interface \.dashboard-layout > \.holo-state-strip \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(dashboardStyles, /body\.new-interface \.state-panel \.holo-state-strip \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
   assert.match(styles, /@keyframes holo-wave/);
   assert.match(styles, /\.holo-state\.is-current/);
   assert.match(styles, /\.activity-log \{ min-height: 150px; flex: 1/);
@@ -381,16 +424,34 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.holo-emitter/);
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: sticky/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?hud=34/);
-  assert.match(html, /diagnostics\.js\?hud=27/);
+  assert.match(html, /styles\.css\?hud=43/);
+  assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
+  assert.match(html, /Temporary Android Speech Diagnostics/);
   assert.match(diagnostics, /JavaScript errors:/);
   assert.match(diagnostics, /get\('diagnostics'\) === '1'/);
-  assert.match(worker, /jarvis-shell-v44/);
+  assert.match(diagnostics, /HTTPS active:/);
+  assert.match(diagnostics, /SpeechRecognition:/);
+  assert.match(diagnostics, /webkitSpeechRecognition:/);
+  assert.match(diagnostics, /speechSynthesis:/);
+  assert.match(diagnostics, /TTS voices/);
+  assert.match(diagnostics, /Voice Output setting:/);
+  assert.match(diagnostics, /visibility=/);
+  assert.match(diagnostics, /Service-worker cache version:/);
+  assert.match(diagnostics, /jarvis:speech-diagnostic/);
+  assert.match(diagnostics, /query and fragment omitted/);
+  assert.match(diagnostics, /speech text is not recorded/);
+  assert.match(worker, /jarvis-shell-v53/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=34/);
-  assert.match(worker, /diagnostics\.js\?hud=27/);
-  assert.match(worker, /app\.js\?hud=39/);
+  assert.match(worker, /styles\.css\?hud=43/);
+  assert.match(worker, /diagnostics\.js\?hud=28/);
+  assert.match(worker, /app\.js\?hud=48/);
+  assert.match(worker, /lab-personalize\.js/);
+  assert.match(worker, /lab-ai-modify\.js/);
+  assert.match(worker, /lab-code-studio\.js/);
+  assert.match(worker, /lab-extensions\.js/);
+  assert.match(worker, /lab-safety\.js/);
+  assert.match(worker, /JARVIS_DIAGNOSTICS/);
   assert.doesNotMatch(worker, /avatar-cues\.js|ai-avatar\.jpg/);
   assert.match(worker, /app-hub\.js/);
   assert.match(worker, /search-summary\.js/);
@@ -401,7 +462,12 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=42/);
+  assert.match(client, /service-worker\.js\?hud=49/);
+  assert.match(client, /AI reply reaches speak\(\)/);
+  assert.match(client, /SpeechRecognition error/);
+  assert.match(client, /TTS utterance onstart/);
+  assert.match(client, /TTS utterance onerror/);
+  assert.match(client, /TTS utterance onend/);
   assert.match(client, /AbortSignal\.timeout\(50_000\)/);
   assert.match(client, /feature-toolbar, \.right-rail/);
   assert.match(styles, /\.feature-toolbar \{ display: none; \}/);
@@ -415,18 +481,19 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const mobileNavigation = html.match(/<nav class="mobile-nav"[\s\S]*?<\/nav>/)?.[0] || '';
   assert.equal([...mobileNavigation.matchAll(/<svg\b/g)].length, 6);
   assert.deepEqual([...mobileNavigation.matchAll(/data-nav="([^"]+)"/g)].map((match) => match[1]), [
-    'chat', 'voice', 'files', 'applications', 'system', 'more',
+    'dashboard', 'chat', 'voice', 'applications', 'more', 'lab',
   ]);
   assert.deepEqual([...mobileNavigation.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]), [
-    'AI Chat', 'Voice', 'Files', 'Browser', 'Monitor', 'More',
+    'Home', 'Chat', 'Voice', 'Apps', 'More', 'LAB',
   ]);
   assert.match(styles, /\.new-feature-bar \{ display: none; \}/);
   assert.match(styles, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
   assert.match(styles, /\.mobile-nav button span \{ white-space: nowrap; \}/);
   assert.match(html, /id="more-tools-button"/);
   assert.doesNotMatch(client, /scheduleAvatarExpression|clearAvatarSpeech/);
-  assert.match(client, /utterance\.onstart = \(\) => \{\s*if \(playbackId !== state\.speechPlaybackId\) return;\s*setAssistantState\('speaking'/);
-  assert.match(client, /utterance\.onend = \(\) => \{\s*if \(playbackId !== state\.speechPlaybackId\) return;/);
+  assert.match(client, /utterance\.onstart = \(\) => \{\s*if \(playbackId !== state\.speechPlaybackId\) return;\s*startedAt = performance\.now\(\);\s*reportTtsDiagnostic\('TTS utterance onstart'/);
+  assert.match(client, /utterance\.onend = \(\) => \{\s*const endedAt = performance\.now\(\);\s*reportTtsDiagnostic\('TTS utterance onend', \{[\s\S]*?started: playbackStarted/);
+  assert.doesNotMatch(client.match(/utterance\.onend = \(\) => \{([\s\S]*?)\n  \};/)?.[1] || '', /markPlaybackStarted/);
   assert.doesNotMatch(styles, /\.ai-avatar\.is-talking|@keyframes avatar-speech/);
   assert.match(styles, /\.holo-stage\.is-speaking \.playback-indicator/);
 });
@@ -492,6 +559,20 @@ test('defaults to the original interface and remembers the selected interface', 
   saveWorkspaceView('chat', storage);
   assert.equal(readWorkspaceView(storage), 'chat');
   assert.equal(values.get('jarvis.interface.mode.v7'), 'old');
+});
+
+test('uses the dashboard as the first-time mobile view while preserving saved choices', () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); },
+  };
+
+  assert.equal(readWorkspaceView(storage, 'dashboard'), 'dashboard');
+  assert.equal(readWorkspaceView(storage, 'chat'), 'chat');
+  saveWorkspaceView('chat', storage);
+  assert.equal(readWorkspaceView(storage, 'dashboard'), 'chat');
 });
 
 test('serves PWA metadata with the current dashboard theme', async () => {
@@ -579,7 +660,7 @@ test('reports provider and access configuration without exposing credentials', a
   assert.equal(health.search, 'DuckDuckGo Instant Answers with Wikipedia search fallback');
 });
 
-test('configures Gemini from server environment without exposing its key', async () => {
+test('configures Gemini and reads text-part replies without exposing its key', async () => {
   const keys = ['AI_API_KEY', 'AI_BASE_URL', 'AI_MODEL', 'AI_PROVIDER', 'OLLAMA_BASE_URL'];
   const previousEnvironment = new Map(keys.map((key) => [key, process.env[key]]));
   const apiKey = 'test-only-gemini-environment-secret';
@@ -947,7 +1028,10 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     if (String(input) === 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions') {
       providerAuthorization = options.headers.authorization;
       providerRequest = JSON.parse(options.body);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Configured provider reply.' } }] }), {
+      return new Response(JSON.stringify({ choices: [{ message: { content: [
+        { type: 'text', text: 'Configured provider ' },
+        { type: 'text', text: 'reply.' },
+      ] } }] }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -1297,4 +1381,27 @@ test('reports search provider outages instead of fabricating results', async () 
 test('blocks paths that escape the public directory', async () => {
   const response = await fetch(`${baseUrl}/..%2fserver.js`);
   assert.equal(response.status, 403);
+});
+
+test('queues automatic AI speech without interrupting voice preview', async () => {
+  const client = await (await fetch(`${baseUrl}/app.js`)).text();
+  const speakImplementation = client.match(/function speak\(text[^)]*\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  const sendChatImplementation = client.match(/async function sendChat\(text,[\s\S]*?\n\}/)?.[0] || '';
+  const primeVoiceOutputImplementation = client.match(/function primeVoiceOutput\(\) \{([\s\S]*?)\n\}/)?.[1] || '';
+
+  assert.match(sendChatImplementation, /const reply = readChatReply\(data\)/);
+  assert.match(sendChatImplementation, /if \(state\.preferences\.voiceEnabled\) \{\s*speechReplayController\.track\(replyMessage\);\s*reportSpeechDiagnostic\('AI reply reaches speak\(\)', \{ voiceOutputEnabled: true \}\);\s*speak\(reply, \{/);
+  assert.doesNotMatch(sendChatImplementation, /primeVoiceOutput/);
+  assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\(\);\s*primeVoiceOutput\(\);\s*\}/);
+  assert.match(client, /language: state\.preferences\.language === 'hi' \? 'hi-IN' : 'en-US'/);
+  assert.match(speakImplementation, /speechOutputTexts\.has\(speechText\)/);
+  assert.doesNotMatch(speakImplementation, /speechSynthesis\.cancel/);
+  assert.match(speakImplementation, /monitorSpeechSynthesisStart\(window\.speechSynthesis/);
+  assert.match(client, /replayButton\.textContent = 'Tap to Replay'/);
+  assert.match(client, /if \(!speechReplayController\.beginReplay\(message\)\) return;\s*speak\(message\.content, \{/);
+  assert.match(client, /onStart: \(\) => speechReplayController\.markStarted\(message\)/);
+  assert.match(client, /onNotStarted: \(\) => speechReplayController\.markNotStarted\(message\)/);
+  assert.match(client, /const pendingSpeechOptions = state\.pendingSpeechOptions;[\s\S]*?speak\(pendingSpeechText, pendingSpeechOptions \|\| \{\}\)/);
+  assert.match(client, /document\.querySelector\('#preview-voice'\)\.addEventListener\('click', \(\) => \{[\s\S]*?speak\(state\.preferences\.language/);
+  assert.doesNotMatch(primeVoiceOutputImplementation, /voiceOutputPrimed/);
 });

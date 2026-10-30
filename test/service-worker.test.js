@@ -76,7 +76,14 @@ test('installs the lightweight app shell without avatar assets', async () => {
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=39'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=43'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/diagnostics.js?hud=28'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=48'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/lab-personalize.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/lab-ai-modify.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/lab-code-studio.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/lab-extensions.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/lab-safety.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/app-hub.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/search-summary.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/manifest.webmanifest'));
@@ -84,6 +91,23 @@ test('installs the lightweight app shell without avatar assets', async () => {
   assert.equal(worker.storedResponses.has('https://jarvis.test/ai-avatar.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/reference-face.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js'), false);
+});
+
+test('reports the active shell cache version only to an explicit diagnostics request', () => {
+  const worker = createWorker();
+  let version;
+  worker.listeners.get('message')({
+    data: { type: 'JARVIS_DIAGNOSTICS' },
+    ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
+  });
+  assert.equal(version, 'jarvis-shell-v53');
+
+  let ignored = false;
+  worker.listeners.get('message')({
+    data: { type: 'OTHER_MESSAGE' },
+    ports: [{ postMessage: () => { ignored = true; } }],
+  });
+  assert.equal(ignored, false);
 });
 
 test('removes only obsolete JARVIS shell caches when activating', async () => {
