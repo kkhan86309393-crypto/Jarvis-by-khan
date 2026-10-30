@@ -3,31 +3,79 @@ import { detectDeviceProfile } from './device-monitor.js';
 import { getPublicShareUrl } from './share-link.js';
 import { initializeAppHubs } from './app-hub.js';
 import { createSearchSummaryPrompt } from './search-summary.js';
+import { readApiResponse, readChatReply } from './api-response.js';
 import {
   createMicrophonePermissionGuard,
   createRecognitionLifecycle,
+  createSpeechReplayController,
+  createWakeWordRecoveryPolicy,
+  getWakeWordListeningBlockReason,
   getSpeechRecognitionErrorMessage,
   getSpeechRecognitionConstructor,
   getSpeechRecognitionLanguage,
   getSpeechRecognitionStartError,
+  isFatalSpeechRecognitionError,
   getSpeechSynthesisErrorMessage,
   isPageForeground,
   matchWakeWord,
+  monitorSpeechSynthesisStart,
   nextWakeWordRestartDelay,
   primeSpeechSynthesis,
+  readSpeechRecognitionAlternatives,
   readSpeechRecognitionResult,
+  readWakeWordCommand,
   resolveVoiceOutputEnabled,
   selectSpeechSynthesisVoice,
   shouldPlaySpeech,
   shouldRunWakeWord,
+  WAKE_WORD_MAX_RESTART_ATTEMPTS,
 } from './speech-input.js';
 import { selectRecentChatContext } from './chat-context.js';
+import {
+  DEFAULT_LAB_PREFERENCES,
+  LAB_PREFERENCES_KEY,
+  LAB_ACCENTS,
+  applyLabPreferences,
+  loadLabPreferences,
+  resetLabPreferencesDraft,
+  saveLabPreferences,
+} from './lab-personalize.js';
+import {
+  LAB_AI_MODIFY_HISTORY_KEY,
+  getLabAiModifyRequestStatus,
+  loadLabAiModifyHistory,
+  recordLabAiModifyHistory,
+} from './lab-ai-modify.js';
+import {
+  CODE_STUDIO_LANGUAGES,
+  createCodeExport,
+  reviewCodeLocally,
+  validateCodeFile,
+} from './lab-code-studio.js';
+import {
+  EXTENSION_PACKAGE_MAX_BYTES,
+  addPendingExtension,
+  getExtensionPackageFileStatus,
+  loadLabExtensions,
+  recordLabExtensionExport,
+  recordLabExtensionRejection,
+  removeLabExtension,
+  serializeLabExtensionPackage,
+  setLabExtensionState,
+  validateExtensionPackageText,
+} from './lab-extensions.js';
+import {
+  LAB_PROJECT_CHANGES_ENABLED,
+  containsSensitiveText,
+  redactSensitiveText,
+} from './lab-safety.js';
 
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
 const historyLimit = 80;
 const maxVisionDimension = 1_280;
 const maxVisionImageBytes = 500 * 1024;
+const speechDiagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1';
 const defaults = {
   language: 'en',
   voiceURI: '',
@@ -48,6 +96,42 @@ const elements = {
   searchToggle: document.querySelector('#search-toggle'),
   mic: document.querySelector('#mic-button'),
   dashboardLayout: document.querySelector('#dashboard-layout'),
+  labLayout: document.querySelector('#jarvis-lab'),
+  labModules: document.querySelector('.lab-module-grid'),
+  labSafetyPanel: document.querySelector('#lab-safety-panel'),
+  labSafetyChangeState: document.querySelector('#lab-safety-change-state'),
+  personalizePanel: document.querySelector('#personalize-panel'),
+  personalizeTitle: document.querySelector('#personalize-title'),
+  personalizeForm: document.querySelector('#personalize-form'),
+  personalizePreview: document.querySelector('#personalize-preview'),
+  personalizePreviewNote: document.querySelector('#personalize-preview-note'),
+  personalizePreviewVoice: document.querySelector('#personalize-preview-voice'),
+  personalizeStatus: document.querySelector('#personalize-status'),
+  labDensity: document.querySelector('#lab-density-select'),
+  labVoice: document.querySelector('#lab-voice-select'),
+  aiModifyPanel: document.querySelector('#ai-modify-panel'),
+  aiModifyTitle: document.querySelector('#ai-modify-title'),
+  aiModifyRequest: document.querySelector('#ai-modify-request'),
+  aiModifyPlanStatus: document.querySelector('#ai-modify-plan-status'),
+  aiModifyStatus: document.querySelector('#ai-modify-status'),
+  aiModifyHistory: document.querySelector('#ai-modify-history'),
+  codeStudioPanel: document.querySelector('#code-studio-panel'),
+  codeStudioTitle: document.querySelector('#code-studio-title'),
+  codeStudioEditor: document.querySelector('#code-studio-editor'),
+  codeStudioLanguage: document.querySelector('#code-studio-language'),
+  codeStudioReadonly: document.querySelector('#code-studio-readonly'),
+  codeStudioFile: document.querySelector('#code-studio-file'),
+  codeStudioStatus: document.querySelector('#code-studio-status'),
+  codeStudioCount: document.querySelector('#code-studio-count'),
+  codeStudioReviewSummary: document.querySelector('#code-studio-review-summary'),
+  codeStudioFindings: document.querySelector('#code-studio-findings'),
+  extensionsPanel: document.querySelector('#extensions-panel'),
+  extensionsTitle: document.querySelector('#extensions-title'),
+  extensionsFile: document.querySelector('#extensions-package-file'),
+  extensionsStatus: document.querySelector('#extensions-status'),
+  extensionsCount: document.querySelector('#extensions-count'),
+  extensionsList: document.querySelector('#extensions-list'),
+  extensionsHistory: document.querySelector('#extensions-history'),
   dashboardChatPanel: document.querySelector('.dashboard-chat-panel'),
   conversationView: document.querySelector('#conversation-view'),
   dashboardTranscript: document.querySelector('#dashboard-transcript'),
@@ -55,6 +139,7 @@ const elements = {
   assistantState: document.querySelector('#assistant-state'),
   holoWaveform: document.querySelector('#holo-waveform'),
   holoStateAnnouncement: document.querySelector('#holo-state-announcement'),
+  statePanelLive: document.querySelector('#state-panel-live'),
   holoStates: document.querySelectorAll('[data-holo-state]'),
   dashboardConnection: document.querySelector('#connection-status-dashboard'),
   providerNote: document.querySelector('#provider-note'),
@@ -111,6 +196,7 @@ const elements = {
   leftMemoryStatus: document.querySelector('#left-memory-status'),
   voiceConsoleStatus: document.querySelector('#voice-console-status'),
   dashboardMicButton: document.querySelector('#dashboard-mic-button'),
+  dashboardVoiceMicButton: document.querySelector('#dashboard-voice-mic-button'),
   dashboardVoiceToggle: document.querySelector('#dashboard-voice-toggle'),
   dashboardVoiceLabel: document.querySelector('#dashboard-voice-label'),
   dashboardSettingsButton: document.querySelector('#dashboard-settings-button'),
@@ -165,6 +251,39 @@ const elements = {
   focusTimerButton: document.querySelector('#focus-timer-button'),
 };
 
+function reportSpeechDiagnostic(event, details = {}) {
+  if (!speechDiagnosticsEnabled) return;
+  window.dispatchEvent(new CustomEvent('jarvis:speech-diagnostic', {
+    detail: {
+      event,
+      timestamp: new Date().toISOString(),
+      ...details,
+    },
+  }));
+}
+
+function reportTtsDiagnostic(event, details = {}) {
+  const synthesis = window.speechSynthesis;
+  reportSpeechDiagnostic(event, {
+    speaking: Boolean(synthesis?.speaking),
+    pending: Boolean(synthesis?.pending),
+    paused: Boolean(synthesis?.paused),
+    ...details,
+  });
+}
+
+function reportWakeWordStatus(reason) {
+  reportSpeechDiagnostic('Wake-word status', {
+    enabled: state.preferences.wakeWordEnabled,
+    language: getSpeechRecognitionLanguage(state.preferences.language),
+    microphonePermission: state.microphonePermission,
+    visibility: document.visibilityState,
+    focused: pageIsFocused(),
+    secureContext: window.isSecureContext === true,
+    reason,
+  });
+}
+
 function readStoredJson(key, fallback) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key));
@@ -192,7 +311,8 @@ function loadPreferences() {
 
 function loadWorkspaceView() {
   try {
-    return readWorkspaceView(localStorage);
+    const defaultView = window.matchMedia?.('(max-width: 780px)').matches ? 'dashboard' : 'chat';
+    return readWorkspaceView(localStorage, defaultView);
   } catch {
     return 'chat';
   }
@@ -209,12 +329,19 @@ const state = {
   recognitionWakeSession: false,
   wakeWordTriggered: false,
   wakeWordResumePending: false,
+  wakeWordManualRetryPending: false,
   wakeWordManualTakeoverPending: false,
   wakeWordPagePaused: false,
   wakeWordRestartTimer: null,
   wakeWordRestartDelay: 600,
+  recognitionStartTimer: null,
+  recognitionStartedAt: null,
+  recognitionError: null,
   listening: false,
   pendingSpeechText: null,
+  speechOutputTexts: new Set(),
+  speechStartMonitorCancel: null,
+  pendingSpeechOptions: null,
   installPrompt: null,
   accessRequired: false,
   accessToken: '',
@@ -235,10 +362,16 @@ const state = {
   lastChatFailure: null,
   aiSettingsLoaded: false,
   aiConfigured: false,
+  labPreferences: loadLabPreferences(localStorage),
 };
+
+let personalizeDraft = null;
+let codeStudioPreviewSource = null;
 
 let healthRequestSequence = 0;
 const recognitionLifecycle = createRecognitionLifecycle();
+const speechReplayController = createSpeechReplayController(() => renderMessages());
+const wakeWordRecoveryPolicy = createWakeWordRecoveryPolicy();
 const microphonePermissionGuard = createMicrophonePermissionGuard();
 
 function loadHistory() {
@@ -345,6 +478,7 @@ function updateHologramState() {
     ? 'J.A.R.V.I.S. is online.'
     : announcement === 'offline' ? 'J.A.R.V.I.S. is offline.'
       : `J.A.R.V.I.S. is ${announcement}.`;
+  elements.statePanelLive.textContent = announcement.toUpperCase();
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
@@ -418,6 +552,21 @@ function messageElement(message) {
   body.className = 'message-body';
   body.textContent = message.content;
   wrapper.append(body);
+  if (message.role === 'assistant' && speechReplayController.getStatus(message) === 'available') {
+    const replayButton = document.createElement('button');
+    replayButton.type = 'button';
+    replayButton.className = 'tts-replay-button';
+    replayButton.textContent = 'Tap to Replay';
+    replayButton.setAttribute('aria-label', 'Tap to replay this J.A.R.V.I.S. response');
+    replayButton.addEventListener('click', () => {
+      if (!speechReplayController.beginReplay(message)) return;
+      speak(message.content, {
+        onStart: () => speechReplayController.markStarted(message),
+        onNotStarted: () => speechReplayController.markNotStarted(message),
+      });
+    });
+    wrapper.append(replayButton);
+  }
   return wrapper;
 }
 
@@ -451,17 +600,6 @@ function addMessage(message) {
   saveHistory();
 }
 
-async function readApiResponse(response) {
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error('The server returned an unreadable response.');
-  }
-  if (!response.ok) throw new Error(data.error || `Request failed with status ${response.status}.`);
-  return data;
-}
-
 function getRequestErrorMessage(error, action = 'request') {
   if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
     return `The ${action} timed out. Check your connection or AI provider, then try again.`;
@@ -481,7 +619,6 @@ function apiHeaders(json = false) {
 
 async function sendChat(text, { retry = false, contextOverride = null, maxTokens = null, singleAttempt = false } = {}) {
   const context = contextOverride || selectRecentChatContext(state.messages);
-  if (state.preferences.voiceEnabled) primeVoiceOutput();
   if (!retry) state.lastChatFailure = null;
   setDashboardChatState('thinking', 'J.A.R.V.I.S. is processing your message.');
   setAssistantState('thinking', 'PROCESSING REQUEST');
@@ -500,16 +637,29 @@ async function sendChat(text, { retry = false, contextOverride = null, maxTokens
       signal: AbortSignal.timeout(50_000),
     });
     const data = await readApiResponse(response);
+    const reply = readChatReply(data);
     state.lastChatFailure = null;
     setDashboardChatState('', '');
-    addMessage({ role: 'assistant', content: data.reply });
+    const replyMessage = { role: 'assistant', content: reply };
+    addMessage(replyMessage);
     elements.providerNote.textContent = `Connected through ${data.provider}. Search results are retrieved separately and linked to their sources.`;
     elements.modelValue.textContent = data.provider;
     elements.leftAiStatus.textContent = 'AI RESPONDED';
     elements.leftAiDetail.textContent = `Most recent successful reply came from ${data.provider}.`;
     logActivity('Assistant reply received');
     setAssistantState('happy', 'RESPONSE READY');
-    if (state.preferences.voiceEnabled) speak(data.reply);
+    if (state.preferences.voiceEnabled) {
+      speechReplayController.track(replyMessage);
+      reportSpeechDiagnostic('AI reply reaches speak()', { voiceOutputEnabled: true });
+      speak(reply, {
+        onStart: () => speechReplayController.markStarted(replyMessage),
+        onNotStarted: () => speechReplayController.markNotStarted(replyMessage),
+      });
+    } else {
+      reportTtsDiagnostic('TTS utterance skipped', {
+        reason: 'speechSynthesis' in window ? 'voice-output-disabled' : 'speech-synthesis-unavailable',
+      });
+    }
   } catch (error) {
     const message = getRequestErrorMessage(error, 'AI request');
     showFeedback(document.body.classList.contains('new-interface') ? '' : message);
@@ -534,6 +684,7 @@ async function sendChat(text, { retry = false, contextOverride = null, maxTokens
 
 function retryLastChat() {
   if (state.pending || !state.lastChatFailure) return;
+  primeVoiceOutput();
   const failure = state.lastChatFailure;
   const lastMessage = state.messages.at(-1);
   if (lastMessage?.role === 'assistant' && lastMessage.content === failure.message) {
@@ -591,6 +742,7 @@ function summarizeSearchResults(data, prompt) {
     showFeedback('No safe source links are available to summarize.');
     return;
   }
+  primeVoiceOutput();
   state.pending = true;
   elements.send.disabled = true;
   elements.dashboardSend.disabled = true;
@@ -606,6 +758,7 @@ function summarizeSearchResults(data, prompt) {
 
 function submitMessage(event) {
   event.preventDefault();
+  if (event.submitter === elements.send) primeVoiceOutput();
   if (state.pending) return;
   const text = elements.message.value.trim();
   if (!text) return;
@@ -643,7 +796,11 @@ function updateSearchMode() {
 }
 
 function selectedVoice() {
-  return selectSpeechSynthesisVoice(state.voices, state.preferences.language, state.preferences.voiceURI);
+  return selectSpeechSynthesisVoice(
+    state.voices,
+    state.preferences.language,
+    state.labPreferences.voiceURI || state.preferences.voiceURI,
+  );
 }
 
 function primeVoiceOutput() {
@@ -655,6 +812,11 @@ function primeVoiceOutput() {
   );
 }
 
+function startListeningFromUserGesture() {
+  startListening();
+  primeVoiceOutput();
+}
+
 function pageIsFocused() {
   try {
     return typeof document.hasFocus === 'function' && document.hasFocus();
@@ -663,80 +825,205 @@ function pageIsFocused() {
   }
 }
 
-function speak(text) {
-  if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return;
-  if (!shouldPlaySpeech(document.visibilityState, pageIsFocused())) {
-    state.pendingSpeechText = null;
-    setAssistantState('', 'SYSTEM STANDBY');
-    showFeedback('Voice output was skipped while J.A.R.V.I.S. was unfocused or in the background. The text reply is available.');
+function speak(text, { onStart, onNotStarted } = {}) {
+  if (!('speechSynthesis' in window)) {
+    reportSpeechDiagnostic('TTS utterance skipped', { reason: 'speech-synthesis-unavailable' });
+    onNotStarted?.();
     return;
   }
+  if (!state.preferences.voiceEnabled) {
+    reportTtsDiagnostic('TTS utterance skipped', { reason: 'voice-output-disabled' });
+    onNotStarted?.();
+    return;
+  }
+  const speechText = String(text || '').trim();
+  if (!speechText) {
+    reportTtsDiagnostic('TTS utterance skipped', { reason: 'empty-text' });
+    onNotStarted?.();
+    return;
+  }
+  if (state.speechOutputTexts.has(speechText)) {
+    reportTtsDiagnostic('TTS utterance skipped', { reason: 'duplicate-text' });
+    onStart?.();
+    return;
+  }
+  if (!shouldPlaySpeech(document.visibilityState, pageIsFocused())) {
+    reportTtsDiagnostic('TTS utterance skipped', { reason: 'page-unfocused' });
+    state.pendingSpeechText = null;
+    state.pendingSpeechOptions = null;
+    setAssistantState('', 'SYSTEM STANDBY');
+    showFeedback('Voice output was skipped while J.A.R.V.I.S. was unfocused or in the background. The text reply is available.');
+    onNotStarted?.();
+    return;
+  }
+  state.speechOutputTexts.add(speechText);
   if (state.recognition) {
-    state.pendingSpeechText = text;
+    reportTtsDiagnostic('TTS utterance deferred', {
+      language: getSpeechRecognitionLanguage(state.preferences.language),
+      reason: 'recognition-active',
+    });
+    state.pendingSpeechText = speechText;
+    state.pendingSpeechOptions = { onStart, onNotStarted };
     requestStopListening();
     return;
   }
   const playbackId = ++state.speechPlaybackId;
-  if (state.assistantMode === 'speaking') setAssistantState('', 'SYSTEM STANDBY');
+  state.speechStartMonitorCancel?.();
+  state.speechStartMonitorCancel = null;
   state.pendingSpeechText = null;
-  try {
-    window.speechSynthesis.cancel();
-  } catch {}
+  const voice = selectedVoice();
+  const voiceDetails = {
+    language: state.preferences.language === 'hi' ? 'hi-IN' : 'en-US',
+    voiceName: voice?.name || 'System default',
+    voiceLanguage: voice?.lang || 'unknown',
+  };
+  const queuedAt = performance.now();
+  let startedAt = null;
   let utterance;
   try {
-    utterance = new SpeechSynthesisUtterance(text);
+    utterance = new (window.SpeechSynthesisUtterance || globalThis.SpeechSynthesisUtterance)(speechText);
   } catch {
+    reportTtsDiagnostic('TTS utterance creation failed', voiceDetails);
+    state.speechOutputTexts.delete(speechText);
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
     resumeWakeWordDetection();
+    onNotStarted?.();
     return;
   }
-  utterance.lang = state.preferences.language === 'hi' ? 'hi-IN' : 'en-US';
+  utterance.lang = voiceDetails.language;
   utterance.rate = state.preferences.speechRate;
-  utterance.voice = selectedVoice();
-  utterance.onstart = () => {
-    if (playbackId !== state.speechPlaybackId) return;
+  utterance.voice = voice;
+  let playbackStarted = false;
+  const markPlaybackStarted = () => {
+    if (playbackStarted || playbackId !== state.speechPlaybackId) return;
+    playbackStarted = true;
+    state.speechStartMonitorCancel?.();
+    state.speechStartMonitorCancel = null;
     setAssistantState('speaking', 'VOICE OUTPUT');
     logActivity('Voice response started');
   };
+  utterance.onstart = () => {
+    if (playbackId !== state.speechPlaybackId) return;
+    startedAt = performance.now();
+    reportTtsDiagnostic('TTS utterance onstart', {
+      ...voiceDetails,
+      queueDurationMs: Math.max(0, Math.round(startedAt - queuedAt)),
+    });
+    markPlaybackStarted();
+    onStart?.();
+  };
   utterance.onpause = () => {
     if (playbackId !== state.speechPlaybackId) return;
+    reportTtsDiagnostic('TTS utterance onpause', {
+      ...voiceDetails,
+      started: playbackStarted,
+      ...(startedAt === null ? {} : { durationMs: Math.max(0, Math.round(performance.now() - startedAt)) }),
+    });
     setAssistantState('', 'VOICE PAUSED');
   };
   utterance.onresume = () => {
     if (playbackId !== state.speechPlaybackId) return;
+    reportTtsDiagnostic('TTS utterance onresume', {
+      ...voiceDetails,
+      started: playbackStarted,
+      ...(startedAt === null ? {} : { durationMs: Math.max(0, Math.round(performance.now() - startedAt)) }),
+    });
     setAssistantState('speaking', 'VOICE OUTPUT');
   };
   utterance.onend = () => {
+    const endedAt = performance.now();
+    reportTtsDiagnostic('TTS utterance onend', {
+      ...voiceDetails,
+      started: playbackStarted,
+      elapsedMs: Math.max(0, Math.round(endedAt - queuedAt)),
+      ...(startedAt === null ? {} : {
+        queueDurationMs: Math.max(0, Math.round(startedAt - queuedAt)),
+        durationMs: Math.max(0, Math.round(endedAt - startedAt)),
+      }),
+    });
+    state.speechOutputTexts.delete(speechText);
     if (playbackId !== state.speechPlaybackId) return;
+    if (!playbackStarted) onNotStarted?.();
+    state.speechStartMonitorCancel?.();
+    state.speechStartMonitorCancel = null;
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     logActivity('Voice response complete');
     resumeWakeWordDetection();
   };
   utterance.onerror = (event) => {
+    const erroredAt = performance.now();
+    reportTtsDiagnostic('TTS utterance onerror', {
+      ...voiceDetails,
+      error: event.error || 'unknown',
+      started: playbackStarted,
+      elapsedMs: Math.max(0, Math.round(erroredAt - queuedAt)),
+      ...(startedAt === null ? {} : {
+        queueDurationMs: Math.max(0, Math.round(startedAt - queuedAt)),
+        durationMs: Math.max(0, Math.round(erroredAt - startedAt)),
+      }),
+    });
+    state.speechOutputTexts.delete(speechText);
     if (playbackId !== state.speechPlaybackId) return;
+    if (!playbackStarted) onNotStarted?.();
+    state.speechStartMonitorCancel?.();
+    state.speechStartMonitorCancel = null;
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback(getSpeechSynthesisErrorMessage(event.error));
     resumeWakeWordDetection();
   };
   try {
-    window.speechSynthesis.resume?.();
-  } catch {}
-  try {
     window.speechSynthesis.speak(utterance);
-  } catch {
+  } catch (error) {
+    reportTtsDiagnostic('TTS utterance queue failed', {
+      ...voiceDetails,
+      error: error?.name || 'unknown',
+    });
+    state.speechOutputTexts.delete(speechText);
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
     resumeWakeWordDetection();
+    onNotStarted?.();
+    return;
   }
+  reportTtsDiagnostic('TTS utterance queued', voiceDetails);
+  try {
+    window.speechSynthesis.resume?.();
+  } catch (error) {
+    reportTtsDiagnostic('TTS resume failed', {
+      ...voiceDetails,
+      error: error?.name || 'unknown',
+    });
+  }
+  if (!playbackStarted) state.speechStartMonitorCancel = monitorSpeechSynthesisStart(window.speechSynthesis, {
+    onTimeout: () => {
+      if (playbackId !== state.speechPlaybackId) return;
+      reportTtsDiagnostic('TTS utterance start timeout', {
+        ...voiceDetails,
+        started: false,
+        elapsedMs: Math.max(0, Math.round(performance.now() - queuedAt)),
+      });
+      state.speechStartMonitorCancel = null;
+      state.speechOutputTexts.delete(speechText);
+      state.speechPlaybackId += 1;
+      setAssistantState('', 'SYSTEM STANDBY');
+      showFeedback(getSpeechSynthesisErrorMessage('timeout'));
+      onNotStarted?.();
+      resumeWakeWordDetection();
+    },
+  });
 }
 
 function stopSpeechOutput() {
+  state.speechStartMonitorCancel?.();
+  state.speechStartMonitorCancel = null;
   state.pendingSpeechText = null;
+  state.pendingSpeechOptions = null;
+  state.speechOutputTexts.clear();
   state.speechPlaybackId += 1;
   try {
     window.speechSynthesis.cancel();
@@ -758,8 +1045,692 @@ function updateVoiceList() {
     const label = `${voice.name} (${voice.lang})${voice.default ? ' · default' : ''}`;
     elements.voice.add(new Option(label, voice.voiceURI));
   }
-  elements.voice.value = selectedVoice()?.voiceURI || '';
-  elements.voiceSupport.textContent = state.voices.length ? `${state.voices.length} voice${state.voices.length === 1 ? '' : 's'} available on this device` : 'No system voices are available';
+  elements.voice.value = state.preferences.voiceURI;
+  elements.voiceSupport.textContent = state.labPreferences.voiceURI
+    ? 'A LAB voice override is active. Your saved J.A.R.V.I.S. voice setting remains unchanged.'
+    : state.voices.length ? `${state.voices.length} voice${state.voices.length === 1 ? '' : 's'} available on this device` : 'No system voices are available';
+  updateLabVoiceOptions();
+  if (!elements.personalizePanel.hidden && personalizeDraft) renderPersonalizePreview(personalizeDraft);
+}
+
+function updateLabVoiceOptions(selectedURI = personalizeDraft?.voiceURI ?? state.labPreferences.voiceURI) {
+  if (!elements.labVoice) return;
+  elements.labVoice.replaceChildren(new Option('System default', ''));
+  for (const voice of state.voices) {
+    elements.labVoice.add(new Option(redactSensitiveText(`${voice.name} (${voice.lang})${voice.default ? ' · default' : ''}`), voice.voiceURI));
+  }
+  if (selectedURI && !state.voices.some((voice) => voice.voiceURI === selectedURI)) {
+    elements.labVoice.add(new Option('Saved voice unavailable on this device', selectedURI));
+  }
+  elements.labVoice.value = selectedURI;
+  elements.labVoice.disabled = !('speechSynthesis' in window);
+  const voiceHelp = document.querySelector('#lab-voice-help');
+  voiceHelp.textContent = 'Applied LAB voice overrides output while selected; your saved J.A.R.V.I.S. voice setting remains unchanged. Choose System default to restore it.';
+  if (!('speechSynthesis' in window)) voiceHelp.textContent = 'Speech voices are not available in this browser. The LAB preference remains separate.';
+}
+
+function readPersonalizeForm() {
+  const form = elements.personalizeForm;
+  const checkedValue = (name) => form.querySelector(`input[name="${name}"]:checked`)?.value;
+  return {
+    theme: checkedValue('lab-theme') || DEFAULT_LAB_PREFERENCES.theme,
+    accent: checkedValue('lab-accent') || DEFAULT_LAB_PREFERENCES.accent,
+    density: elements.labDensity.value,
+    voiceURI: elements.labVoice.value,
+    widgets: {
+      assistant: form.elements.namedItem('lab-widget-assistant').checked,
+      status: form.elements.namedItem('lab-widget-status').checked,
+      voice: form.elements.namedItem('lab-widget-voice').checked,
+      chat: form.elements.namedItem('lab-widget-chat').checked,
+      system: form.elements.namedItem('lab-widget-system').checked,
+    },
+  };
+}
+
+function syncPersonalizeForm(preferences) {
+  for (const name of ['lab-theme', 'lab-accent']) {
+    const value = preferences[name === 'lab-theme' ? 'theme' : 'accent'];
+    const radio = elements.personalizeForm.querySelector(`input[name="${name}"][value="${value}"]`);
+    if (radio) radio.checked = true;
+  }
+  elements.labDensity.value = preferences.density;
+  updateLabVoiceOptions(preferences.voiceURI);
+  for (const [key, checked] of Object.entries(preferences.widgets)) {
+    elements.personalizeForm.elements.namedItem(`lab-widget-${key}`).checked = checked;
+  }
+  renderPersonalizePreview(preferences);
+}
+
+function renderPersonalizePreview(preferences) {
+  const preview = elements.personalizePreview;
+  preview.dataset.theme = preferences.theme;
+  preview.dataset.density = preferences.density;
+  preview.dataset.accent = preferences.accent;
+  preview.style.setProperty('--lab-accent', LAB_ACCENTS[preferences.accent]);
+  for (const widget of preview.querySelectorAll('[data-preview-widget]')) {
+    widget.hidden = preferences.widgets[widget.dataset.previewWidget] === false;
+  }
+  const themeName = preferences.theme[0].toUpperCase() + preferences.theme.slice(1);
+  const densityName = preferences.density[0].toUpperCase() + preferences.density.slice(1);
+  elements.personalizePreviewNote.textContent = `${themeName} theme · ${densityName} layout`;
+  elements.personalizePreviewVoice.textContent = redactSensitiveText(elements.labVoice.selectedOptions[0]?.textContent || 'System default voice');
+}
+
+function renderLabSafetyStatus() {
+  elements.labSafetyChangeState.textContent = LAB_PROJECT_CHANGES_ENABLED
+    ? 'Enabled only through audited approval controls.'
+    : 'Disabled · project files cannot be changed by J.A.R.V.I.S. LAB.';
+}
+
+function openPersonalizePanel() {
+  renderLabSafetyStatus();
+  personalizeDraft = loadLabPreferences(localStorage);
+  syncPersonalizeForm(personalizeDraft);
+  elements.aiModifyPanel.hidden = true;
+  elements.codeStudioPanel.hidden = true;
+  elements.extensionsPanel.hidden = true;
+  elements.labModules.hidden = true;
+  elements.personalizePanel.hidden = false;
+  elements.labSafetyPanel.hidden = true;
+  elements.personalizeStatus.textContent = 'Changes are preview-only until applied.';
+  elements.personalizeTitle.focus();
+}
+
+function closePersonalizePanel() {
+  personalizeDraft = null;
+  elements.personalizePanel.hidden = true;
+  elements.labModules.hidden = false;
+  elements.labSafetyPanel.hidden = false;
+  document.querySelector('[data-lab-module="personalize"]').focus();
+}
+
+function renderLabAiModifyHistory() {
+  const history = loadLabAiModifyHistory(localStorage);
+  elements.aiModifyHistory.replaceChildren();
+  if (!history.length) {
+    const empty = document.createElement('li');
+    empty.className = 'ai-modify-history-empty';
+    empty.textContent = 'No proposal activity yet.';
+    elements.aiModifyHistory.append(empty);
+    return;
+  }
+  for (const entry of history.slice().reverse()) {
+    const item = document.createElement('li');
+    const time = document.createElement('time');
+    time.dateTime = new Date(entry.timestamp).toISOString();
+    time.textContent = new Date(entry.timestamp).toLocaleString();
+    const message = document.createElement('span');
+    message.textContent = redactSensitiveText(entry.message);
+    item.append(time, message);
+    elements.aiModifyHistory.append(item);
+  }
+}
+
+function recordLabAiModifyEvent(status) {
+  try {
+    recordLabAiModifyHistory(localStorage, status);
+    renderLabAiModifyHistory();
+    return true;
+  } catch (error) {
+    elements.aiModifyStatus.textContent = `Local history could not be saved: ${error.message}`;
+    return false;
+  }
+}
+
+function openLabAiModifyPanel() {
+  renderLabSafetyStatus();
+  elements.labModules.hidden = true;
+  elements.personalizePanel.hidden = true;
+  elements.codeStudioPanel.hidden = true;
+  elements.extensionsPanel.hidden = true;
+  elements.aiModifyPanel.hidden = false;
+  elements.labSafetyPanel.hidden = true;
+  elements.aiModifyRequest.value = '';
+  elements.aiModifyPlanStatus.textContent = 'No plan generated';
+  renderLabAiModifyHistory();
+  elements.aiModifyTitle.focus();
+}
+
+function closeLabAiModifyPanel() {
+  elements.aiModifyRequest.value = '';
+  elements.aiModifyPanel.hidden = true;
+  elements.labModules.hidden = false;
+  elements.labSafetyPanel.hidden = false;
+  document.querySelector('[data-lab-module="ai-modify"]').focus();
+}
+
+function submitLabAiModifyRequest(event) {
+  event.preventDefault();
+  const outcome = getLabAiModifyRequestStatus(elements.aiModifyRequest.value);
+  if (outcome === 'empty') {
+    elements.aiModifyStatus.textContent = 'Describe a change before requesting a proposal.';
+    elements.aiModifyRequest.focus();
+    return;
+  }
+  if (!recordLabAiModifyEvent(outcome)) return;
+  elements.aiModifyPlanStatus.textContent = 'Unavailable · no plan generated';
+  elements.aiModifyStatus.textContent = 'AI Modify is not connected. Your request was not sent, and no plan or diff was generated.';
+}
+
+function cancelLabAiModifyRequest() {
+  if (elements.aiModifyRequest.value.trim() && !recordLabAiModifyEvent('cancelled')) return;
+  closeLabAiModifyPanel();
+}
+
+function rejectLabAiModifyRequest() {
+  if (!elements.aiModifyRequest.value.trim()) {
+    elements.aiModifyStatus.textContent = 'There is no generated proposal to reject.';
+    return;
+  }
+  if (!recordLabAiModifyEvent('rejected')) return;
+  elements.aiModifyRequest.value = '';
+  elements.aiModifyPlanStatus.textContent = 'No plan generated';
+  elements.aiModifyStatus.textContent = 'Request rejected and discarded. No proposal was generated or applied.';
+}
+
+function openCodeStudioPanel() {
+  renderLabSafetyStatus();
+  elements.labModules.hidden = true;
+  elements.personalizePanel.hidden = true;
+  elements.aiModifyPanel.hidden = true;
+  elements.extensionsPanel.hidden = true;
+  elements.codeStudioPanel.hidden = false;
+  elements.labSafetyPanel.hidden = true;
+  updateCodeStudioEditorState();
+  elements.codeStudioTitle.focus();
+}
+
+function closeCodeStudioPanel() {
+  elements.codeStudioPanel.hidden = true;
+  elements.labModules.hidden = false;
+  elements.labSafetyPanel.hidden = false;
+  document.querySelector('[data-lab-module="code-studio"]').focus();
+}
+
+function updateCodeStudioReview() {
+  const code = elements.codeStudioEditor.value;
+  const findings = reviewCodeLocally(code);
+  elements.codeStudioCount.textContent = `${code.length.toLocaleString()} characters · ${code.split(/\r?\n/).length.toLocaleString()} line${code.split(/\r?\n/).length === 1 ? '' : 's'}`;
+  elements.codeStudioFindings.replaceChildren();
+  if (!code.trim()) {
+    elements.codeStudioReviewSummary.textContent = 'Paste or import code to see local, non-executing review suggestions.';
+    const empty = document.createElement('li');
+    empty.textContent = 'No review findings.';
+    elements.codeStudioFindings.append(empty);
+    return;
+  }
+  elements.codeStudioReviewSummary.textContent = findings.length
+    ? `${findings.length} heuristic finding${findings.length === 1 ? '' : 's'} · review manually; this is not a full security audit.`
+    : 'No heuristic issues found. This is not a full security audit.';
+  if (!findings.length) {
+    const empty = document.createElement('li');
+    empty.textContent = 'No heuristic findings.';
+    elements.codeStudioFindings.append(empty);
+    return;
+  }
+  for (const finding of findings) {
+    const item = document.createElement('li');
+    const severity = document.createElement('strong');
+    severity.textContent = `${finding.severity.toUpperCase()} · line ${finding.line}`;
+    const message = document.createElement('span');
+    message.textContent = finding.title;
+    item.append(severity, message);
+    elements.codeStudioFindings.append(item);
+  }
+}
+
+function updateCodeStudioEditorState() {
+  const readOnly = elements.codeStudioReadonly.checked;
+  if (readOnly) {
+    if (codeStudioPreviewSource === null) codeStudioPreviewSource = elements.codeStudioEditor.value;
+    elements.codeStudioEditor.value = redactSensitiveText(codeStudioPreviewSource);
+  } else if (codeStudioPreviewSource !== null) {
+    elements.codeStudioEditor.value = codeStudioPreviewSource;
+    codeStudioPreviewSource = null;
+  }
+  elements.codeStudioEditor.readOnly = readOnly;
+  elements.codeStudioStatus.textContent = readOnly
+    ? 'Read-only preview enabled. Credential-like values are masked; switch it off to edit the original local text.'
+    : 'Editing local text only. Nothing is executed or written to the project.';
+  updateCodeStudioReview();
+}
+
+async function importCodeStudioFile() {
+  const file = elements.codeStudioFile.files?.[0];
+  elements.codeStudioFile.value = '';
+  if (!file) return;
+  const validation = validateCodeFile(file);
+  if (!validation.valid) {
+    elements.codeStudioStatus.textContent = validation.reason;
+    return;
+  }
+  try {
+    const text = await file.text();
+    codeStudioPreviewSource = elements.codeStudioReadonly.checked ? text : null;
+    elements.codeStudioEditor.value = elements.codeStudioReadonly.checked ? redactSensitiveText(text) : text;
+    elements.codeStudioLanguage.value = validation.language;
+    updateCodeStudioReview();
+    elements.codeStudioStatus.textContent = redactSensitiveText(
+      `${containsSensitiveText(text) ? 'Imported with credential-like values masked' : 'Imported'} ${file.name} as untrusted text for local preview only. It was not executed or saved to the project.`,
+    );
+  } catch (error) {
+    elements.codeStudioStatus.textContent = `Could not read the selected file: ${error.message}`;
+  }
+}
+
+async function copyCodeStudioText() {
+  if (!elements.codeStudioEditor.value) {
+    elements.codeStudioStatus.textContent = 'There is no code to copy.';
+    return;
+  }
+  try {
+    const source = elements.codeStudioReadonly.checked && codeStudioPreviewSource !== null
+      ? codeStudioPreviewSource
+      : elements.codeStudioEditor.value;
+    const safeText = redactSensitiveText(source);
+    if (!await copyTextToClipboard(safeText)) {
+      elements.codeStudioStatus.textContent = 'Clipboard access was denied. Select and copy the code manually.';
+      return;
+    }
+    elements.codeStudioStatus.textContent = safeText === source
+      ? 'Code copied to this device clipboard only; it was not sent or executed.'
+      : 'Code copied with credential-like values redacted. The editor remains unchanged.';
+  } catch (error) {
+    elements.codeStudioStatus.textContent = `Code could not be copied: ${error.message}`;
+  }
+}
+
+function exportCodeStudioText() {
+  const code = elements.codeStudioReadonly.checked && codeStudioPreviewSource !== null
+    ? codeStudioPreviewSource
+    : elements.codeStudioEditor.value;
+  if (!code) {
+    elements.codeStudioStatus.textContent = 'There is no code to export.';
+    return;
+  }
+  if (!window.confirm('Export a separate text copy? Review it for API keys, passwords, tokens, and other secrets first. This downloads to your device and does not modify the project.')) {
+    elements.codeStudioStatus.textContent = 'Export canceled. No file was downloaded.';
+    return;
+  }
+  let url = '';
+  let link = null;
+  try {
+    const { blob, fileName } = createCodeExport(code, elements.codeStudioLanguage.value);
+    url = URL.createObjectURL(blob);
+    link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    elements.codeStudioStatus.textContent = containsSensitiveText(code)
+      ? `${fileName} downloaded with credential-like values redacted. The editor and project were not changed.`
+      : `${fileName} downloaded as a separate plain-text copy. The project was not changed.`;
+  } catch (error) {
+    elements.codeStudioStatus.textContent = `Code could not be exported: ${error.message}`;
+  } finally {
+    link?.remove();
+    if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
+function clearCodeStudioText() {
+  if (!elements.codeStudioEditor.value) {
+    elements.codeStudioStatus.textContent = 'The editor is already clear.';
+    return;
+  }
+  elements.codeStudioEditor.value = '';
+  codeStudioPreviewSource = null;
+  elements.codeStudioReadonly.checked = false;
+  updateCodeStudioEditorState();
+  updateCodeStudioReview();
+  elements.codeStudioStatus.textContent = 'Local editor text cleared.';
+}
+
+function prepareCodeStudioImport() {
+  if (!window.confirm('Import a local code or text file for preview? It will be treated as untrusted text, stay in this tab, and will not be executed or written to the project. Files are limited to 1 MB.')) {
+    elements.codeStudioStatus.textContent = 'Import canceled. No file was opened.';
+    return;
+  }
+  elements.codeStudioFile.click();
+}
+
+function extensionStatusLabel(state) {
+  return ({
+    'pending-review': 'Pending review',
+    installed: 'Installed · enabled state (metadata only)',
+    disabled: 'Disabled · installed',
+  })[state] || 'Unknown state';
+}
+
+function renderLabExtensionHistory(history) {
+  elements.extensionsHistory.replaceChildren();
+  if (!history.length) {
+    const empty = document.createElement('li');
+    empty.className = 'extensions-history-empty';
+    empty.textContent = 'No extension activity yet.';
+    elements.extensionsHistory.append(empty);
+    return;
+  }
+  for (const entry of history.slice().reverse()) {
+    const item = document.createElement('li');
+    const time = document.createElement('time');
+    time.dateTime = new Date(entry.timestamp).toISOString();
+    time.textContent = new Date(entry.timestamp).toLocaleString();
+    const description = document.createElement('span');
+    description.textContent = `${redactSensitiveText(entry.extensionName)} · ${entry.action.replaceAll('-', ' ')}`;
+    item.append(time, description);
+    elements.extensionsHistory.append(item);
+  }
+}
+
+function renderLabExtensions() {
+  let store;
+  try {
+    store = loadLabExtensions(localStorage);
+  } catch (error) {
+    elements.extensionsCount.textContent = 'DATA UNAVAILABLE';
+    elements.extensionsList.replaceChildren();
+    elements.extensionsHistory.replaceChildren();
+    elements.extensionsStatus.textContent = redactSensitiveText(`Saved extension data could not be read safely: ${error.message}`);
+    return false;
+  }
+  elements.extensionsCount.textContent = `${store.extensions.length} EXTENSION${store.extensions.length === 1 ? '' : 'S'}`;
+  elements.extensionsList.replaceChildren();
+  if (!store.extensions.length) {
+    const empty = document.createElement('p');
+    empty.className = 'extensions-empty';
+    empty.textContent = 'No imported extensions.';
+    elements.extensionsList.append(empty);
+  }
+  for (const extension of store.extensions) {
+    const card = document.createElement('article');
+    card.className = 'extension-card';
+    card.dataset.extensionId = extension.id;
+
+    const heading = document.createElement('div');
+    heading.className = 'extension-card-heading';
+    const title = document.createElement('div');
+    const name = document.createElement('h4');
+    name.textContent = redactSensitiveText(extension.manifest.name);
+    const version = document.createElement('span');
+    version.textContent = `Version ${extension.manifest.version}`;
+    title.append(name, version);
+    const state = document.createElement('span');
+    state.className = `extension-state is-${extension.state}`;
+    state.textContent = extensionStatusLabel(extension.state);
+    heading.append(title, state);
+
+    const description = document.createElement('p');
+    description.className = 'extension-description';
+    description.textContent = redactSensitiveText(extension.manifest.description || 'No description provided.');
+
+    const permissionHeading = document.createElement('strong');
+    permissionHeading.className = 'extension-permission-title';
+    permissionHeading.textContent = 'Requested permissions · not granted';
+    const permissions = document.createElement('ul');
+    permissions.className = 'extension-permissions';
+    if (!extension.manifest.permissions.length) {
+      const none = document.createElement('li');
+      none.textContent = 'No permissions requested.';
+      permissions.append(none);
+    }
+    for (const permission of extension.manifest.permissions) {
+      const item = document.createElement('li');
+      item.textContent = redactSensitiveText(permission);
+      permissions.append(item);
+    }
+
+    const fileSummary = document.createElement('p');
+    fileSummary.className = 'extension-file-summary';
+    fileSummary.textContent = `${Object.keys(extension.files).length} package file${Object.keys(extension.files).length === 1 ? '' : 's'} stored as inert text.`;
+
+    const actions = document.createElement('div');
+    actions.className = 'extension-actions';
+    const addAction = (action, label, className = 'personalize-secondary-button') => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = className;
+      button.dataset.extensionAction = action;
+      button.dataset.extensionId = extension.id;
+      button.textContent = label;
+      actions.append(button);
+    };
+    if (extension.state === 'pending-review') {
+      addAction('approve', 'Review permissions & install', 'personalize-apply-button');
+      addAction('reject', 'Reject package');
+      addAction('export', 'Export package');
+    } else {
+      addAction(extension.state === 'disabled' ? 'enable' : 'disable', extension.state === 'disabled' ? 'Enable' : 'Disable');
+      addAction('export', 'Export package');
+      addAction('remove', 'Remove', 'personalize-secondary-button');
+    }
+    card.append(heading, description, permissionHeading, permissions, fileSummary, actions);
+    elements.extensionsList.append(card);
+  }
+  renderLabExtensionHistory(store.history);
+  return true;
+}
+
+function openExtensionsPanel() {
+  renderLabSafetyStatus();
+  elements.labModules.hidden = true;
+  elements.personalizePanel.hidden = true;
+  elements.aiModifyPanel.hidden = true;
+  elements.codeStudioPanel.hidden = true;
+  elements.extensionsPanel.hidden = false;
+  elements.labSafetyPanel.hidden = true;
+  elements.extensionsStatus.textContent = 'Packages are stored locally as inert data. No extension runtime is available.';
+  renderLabExtensions();
+  elements.extensionsTitle.focus();
+}
+
+function closeExtensionsPanel() {
+  elements.extensionsPanel.hidden = true;
+  elements.labModules.hidden = false;
+  elements.labSafetyPanel.hidden = false;
+  document.querySelector('[data-lab-module="extensions"]').focus();
+}
+
+function createExtensionId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `extension-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function importLabExtension() {
+  const file = elements.extensionsFile.files?.[0];
+  elements.extensionsFile.value = '';
+  if (!file) return;
+  const fileStatus = getExtensionPackageFileStatus(file);
+  if (!fileStatus.valid) {
+    elements.extensionsStatus.textContent = fileStatus.reason;
+    return;
+  }
+  try {
+    const packageText = await file.text();
+    if (new TextEncoder().encode(packageText).byteLength > EXTENSION_PACKAGE_MAX_BYTES) {
+      elements.extensionsStatus.textContent = 'Extension package exceeds the 512 KB limit.';
+      return;
+    }
+    const packageData = validateExtensionPackageText(packageText, file.name);
+    if (!packageData.valid) {
+      elements.extensionsStatus.textContent = packageData.reason;
+      return;
+    }
+    const extension = addPendingExtension(localStorage, packageData, { id: createExtensionId() });
+    if (!renderLabExtensions()) return;
+    elements.extensionsStatus.textContent = redactSensitiveText(`${extension.manifest.name} ${extension.manifest.version} added as pending review. Review all requested permissions before approval.`);
+  } catch (error) {
+    elements.extensionsStatus.textContent = redactSensitiveText(`Package could not be imported: ${error.message}`);
+  }
+}
+
+function promptExtensionImport() {
+  const accepted = window.confirm(
+    'Import an untrusted extension package for local metadata review? It will not be executed or granted access to J.A.R.V.I.S. settings, provider keys, or secrets.',
+  );
+  if (!accepted) {
+    elements.extensionsStatus.textContent = 'Import canceled. No package was opened.';
+    return;
+  }
+  elements.extensionsFile.click();
+}
+
+function approveLabExtension(extension) {
+  const safeName = redactSensitiveText(extension.manifest.name);
+  const requested = extension.manifest.permissions.length
+    ? extension.manifest.permissions.map((permission) => `• ${redactSensitiveText(permission)}`).join('\n')
+    : 'No permissions requested.';
+  const accepted = window.confirm(
+    `Review ${safeName} ${extension.manifest.version} and approve installation in disabled state?\n\nRequested permissions (not granted):\n${requested}\n\nApproval stores package metadata only. No code runs and no permissions or secret access are granted.`,
+  );
+  if (!accepted) {
+    elements.extensionsStatus.textContent = 'Approval canceled. Package remains pending review.';
+    return;
+  }
+  try {
+    setLabExtensionState(localStorage, extension.id, 'disabled');
+    if (!renderLabExtensions()) return;
+    elements.extensionsStatus.textContent = `${safeName} installed disabled. No runtime access has been granted.`;
+  } catch (error) {
+    elements.extensionsStatus.textContent = redactSensitiveText(`Extension approval failed: ${error.message}`);
+  }
+}
+
+function changeLabExtensionState(extension, enabled) {
+  if (enabled && !window.confirm(
+    `Enable ${redactSensitiveText(extension.manifest.name)} in the manager? This changes metadata state only. The package remains inert; no code runs and no permissions are granted.`,
+  )) {
+    elements.extensionsStatus.textContent = 'Enable canceled. Extension remains disabled.';
+    return;
+  }
+  try {
+    setLabExtensionState(localStorage, extension.id, enabled ? 'installed' : 'disabled');
+    if (!renderLabExtensions()) return;
+    elements.extensionsStatus.textContent = enabled
+      ? `${redactSensitiveText(extension.manifest.name)} marked enabled in metadata only; runtime execution remains unavailable.`
+      : `${redactSensitiveText(extension.manifest.name)} disabled.`;
+  } catch (error) {
+    elements.extensionsStatus.textContent = redactSensitiveText(`Extension state could not be changed: ${error.message}`);
+  }
+}
+
+function rejectLabExtension(extension) {
+  const safeName = redactSensitiveText(extension.manifest.name);
+  if (!window.confirm(`Reject and remove pending package "${safeName}"?`)) {
+    elements.extensionsStatus.textContent = 'Rejection canceled. Package remains pending review.';
+    return;
+  }
+  try {
+    recordLabExtensionRejection(localStorage, extension);
+    if (!renderLabExtensions()) return;
+    elements.extensionsStatus.textContent = `${safeName} rejected and removed.`;
+  } catch (error) {
+    elements.extensionsStatus.textContent = redactSensitiveText(`Package could not be rejected: ${error.message}`);
+  }
+}
+
+function removeManagedLabExtension(extension) {
+  const safeName = redactSensitiveText(extension.manifest.name);
+  if (!window.confirm(`Remove "${safeName}" and its locally stored package files? This cannot be undone.`)) {
+    elements.extensionsStatus.textContent = 'Removal canceled.';
+    return;
+  }
+  try {
+    removeLabExtension(localStorage, extension.id);
+    if (!renderLabExtensions()) return;
+    elements.extensionsStatus.textContent = `${safeName} and its local package data were removed.`;
+  } catch (error) {
+    elements.extensionsStatus.textContent = redactSensitiveText(`Extension could not be removed: ${error.message}`);
+  }
+}
+
+function exportManagedLabExtension(extension) {
+  if (!window.confirm(
+    `Export "${redactSensitiveText(extension.manifest.name)}" as a package download? Credential-like values will be redacted before download.`,
+  )) {
+    elements.extensionsStatus.textContent = 'Export canceled. No package was downloaded.';
+    return;
+  }
+  let url = '';
+  let link = null;
+  let downloaded = false;
+  try {
+    const packageText = serializeLabExtensionPackage(extension);
+    const blob = new Blob([packageText], { type: 'application/json;charset=utf-8' });
+    url = URL.createObjectURL(blob);
+    link = document.createElement('a');
+    link.href = url;
+    link.download = `${extension.id.replace(/[^a-zA-Z0-9_-]/g, '-')}.jarvis-extension.json`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    downloaded = true;
+    recordLabExtensionExport(localStorage, extension);
+    if (!renderLabExtensions()) return;
+    elements.extensionsStatus.textContent = containsSensitiveText(extension)
+      ? `${redactSensitiveText(extension.manifest.name)} exported with credential-like values redacted. The project was not changed.`
+      : `${redactSensitiveText(extension.manifest.name)} exported as a separate JSON package. The project was not changed.`;
+  } catch (error) {
+    elements.extensionsStatus.textContent = downloaded
+      ? redactSensitiveText(`Package downloaded, but export history could not be saved: ${error.message}`)
+      : redactSensitiveText(`Extension package could not be exported: ${error.message}`);
+  } finally {
+    link?.remove();
+    if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
+function handleLabExtensionAction(event) {
+  const button = event.target.closest('[data-extension-action]');
+  if (!button) return;
+  let extension;
+  try {
+    extension = loadLabExtensions(localStorage).extensions.find(({ id }) => id === button.dataset.extensionId);
+  } catch (error) {
+    elements.extensionsStatus.textContent = redactSensitiveText(`Saved extension data could not be read safely: ${error.message}`);
+    renderLabExtensions();
+    return;
+  }
+  if (!extension) {
+    elements.extensionsStatus.textContent = 'Extension is no longer available. Refresh the manager.';
+    renderLabExtensions();
+    return;
+  }
+  const action = button.dataset.extensionAction;
+  if (action === 'approve') approveLabExtension(extension);
+  else if (action === 'reject') rejectLabExtension(extension);
+  else if (action === 'enable') changeLabExtensionState(extension, true);
+  else if (action === 'disable') changeLabExtensionState(extension, false);
+  else if (action === 'remove') removeManagedLabExtension(extension);
+  else if (action === 'export') exportManagedLabExtension(extension);
+}
+
+function resetPersonalizeDraft() {
+  personalizeDraft = resetLabPreferencesDraft();
+  syncPersonalizeForm(personalizeDraft);
+  elements.personalizeStatus.textContent = 'Default values are preview-only until you apply them.';
+}
+
+function applyPersonalizeDraft() {
+  personalizeDraft = readPersonalizeForm();
+  let savedPreferences;
+  try {
+    savedPreferences = saveLabPreferences(personalizeDraft, localStorage);
+  } catch (error) {
+    elements.personalizeStatus.textContent = 'Preferences could not be saved. Your active settings were not changed.';
+    showFeedback(`Personalization preferences could not be saved: ${error.message}`);
+    return;
+  }
+  state.labPreferences = savedPreferences;
+  try {
+    applyLabPreferences(state.labPreferences, document);
+    updateVoiceList();
+    elements.personalizeStatus.textContent = 'Preferences applied and saved separately from J.A.R.V.I.S. settings.';
+  } catch (error) {
+    elements.personalizeStatus.textContent = 'Preferences were saved, but could not be fully applied.';
+    showFeedback(`Saved personalization preferences could not be applied: ${error.message}`);
+  }
 }
 
 function updateWakeWordSupport() {
@@ -791,13 +1762,30 @@ function disableWakeWord(message = '') {
   if (message) showFeedback(message);
 }
 
-function resumeWakeWordDetection() {
+function resumeWakeWordDetection(reason = 'assistant-workflow-complete') {
   if (!state.wakeWordResumePending || !state.preferences.wakeWordEnabled) return;
+  if (wakeWordRecoveryPolicy.circuitOpen) return;
   if (!shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, pageIsFocused())) return;
   if (state.recognition || state.pending || isSpeechOutputBusy()) return;
+  if (!wakeWordRecoveryPolicy.canRetry()) {
+    wakeWordRecoveryPolicy.openCircuit();
+    state.wakeWordResumePending = false;
+    reportSpeechDiagnostic('Wake-word circuit breaker opened', {
+      attempt: wakeWordRecoveryPolicy.restartAttempts,
+      limit: WAKE_WORD_MAX_RESTART_ATTEMPTS,
+      reason: 'retry-limit-reached',
+    });
+    showFeedback('Wake-word listening paused after repeated recognition interruptions. Toggle wake-word detection off and on to retry.');
+    return;
+  }
   state.wakeWordResumePending = false;
   window.clearTimeout(state.wakeWordRestartTimer);
   const restartDelay = state.wakeWordRestartDelay;
+  reportSpeechDiagnostic('Wake-word automatic restart scheduled', {
+    attempt: wakeWordRecoveryPolicy.restartAttempts + 1,
+    delayMs: restartDelay,
+    reason,
+  });
   state.wakeWordRestartTimer = window.setTimeout(() => {
     state.wakeWordRestartTimer = null;
     if (!state.preferences.wakeWordEnabled) return;
@@ -810,9 +1798,37 @@ function resumeWakeWordDetection() {
       resumeWakeWordDetection();
       return;
     }
+    const attempt = wakeWordRecoveryPolicy.recordRestartAttempt();
+    if (attempt === null) {
+      state.wakeWordResumePending = false;
+      reportSpeechDiagnostic('Wake-word circuit breaker opened', {
+        attempt: wakeWordRecoveryPolicy.restartAttempts,
+        limit: WAKE_WORD_MAX_RESTART_ATTEMPTS,
+        reason: 'retry-limit-reached',
+      });
+      showFeedback('Wake-word listening paused after repeated recognition interruptions. Toggle wake-word detection off and on to retry.');
+      return;
+    }
     state.wakeWordResumePending = false;
-    startListening('wake');
+    reportSpeechDiagnostic('Wake-word automatic restart attempted', {
+      attempt,
+      delayMs: restartDelay,
+      reason,
+    });
+    startListening('wake', false, true);
   }, restartDelay);
+}
+
+function scheduleWakeWordRecovery(reason = 'recognition-ended-after-activation') {
+  if (!state.preferences.wakeWordEnabled) return;
+  state.wakeWordRestartDelay = nextWakeWordRestartDelay(state.wakeWordRestartDelay);
+  state.wakeWordResumePending = true;
+  resumeWakeWordDetection(reason);
+}
+
+function clearRecognitionStartTimer() {
+  window.clearTimeout(state.recognitionStartTimer);
+  state.recognitionStartTimer = null;
 }
 
 function isSpeechOutputBusy() {
@@ -821,17 +1837,32 @@ function isSpeechOutputBusy() {
     || Boolean(window.speechSynthesis?.pending);
 }
 
-function startListening(purpose = 'command') {
+function startListening(purpose = 'command', wakeHandoff = false, automaticWakeRestart = false) {
   const Recognition = getSpeechRecognitionConstructor(window);
+  if (purpose === 'wake') reportWakeWordStatus('start-attempt');
+  if (purpose === 'wake' && automaticWakeRestart && wakeWordRecoveryPolicy.circuitOpen) {
+    reportSpeechDiagnostic('Wake-word listening blocked', {
+      reason: 'retry-limit-reached',
+    });
+    return;
+  }
   if (!Recognition) {
+    if (purpose === 'wake') {
+      reportSpeechDiagnostic('Wake-word listening blocked', {
+        reason: 'recognition-unavailable',
+      });
+    }
     const message = 'Voice input is not supported by this browser. Try a current Chrome-based browser over HTTPS.';
-    if (purpose === 'wake') disableWakeWord(message);
+    if (purpose === 'wake' || wakeHandoff) disableWakeWord(message);
     else showFeedback(message);
     setAssistantState('error', 'VOICE INPUT UNAVAILABLE');
     return;
   }
   if (state.recognition) {
     if (purpose === 'wake') {
+      reportSpeechDiagnostic('Wake-word listening blocked', {
+        reason: state.wakeWordManualRetryPending ? 'manual-retry-waiting-for-end' : 'recognition-active',
+      });
       state.wakeWordResumePending = true;
       return;
     }
@@ -844,18 +1875,34 @@ function startListening(purpose = 'command') {
     }
     return;
   }
-  if (purpose === 'wake' && !state.preferences.wakeWordEnabled) return;
-  if (purpose === 'wake' && !shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, pageIsFocused())) {
+  if (purpose === 'wake' && !state.preferences.wakeWordEnabled) {
+    reportSpeechDiagnostic('Wake-word listening blocked', { reason: 'disabled' });
+    return;
+  }
+  const wakeWordBlockReason = getWakeWordListeningBlockReason(
+    state.preferences.wakeWordEnabled,
+    document.visibilityState,
+    state.wakeWordPagePaused,
+    state.microphonePermission,
+    pageIsFocused(),
+  );
+  if (purpose === 'wake' && wakeWordBlockReason) {
+    reportSpeechDiagnostic('Wake-word listening blocked', {
+      reason: wakeWordBlockReason,
+    });
     state.wakeWordResumePending = true;
     return;
   }
   if (purpose === 'wake' && (state.pending || isSpeechOutputBusy())) {
+    reportSpeechDiagnostic('Wake-word listening blocked', {
+      reason: state.pending ? 'assistant-busy' : 'speech-output-busy',
+    });
     state.wakeWordResumePending = true;
     return;
   }
   if (window.isSecureContext === false) {
     const message = 'Voice input requires a secure HTTPS connection or localhost.';
-    if (purpose === 'wake') disableWakeWord(message);
+    if (purpose === 'wake' || wakeHandoff) disableWakeWord(message);
     else showFeedback(message);
     setAssistantState('error', 'MICROPHONE UNAVAILABLE');
     return;
@@ -864,23 +1911,45 @@ function startListening(purpose = 'command') {
   let recognition;
   try {
     recognition = new Recognition();
-  } catch {
+  } catch (error) {
+    if (purpose === 'wake' || wakeHandoff) {
+      reportSpeechDiagnostic('SpeechRecognition start failed', {
+        error: error?.name || 'unknown',
+        language: getSpeechRecognitionLanguage(state.preferences.language),
+        purpose: wakeHandoff ? 'wake-command' : purpose,
+      });
+    }
     const message = 'The browser could not initialize speech recognition. Check microphone permissions and try again.';
-    if (purpose === 'wake') disableWakeWord(message);
+    if (purpose === 'wake' || wakeHandoff) disableWakeWord(message);
     else showFeedback(message);
     setAssistantState('error', 'MICROPHONE UNAVAILABLE');
     return;
   }
-  if (!recognitionLifecycle.begin(recognition)) return;
+  if (!recognitionLifecycle.begin(recognition)) {
+    if (purpose === 'wake') {
+      reportSpeechDiagnostic('Wake-word listening blocked', {
+        reason: 'recognition-active',
+      });
+    }
+    return;
+  }
+  if (purpose === 'wake' && !automaticWakeRestart && state.wakeWordManualRetryPending) {
+    wakeWordRecoveryPolicy.resetForManualRetry();
+    state.wakeWordManualRetryPending = false;
+    state.wakeWordRestartDelay = 600;
+  }
   window.clearTimeout(state.wakeWordRestartTimer);
   state.wakeWordRestartTimer = null;
-  state.wakeWordResumePending = false;
-  state.recognitionPurpose = purpose;
+  if (!wakeHandoff) state.wakeWordResumePending = false;
+  state.recognitionPurpose = wakeHandoff ? 'wake-command' : purpose;
   state.recognitionWakeSession = purpose === 'wake';
   state.wakeWordTriggered = false;
+  state.recognitionStartedAt = null;
+  state.recognitionError = null;
   recognition.lang = getSpeechRecognitionLanguage(state.preferences.language);
   recognition.interimResults = true;
   recognition.continuous = purpose === 'wake';
+  recognition.maxAlternatives = purpose === 'wake' ? 3 : 1;
   state.recognition = recognition;
   state.listening = true;
   elements.mic.classList.add('is-active');
@@ -889,25 +1958,86 @@ function startListening(purpose = 'command') {
   elements.dashboardMicButton.classList.add('is-active');
   elements.dashboardMicButton.setAttribute('aria-label', 'Stop voice input');
   elements.dashboardMicButton.setAttribute('aria-pressed', 'true');
-  setAssistantState('listening', purpose === 'wake' ? 'WAITING FOR WAKE WORD' : 'LISTENING');
-  showFeedback(purpose === 'wake'
-    ? 'Wake-word detection is active while this app is open. Your browser may ask for microphone permission.'
-    : 'Listening. Your browser may ask for microphone permission.');
+  setAssistantState('listening', 'STARTING MICROPHONE');
+  showFeedback(wakeHandoff
+    ? 'Wake phrase heard. Starting command listening; speak when listening is confirmed.'
+    : purpose === 'wake'
+      ? 'Starting wake-word listening. Your browser may ask for microphone permission.'
+      : 'Starting voice input. Speak when listening is confirmed.');
+  if (purpose === 'wake' || wakeHandoff) {
+    reportSpeechDiagnostic('SpeechRecognition start requested', {
+      language: recognition.lang,
+      purpose: state.recognitionPurpose,
+      continuous: recognition.continuous,
+      maxAlternatives: recognition.maxAlternatives,
+    });
+  }
+
+  recognition.onstart = () => {
+    if (!recognitionLifecycle.isCurrent(recognition) || recognitionLifecycle.isStopping(recognition)) return;
+    clearRecognitionStartTimer();
+    state.recognitionStartedAt = performance.now();
+    if (purpose === 'wake' || wakeHandoff) {
+      reportSpeechDiagnostic('SpeechRecognition started', {
+        language: recognition.lang,
+        purpose: state.recognitionPurpose,
+      });
+    }
+    setAssistantState('listening', purpose === 'wake' ? 'WAITING FOR WAKE WORD' : wakeHandoff ? 'WAITING FOR COMMAND' : 'LISTENING');
+    showFeedback(purpose === 'wake'
+      ? 'Listening for "Hey JARVIS" or "हे जार्विस". Keep J.A.R.V.I.S. open and in the foreground.'
+      : wakeHandoff ? 'Listening for your request now.' : 'Listening. Speak now.');
+  };
 
   recognition.onresult = (event) => {
     if (!recognitionLifecycle.isCurrent(recognition) || recognitionLifecycle.isStopping(recognition)) return;
+    clearRecognitionStartTimer();
     const { transcript, finalResult } = readSpeechRecognitionResult(event);
     if (state.recognitionWakeSession) {
-      const wakeMatch = matchWakeWord(transcript);
-      if (!state.wakeWordTriggered && !wakeMatch.matched) return;
-      if (!state.wakeWordTriggered) {
+      const alternatives = readSpeechRecognitionAlternatives(event);
+      if (alternatives.length) {
+        wakeWordRecoveryPolicy.recordSpeechResult();
+        state.wakeWordRestartDelay = 600;
+      }
+      const matchedTranscript = alternatives.find((candidate) => matchWakeWord(candidate).matched);
+      const wakeTranscript = matchedTranscript || transcript;
+      const matchResult = matchWakeWord(wakeTranscript);
+      reportSpeechDiagnostic('SpeechRecognition results received', {
+        language: recognition.lang,
+        purpose: state.recognitionPurpose || purpose,
+        resultCount: event.results?.length || 0,
+        alternativeCount: alternatives.length,
+        finalResult,
+      });
+      reportSpeechDiagnostic('Wake-word match evaluated', {
+        language: recognition.lang,
+        purpose: state.recognitionPurpose || purpose,
+        matched: matchResult.matched,
+        activated: matchResult.matched && !state.wakeWordTriggered,
+        alreadyActivated: state.wakeWordTriggered,
+        finalResult,
+      });
+      const wakeResult = readWakeWordCommand(
+        wakeTranscript,
+        state.wakeWordTriggered,
+        state.wakeWordTriggered ? elements.message.value : '',
+      );
+      if (!wakeResult.triggered) return;
+      if (wakeResult.activated) {
         state.wakeWordTriggered = true;
         state.recognitionPurpose = 'wake-command';
-        showFeedback('Wake word detected. Listening for your request.');
+        elements.message.value = '';
+        showFeedback(wakeResult.command
+          ? 'Wake word detected. Processing your request.'
+          : 'Wake word detected. Say your request now, or repeat the wake phrase with your request.');
         setAssistantState('listening', 'JARVIS ACTIVATED');
       }
-      elements.message.value = wakeMatch.command;
+      elements.message.value = wakeResult.command;
     } else {
+      if (transcript) {
+        wakeWordRecoveryPolicy.recordSpeechResult();
+        state.wakeWordRestartDelay = 600;
+      }
       elements.message.value = transcript;
     }
     if (finalResult && elements.message.value) {
@@ -917,6 +2047,13 @@ function startListening(purpose = 'command') {
   };
   recognition.onerror = (event) => {
     if (state.recognition !== recognition) return;
+    clearRecognitionStartTimer();
+    state.recognitionError = event.error || 'unknown';
+    reportSpeechDiagnostic('SpeechRecognition error', {
+      error: event.error || 'unknown',
+      language: recognition.lang,
+      purpose: state.recognitionPurpose || purpose,
+    });
     const message = getSpeechRecognitionErrorMessage(event.error);
     const wakeSession = state.recognitionWakeSession;
     if (event.error === 'not-allowed') {
@@ -924,29 +2061,83 @@ function startListening(purpose = 'command') {
       state.microphonePermission = 'denied';
       renderMicrophoneStatus();
     }
-    if (wakeSession && event.error !== 'no-speech' && event.error !== 'aborted') {
+    const wakeCommandSession = state.recognitionPurpose === 'wake-command';
+    const wakeWorkflow = wakeSession || wakeCommandSession;
+    if (wakeWorkflow && isFatalSpeechRecognitionError(event.error)) {
       disableWakeWord(message);
+    } else if (wakeWorkflow && event.error === 'no-speech') {
+      showFeedback('No speech detected. Restarting wake-word listening shortly.');
     } else if (!wakeSession || event.error !== 'no-speech') {
       showFeedback(message);
     }
     if (message && event.error !== 'no-speech' && event.error !== 'aborted') setAssistantState('error', 'VOICE INPUT ERROR');
-    stopListening(recognition);
   };
-  recognition.onend = () => stopListening(recognition);
+  recognition.onend = () => {
+    clearRecognitionStartTimer();
+    if (!recognitionLifecycle.isCurrent(recognition)) return;
+    const wakeWorkflow = state.recognitionWakeSession || state.recognitionPurpose === 'wake-command';
+    const unexpected = wakeWorkflow && !recognitionLifecycle.isStopping(recognition);
+    const sessionDurationMs = state.recognitionStartedAt === null
+      ? null
+      : Math.max(0, Math.round(performance.now() - state.recognitionStartedAt));
+    if (wakeWorkflow) {
+      reportSpeechDiagnostic('SpeechRecognition ended', {
+        language: recognition.lang,
+        purpose: state.recognitionPurpose || purpose,
+        unexpected,
+        wakeWordTriggered: state.wakeWordTriggered,
+        ...(sessionDurationMs === null ? {} : { durationMs: sessionDurationMs }),
+        ...(state.recognitionError ? { error: state.recognitionError } : {}),
+      });
+    }
+    stopListening(recognition, { unexpected, sessionDurationMs });
+  };
+  clearRecognitionStartTimer();
+  state.recognitionStartTimer = window.setTimeout(() => {
+    state.recognitionStartTimer = null;
+    if (!recognitionLifecycle.isCurrent(recognition) || recognitionLifecycle.isStopping(recognition)) return;
+    const message = 'Speech recognition did not start. Check microphone permission and try again.';
+    if (purpose === 'wake' || wakeHandoff) {
+      reportSpeechDiagnostic('SpeechRecognition start failed', {
+        error: 'timeout',
+        language: recognition.lang,
+        purpose: state.recognitionPurpose || purpose,
+      });
+    }
+    showFeedback(wakeHandoff || purpose === 'wake'
+      ? 'Wake listening did not start. Retrying shortly; check microphone permission if this continues.'
+      : message);
+    setAssistantState('error', 'MICROPHONE START TIMED OUT');
+    requestStopListening(recognition);
+  }, 10_000);
   try {
     recognition.start();
   } catch (error) {
+    clearRecognitionStartTimer();
     const startError = getSpeechRecognitionStartError(error);
     const message = startError.message;
+    if (purpose === 'wake' || wakeHandoff) {
+      reportSpeechDiagnostic('SpeechRecognition start failed', {
+        error: error?.name || 'unknown',
+        language: recognition.lang,
+        purpose: state.recognitionPurpose || purpose,
+      });
+    }
     if (startError.permissionDenied) {
       microphonePermissionGuard.invalidate();
       state.microphonePermission = 'denied';
       renderMicrophoneStatus();
     }
-    if (purpose === 'wake') disableWakeWord(message);
-    else showFeedback(message);
+    if (startError.permissionDenied || error?.name === 'SecurityError') {
+      disableWakeWord(message);
+    } else if (purpose === 'wake' || wakeHandoff) {
+      showFeedback(`${message} Wake-word listening will retry shortly.`);
+      state.wakeWordResumePending = true;
+    } else {
+      showFeedback(message);
+    }
     setAssistantState('error', startError.permissionDenied ? 'MICROPHONE PERMISSION DENIED' : 'MICROPHONE UNAVAILABLE');
-    stopListening(recognition);
+    stopListening(recognition, { unexpected: purpose === 'wake' || wakeHandoff });
   }
 }
 
@@ -954,19 +2145,34 @@ function requestStopListening(recognition = state.recognition) {
   if (!recognition || recognition !== state.recognition || !recognitionLifecycle.requestStop(recognition)) return;
   try {
     recognition.stop();
-  } catch {
-    stopListening(recognition);
+  } catch (error) {
+    reportSpeechDiagnostic('SpeechRecognition stop failed', {
+      error: error?.name || 'unknown',
+      language: recognition.lang,
+      purpose: state.recognitionPurpose || 'command',
+    });
   }
 }
 
-function stopListening(recognition = state.recognition) {
+function stopListening(recognition = state.recognition, { unexpected = false, sessionDurationMs = null } = {}) {
   if (recognition && (recognition !== state.recognition || !recognitionLifecycle.finish(recognition))) return;
+  clearRecognitionStartTimer();
   const wakeSession = state.recognitionWakeSession;
   const wakeWasTriggered = state.wakeWordTriggered;
+  const wakeCommandSession = state.recognitionPurpose === 'wake-command';
+  const manualWakeRetry = state.wakeWordManualRetryPending;
+  if (manualWakeRetry) {
+    state.wakeWordManualRetryPending = false;
+    wakeWordRecoveryPolicy.resetForManualRetry();
+    state.wakeWordRestartDelay = 600;
+  }
+  if (wakeWordRecoveryPolicy.recordSessionDuration(sessionDurationMs)) state.wakeWordRestartDelay = 600;
   state.recognition = null;
   state.recognitionPurpose = null;
   state.recognitionWakeSession = false;
   state.wakeWordTriggered = false;
+  state.recognitionStartedAt = null;
+  state.recognitionError = null;
   state.listening = false;
   elements.mic.classList.remove('is-active');
   elements.mic.setAttribute('aria-label', 'Start voice input');
@@ -983,21 +2189,33 @@ function stopListening(recognition = state.recognition) {
   }
   const pendingSpeechText = state.pendingSpeechText;
   if (pendingSpeechText) {
+    const pendingSpeechOptions = state.pendingSpeechOptions;
+    state.pendingSpeechText = null;
+    state.pendingSpeechOptions = null;
+    state.speechOutputTexts.delete(pendingSpeechText);
     state.wakeWordResumePending ||= wakeSession;
-    speak(pendingSpeechText);
+    speak(pendingSpeechText, pendingSpeechOptions || {});
+    return;
+  }
+  if (manualWakeRetry && state.preferences.wakeWordEnabled) {
+    state.wakeWordResumePending = true;
+    resumeWakeWordDetection('manual-retry');
     return;
   }
   if (wakeSession && wakeWasTriggered) state.wakeWordRestartDelay = 600;
   if (wakeSession && wakeWasTriggered && state.preferences.wakeWordEnabled && !state.pending
     && isPageForeground(document.visibilityState, pageIsFocused()) && state.microphonePermission !== 'denied') {
     state.wakeWordResumePending = true;
-    startListening('command');
+    startListening('command', true);
     return;
+  }
+  if (wakeCommandSession && state.preferences.wakeWordEnabled && !state.pending) {
+    scheduleWakeWordRecovery('recognition-ended-after-activation');
   }
   if ((wakeSession || state.wakeWordResumePending) && state.preferences.wakeWordEnabled) {
     state.wakeWordResumePending = true;
-    if (!wakeWasTriggered) state.wakeWordRestartDelay = nextWakeWordRestartDelay(state.wakeWordRestartDelay);
-    resumeWakeWordDetection();
+    if (!wakeWasTriggered && unexpected) state.wakeWordRestartDelay = nextWakeWordRestartDelay(state.wakeWordRestartDelay);
+    resumeWakeWordDetection(wakeSession ? 'recognition-ended-before-activation' : 'recognition-ended');
   }
 }
 
@@ -1169,6 +2387,9 @@ function updateDeviceMonitor() {
 
 function renderMicrophoneStatus() {
   const recognitionSupported = Boolean(getSpeechRecognitionConstructor(window));
+  const isListening = state.assistantMode === 'listening';
+  elements.dashboardMicButton.setAttribute('aria-pressed', String(isListening));
+  elements.dashboardVoiceMicButton.setAttribute('aria-pressed', String(isListening));
   const text = !recognitionSupported
     ? 'Not available'
     : state.assistantMode === 'listening' ? 'Listening'
@@ -1189,15 +2410,24 @@ async function updateMicrophonePermission(permissionStatus) {
   }
   if (!navigator.permissions?.query && !permissionStatus) {
     elements.voiceValue.textContent = 'Permission status unavailable';
+    reportSpeechDiagnostic('Microphone permission status', {
+      permission: 'unknown',
+      reason: 'permissions-api-unavailable',
+    });
     return;
   }
   try {
     const status = permissionStatus || await navigator.permissions.query({ name: 'microphone' });
     if (!microphonePermissionGuard.isCurrent(requestVersion)) return;
     state.microphonePermission = status.state;
+    reportSpeechDiagnostic('Microphone permission status', {
+      permission: status.state,
+      source: permissionStatus ? 'change' : 'query',
+    });
     renderMicrophoneStatus();
     if (status.state === 'denied') {
       if (state.preferences.wakeWordEnabled) disableWakeWord('Microphone permission was denied. Wake-word detection is off until permission is granted again.');
+      reportWakeWordStatus('setting-changed');
       if (state.recognition) requestStopListening();
       renderMicrophoneStatus();
     }
@@ -1205,6 +2435,10 @@ async function updateMicrophonePermission(permissionStatus) {
   } catch {
     if (!microphonePermissionGuard.isCurrent(requestVersion)) return;
     state.microphonePermission = 'unknown';
+    reportSpeechDiagnostic('Microphone permission status', {
+      permission: 'unknown',
+      reason: 'query-failed',
+    });
     renderMicrophoneStatus();
   }
 }
@@ -1229,17 +2463,6 @@ async function updateBatteryStatus() {
 }
 
 async function loadSystemMetrics() {
-  const profile = detectDeviceProfile(navigator);
-  if (profile.isMobile) {
-    elements.cpuValue.textContent = 'Not available on this device';
-    elements.ramValue.textContent = 'Not available on this device';
-    elements.diskValue.textContent = 'Not available on this device';
-    updateMetricGauge(elements.cpuMeterTrack, elements.cpuMeter, null);
-    updateMetricGauge(elements.ramMeterTrack, elements.ramMeter, null);
-    updateMetricGauge(elements.diskMeterTrack, elements.diskMeter, null);
-    elements.monitorContext.textContent = 'Mobile browsers do not expose system CPU, RAM, or storage. Browser-only information is shown instead.';
-    return;
-  }
   try {
     const response = await fetch('/api/system', { headers: apiHeaders(), signal: AbortSignal.timeout(4_000) });
     const metrics = await readApiResponse(response);
@@ -1357,6 +2580,7 @@ function setWorkspaceView(view, { remember = true } = {}) {
   switchWorkspaceView(view, {
     dashboard: elements.dashboardLayout,
     conversation: elements.conversationView,
+    lab: elements.labLayout,
     body: document.body,
     navigationItems: document.querySelectorAll('[data-nav]'),
   });
@@ -1369,6 +2593,25 @@ function setWorkspaceView(view, { remember = true } = {}) {
       showFeedback('Your interface choice could not be saved in this browser.');
     }
   }
+}
+
+function openJarvisLab() {
+  switchWorkspaceView('lab', {
+    dashboard: elements.dashboardLayout,
+    conversation: elements.conversationView,
+    lab: elements.labLayout,
+    body: document.body,
+    navigationItems: document.querySelectorAll('[data-nav]'),
+  });
+  document.querySelector('#new-interface-button').setAttribute('aria-pressed', 'false');
+  document.querySelector('#old-interface-button').setAttribute('aria-pressed', 'false');
+  document.querySelector('#jarvis-lab-title').focus();
+}
+
+function returnToJarvisWorkspace() {
+  setWorkspaceView(state.workspaceView, { remember: false });
+  if (state.workspaceView === 'dashboard') elements.dashboardMessage.focus();
+  else elements.message.focus();
 }
 
 function showHistory() {
@@ -1688,10 +2931,12 @@ function handleNavigation(event) {
     elements.moreNavigationDialog.close();
   }
   const destination = button.dataset.nav;
-  if (destination === 'dashboard') {
+  if (destination === 'lab') {
+    openJarvisLab();
+  } else if (destination === 'dashboard') {
     setWorkspaceView('dashboard');
   } else if (destination === 'chat') {
-    if (state.workspaceView === 'dashboard') {
+    if (state.workspaceView === 'dashboard' && elements.labLayout.hidden) {
       elements.dashboardMessage.focus();
       elements.dashboardChatPanel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
@@ -1699,8 +2944,8 @@ function handleNavigation(event) {
       elements.message.focus();
     }
   } else if (destination === 'voice') {
-    if (state.workspaceView !== 'dashboard') setWorkspaceView('chat');
-    startListening();
+    if (state.workspaceView !== 'dashboard' || !elements.labLayout.hidden) setWorkspaceView('chat');
+    startListeningFromUserGesture();
   } else if (destination === 'more') {
     elements.moreNavigationDialog.showModal();
   } else if (destination === 'history') {
@@ -1727,6 +2972,7 @@ function handleNavigation(event) {
   } else if (destination === 'news') {
     setWorkspaceView('dashboard');
     selectNavigation('news');
+    document.querySelector('.briefing-panel').open = true;
     if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-news-open');
     if (!elements.briefingResults.childElementCount) loadBriefing();
     document.querySelector('#briefing-title').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1736,6 +2982,7 @@ function handleNavigation(event) {
   } else if (destination === 'activity') {
     setWorkspaceView('dashboard');
     selectNavigation(destination);
+    document.querySelector('#activity-panel').open = true;
     if (matchMedia('(max-width: 780px)').matches) document.body.classList.add('mobile-activity-open');
     document.querySelector('#activity-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
@@ -1749,7 +2996,7 @@ function handleDashboardFeature(event) {
     elements.dashboardMessage.focus();
     document.querySelector('#dashboard-chat-title').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else if (destination === 'voice') {
-    startListening();
+    startListeningFromUserGesture();
   } else if (destination === 'files') {
     elements.fileSearchQuery.value = '';
     searchAttachedFiles();
@@ -1883,6 +3130,60 @@ elements.shareLinkButton.addEventListener('click', async () => {
 });
 document.querySelector('#new-interface-button').addEventListener('click', () => setWorkspaceView('dashboard'));
 document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
+document.querySelector('#lab-return-button').addEventListener('click', returnToJarvisWorkspace);
+document.querySelector('[data-lab-module="personalize"]').addEventListener('click', openPersonalizePanel);
+document.querySelector('[data-lab-module="personalize"]').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  openPersonalizePanel();
+});
+document.querySelector('[data-lab-module="ai-modify"]').addEventListener('click', openLabAiModifyPanel);
+document.querySelector('[data-lab-module="ai-modify"]').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  openLabAiModifyPanel();
+});
+document.querySelector('[data-lab-module="code-studio"]').addEventListener('click', openCodeStudioPanel);
+document.querySelector('[data-lab-module="code-studio"]').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  openCodeStudioPanel();
+});
+document.querySelector('[data-lab-module="extensions"]').addEventListener('click', openExtensionsPanel);
+document.querySelector('[data-lab-module="extensions"]').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  openExtensionsPanel();
+});
+document.querySelector('#ai-modify-analyze').addEventListener('click', submitLabAiModifyRequest);
+document.querySelector('#ai-modify-back').addEventListener('click', closeLabAiModifyPanel);
+document.querySelector('#ai-modify-cancel').addEventListener('click', cancelLabAiModifyRequest);
+document.querySelector('#ai-modify-reject').addEventListener('click', rejectLabAiModifyRequest);
+document.querySelector('#code-studio-back').addEventListener('click', closeCodeStudioPanel);
+elements.codeStudioEditor.addEventListener('input', updateCodeStudioReview);
+elements.codeStudioLanguage.addEventListener('change', () => {
+  const language = CODE_STUDIO_LANGUAGES.find(({ id }) => id === elements.codeStudioLanguage.value);
+  elements.codeStudioStatus.textContent = `${language?.label || 'Plain text'} selected. Syntax highlighting is unavailable; content remains plain text and is never executed.`;
+});
+elements.codeStudioReadonly.addEventListener('change', updateCodeStudioEditorState);
+document.querySelector('#code-studio-import').addEventListener('click', prepareCodeStudioImport);
+elements.codeStudioFile.addEventListener('change', importCodeStudioFile);
+document.querySelector('#code-studio-copy').addEventListener('click', copyCodeStudioText);
+document.querySelector('#code-studio-clear').addEventListener('click', clearCodeStudioText);
+document.querySelector('#code-studio-export').addEventListener('click', exportCodeStudioText);
+document.querySelector('#extensions-back').addEventListener('click', closeExtensionsPanel);
+document.querySelector('#extensions-import').addEventListener('click', promptExtensionImport);
+elements.extensionsFile.addEventListener('change', importLabExtension);
+elements.extensionsList.addEventListener('click', handleLabExtensionAction);
+elements.personalizeForm.addEventListener('change', () => {
+  personalizeDraft = readPersonalizeForm();
+  renderPersonalizePreview(personalizeDraft);
+  elements.personalizeStatus.textContent = 'Changes are preview-only until applied.';
+});
+document.querySelector('#personalize-cancel').addEventListener('click', closePersonalizePanel);
+document.querySelector('#personalize-cancel-footer').addEventListener('click', closePersonalizePanel);
+document.querySelector('#personalize-reset').addEventListener('click', resetPersonalizeDraft);
+document.querySelector('#personalize-apply').addEventListener('click', applyPersonalizeDraft);
 document.querySelector('#more-tools-button').addEventListener('click', () => {
   elements.settings.close();
   elements.moreNavigationDialog.showModal();
@@ -1907,10 +3208,14 @@ document.querySelector('#settings-clear').addEventListener('click', () => {
   try {
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem(PREFERENCES_KEY);
+    localStorage.removeItem(LAB_PREFERENCES_KEY);
+    localStorage.removeItem(LAB_AI_MODIFY_HISTORY_KEY);
   } catch {
     storageCleared = false;
   }
   state.preferences = { ...defaults };
+  state.labPreferences = resetLabPreferencesDraft();
+  applyLabPreferences(state.labPreferences, document);
   syncSettings();
   showFeedback(storageCleared
     ? 'Saved data cleared from this browser.'
@@ -1918,6 +3223,7 @@ document.querySelector('#settings-clear').addEventListener('click', () => {
 });
 elements.dashboardCommandForm.addEventListener('submit', (event) => {
   event.preventDefault();
+  if (event.submitter === elements.dashboardSend) primeVoiceOutput();
   const text = elements.dashboardMessage.value.trim();
   if (!text) return;
   elements.message.value = text;
@@ -1928,6 +3234,7 @@ elements.dashboardRetryButton.addEventListener('click', retryLastChat);
 elements.dashboardMessage.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
+    primeVoiceOutput();
     elements.dashboardCommandForm.requestSubmit();
   }
 });
@@ -1975,6 +3282,7 @@ elements.message.addEventListener('input', () => {
 elements.message.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
+    primeVoiceOutput();
     elements.form.requestSubmit();
   }
 });
@@ -1983,7 +3291,7 @@ elements.searchToggle.addEventListener('click', () => {
   updateSearchMode();
   elements.message.focus();
 });
-elements.mic.addEventListener('click', startListening);
+elements.mic.addEventListener('click', startListeningFromUserGesture);
 elements.attachButton.addEventListener('click', () => elements.fileInput.click());
 elements.dashboardAttachButton.addEventListener('click', () => elements.fileInput.click());
 elements.fileInput.addEventListener('change', async () => {
@@ -2033,7 +3341,7 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => button.addE
   }
   if (!state.preferences.fullAccessEnabled) return;
   if (button.dataset.quickAction === 'voice') {
-    startListening();
+    startListeningFromUserGesture();
   }
   if (button.dataset.quickAction === 'search') {
     setWorkspaceView('chat');
@@ -2076,26 +3384,38 @@ elements.voiceEnabled.addEventListener('change', () => {
   state.preferences.voiceEnabled = elements.voiceEnabled.checked;
   elements.dashboardVoiceToggle.setAttribute('aria-pressed', String(state.preferences.voiceEnabled));
   elements.dashboardVoiceLabel.textContent = state.preferences.voiceEnabled ? 'Voice on' : 'Voice off';
-  if (!state.preferences.voiceEnabled && 'speechSynthesis' in window) stopSpeechOutput();
+  if (!state.preferences.voiceEnabled && 'speechSynthesis' in window) {
+    stopSpeechOutput();
+  }
   else primeVoiceOutput();
   savePreferences();
 });
 elements.wakeWordEnabled.addEventListener('change', () => {
   state.preferences.wakeWordEnabled = elements.wakeWordEnabled.checked;
   state.wakeWordResumePending = false;
+  if (state.preferences.wakeWordEnabled && wakeWordRecoveryPolicy.circuitOpen) {
+    state.wakeWordManualRetryPending = true;
+  } else if (!state.preferences.wakeWordEnabled) {
+    state.wakeWordManualRetryPending = false;
+  }
   window.clearTimeout(state.wakeWordRestartTimer);
   state.wakeWordRestartTimer = null;
   savePreferences();
+  reportWakeWordStatus('permission-updated');
   if (state.preferences.wakeWordEnabled) {
     state.wakeWordManualTakeoverPending = false;
     startListening('wake');
+    primeVoiceOutput();
   } else {
     if (state.recognitionWakeSession) requestStopListening();
     showFeedback('Wake-word detection is off.');
   }
 });
 elements.dashboardMicButton.addEventListener('click', () => {
-  startListening();
+  startListeningFromUserGesture();
+});
+elements.dashboardVoiceMicButton.addEventListener('click', () => {
+  startListeningFromUserGesture();
 });
 elements.dashboardVoiceToggle.addEventListener('click', () => {
   elements.voiceEnabled.checked = !elements.voiceEnabled.checked;
@@ -2197,7 +3517,9 @@ elements.install.addEventListener('click', async () => {
 });
 
 state.messages = loadHistory();
+applyLabPreferences(state.labPreferences, document);
 syncSettings();
+reportWakeWordStatus('startup');
 if (state.preferences.wakeWordEnabled && !elements.wakeWordEnabled.disabled) startListening('wake');
 renderMessages();
 initializeAppHubs({
@@ -2217,7 +3539,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=42', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=49', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

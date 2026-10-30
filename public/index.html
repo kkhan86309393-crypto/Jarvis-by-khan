@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?hud=34">
+    <link rel="stylesheet" href="/styles.css?hud=43">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -57,11 +57,12 @@
           </div>
           <button class="nav-item" type="button" data-nav="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg><span>Settings</span></button>
           <p class="access-disclaimer">No desktop or phone control is connected. Actions stay inside this app.</p>
+          <button class="nav-item lab-nav-button" type="button" data-nav="lab"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6m-5 0v6l-5.5 9.2A1.8 1.8 0 0 0 6 21h12a1.8 1.8 0 0 0 1.5-2.8L14 9V3"/><path d="M8 15h8m-6-3h4"/></svg><span>J.A.R.V.I.S. LAB</span></button>
         </nav>
 
       <main class="workspace">
         <div class="dashboard-layout" id="dashboard-layout" hidden>
-          <section class="presence" aria-labelledby="presence-title">
+          <section class="presence" data-lab-widget="assistant" aria-labelledby="presence-title">
             <div class="presence-topline"><span>PERSONAL ASSISTANT</span><span>J.A.R.V.I.S.</span></div>
             <div class="avatar-hero">
               <div class="holo-stage" id="holo-stage">
@@ -77,6 +78,8 @@
                 <span class="playback-indicator" aria-hidden="true"></span>
               </div>
             </div>
+            <p class="assistant-greeting">Hello. I am here when you need me.</p>
+            <span class="assistant-identity"><i aria-hidden="true"></i>J.A.R.V.I.S. <small>PERSONAL AI</small></span>
             <div class="holo-waveform" id="holo-waveform" role="img" aria-label="Voice activity idle">
               <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
@@ -92,9 +95,41 @@
             </div>
           </section>
 
+        <section class="dashboard-panel state-panel" data-lab-widget="status" aria-labelledby="state-panel-title">
+          <div class="panel-heading"><div><span class="eyebrow">LIVE ASSISTANT</span><h2 id="state-panel-title">Assistant status</h2></div><span class="live-label" id="state-panel-live">STANDBY</span></div>
+          <div class="holo-state-strip" id="holo-state-strip" role="group" aria-label="Assistant states">
+            <span class="holo-state" data-holo-state="listening"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Listening</span></span>
+            <span class="holo-state" data-holo-state="thinking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 18h5m-4.5 3h4m-5.7-6.2A6.5 6.5 0 1 1 15.7 15c-.8.6-1.2 1.4-1.2 2h-5c0-.8-.4-1.6-1.2-2.2Z"/><path d="M12 2V1m8 11h1M3 12H2m15.7-6.7.7-.7M5.6 5.6l-.7-.7"/></svg><span>Thinking</span></span>
+            <span class="holo-state" data-holo-state="speaking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span>Speaking</span></span>
+            <span class="holo-state" data-holo-state="online"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7"/><circle cx="12" cy="12" r="9"/></svg><span>Online</span></span>
+          </div>
+        </section>
+        <div class="dashboard-commandbar">
+          <form class="dashboard-command" id="dashboard-command-form">
+            <button class="voice-console-button primary dashboard-command-mic" id="dashboard-mic-button" type="button" aria-label="Start voice input" aria-pressed="false" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span class="sr-only">Talk to J.A.R.V.I.S.</span></button>
+            <label class="sr-only" for="dashboard-message">Send a message to J.A.R.V.I.S.</label>
+            <input id="dashboard-message" type="text" maxlength="4000" autocomplete="off" placeholder="Ask J.A.R.V.I.S.">
+            <button type="submit" aria-label="Send command" title="Send command"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-7-8-1Zm8 1 8-9"/></svg></button>
+          </form>
+        </div>
+
         <aside class="right-rail" aria-label="System monitor and tools">
-            <section class="dashboard-panel dashboard-chat-panel" aria-labelledby="dashboard-chat-title">
-              <div class="panel-heading dashboard-chat-heading"><div><span class="eyebrow">AI CHANNEL</span><h2 id="dashboard-chat-title">Chat with me</h2></div><span class="live-label" id="connection-status-dashboard">CONNECTING</span></div>
+          <section class="dashboard-panel dashboard-voice-panel" data-lab-widget="voice" aria-labelledby="dashboard-voice-title">
+            <div class="panel-heading"><div><span class="eyebrow">BROWSER SPEECH</span><h2 id="dashboard-voice-title">Voice Assistant</h2></div><i class="status-pulse"></i></div>
+            <div class="voice-console" aria-label="Voice controls">
+              <div class="voice-console-heading"><span>VOICE CHANNEL</span><span id="voice-console-status" role="status" aria-live="polite">STANDBY</span></div>
+              <div class="voice-waveform" id="voice-waveform" role="img" aria-label="Voice channel idle">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="voice-console-controls">
+                <button class="voice-console-button primary" id="dashboard-voice-mic-button" type="button" aria-pressed="false" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Talk</span></button>
+                <button class="voice-console-button" id="dashboard-voice-toggle" type="button" aria-pressed="false" title="Toggle spoken responses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span id="dashboard-voice-label">Voice off</span></button>
+                <button class="voice-console-icon" id="dashboard-settings-button" type="button" aria-label="Open voice settings" title="Voice settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg></button>
+              </div>
+            </div>
+          </section>
+            <section class="dashboard-panel dashboard-chat-panel" data-lab-widget="chat" aria-labelledby="dashboard-chat-title">
+              <div class="panel-heading dashboard-chat-heading"><div><span class="eyebrow">CHAT HISTORY</span><h2 id="dashboard-chat-title">Chat History</h2></div><span class="live-label" id="connection-status-dashboard">CONNECTING</span></div>
               <div class="dashboard-transcript" id="dashboard-transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
               <p class="assistant-feedback dashboard-feedback" id="dashboard-feedback" role="status" aria-live="polite"></p>
               <div class="dashboard-chat-state" id="dashboard-chat-state" role="status" aria-live="polite" hidden>
@@ -104,52 +139,65 @@
               <p class="briefing-note dashboard-chat-note">Replies stay in this browser session. Search results and sources are available from the Search control.</p>
               <button class="briefing-button dashboard-open-chat" type="button" data-nav="chat">Open full AI chat <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
             </section>
-          <section class="dashboard-panel dashboard-voice-panel" aria-labelledby="dashboard-voice-title">
-            <div class="panel-heading"><div><span class="eyebrow">BROWSER SPEECH</span><h2 id="dashboard-voice-title">Voice Assistant</h2></div><i class="status-pulse"></i></div>
-            <div class="voice-console" aria-label="Voice controls">
-              <div class="voice-console-heading"><span>VOICE CHANNEL</span><span id="voice-console-status" role="status" aria-live="polite">STANDBY</span></div>
-              <div class="voice-waveform" id="voice-waveform" role="img" aria-label="Voice channel idle">
-                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-              </div>
-              <div class="voice-console-controls">
-                <button class="voice-console-button" id="dashboard-voice-toggle" type="button" aria-pressed="false" title="Toggle spoken responses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span id="dashboard-voice-label">Voice off</span></button>
-                <button class="voice-console-icon" id="dashboard-settings-button" type="button" aria-label="Open voice settings" title="Voice settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg></button>
-              </div>
-            </div>
-          </section>
-          <section class="dashboard-panel system-panel" id="system-panel" aria-labelledby="system-title">
+          <section class="dashboard-panel system-panel" id="system-panel" data-lab-widget="system" aria-labelledby="system-title">
             <div class="panel-heading"><div><span class="eyebrow">LIVE STATUS</span><h2 id="system-title">Real-Time Info</h2></div><i class="status-pulse"></i></div>
-            <div class="monitor-grid">
-              <div class="metric-readout server-metric" data-device-group="desktop"><span id="cpu-label">SERVER CPU</span><strong id="cpu-value">Checking</strong><div class="metric-track" id="cpu-meter-track" hidden><i id="cpu-meter"></i></div></div>
-              <div class="metric-readout server-metric" data-device-group="desktop"><span id="ram-label">SERVER RAM</span><strong id="ram-value">Checking</strong><div class="metric-track" id="ram-meter-track" hidden><i id="ram-meter"></i></div></div>
-              <div class="metric-readout server-metric" data-device-group="desktop"><span id="disk-label">SERVER STORAGE</span><strong id="disk-value">Checking</strong><div class="metric-track" id="disk-meter-track" hidden><i id="disk-meter"></i></div></div>
-              <div class="device-metric"><span>DEVICE</span><strong id="device-type-value">Checking</strong></div>
-              <div class="device-metric"><span>BROWSER / PLATFORM</span><strong id="platform-value">Checking</strong></div>
-              <div class="device-metric" data-device-group="mobile"><span>BATTERY</span><strong id="battery-value">Checking</strong></div>
-              <div class="device-metric" data-device-group="mobile"><span>BROWSER MEMORY</span><strong id="browser-memory-value">Checking</strong></div>
-              <div><span>NETWORK</span><strong id="network-value">Checking</strong></div>
-              <div><span>VOICE INPUT</span><strong id="voice-value">Checking</strong></div>
-              <div><span>VOICE OUTPUT</span><strong id="voice-output-value">Checking</strong></div>
-              <div><span>JARVIS CONNECTION</span><strong id="backend-connection-value">Checking</strong></div>
-              <div><span>LOCAL HISTORY</span><strong id="memory-value">Checking</strong></div>
-              <div><span>AI BACKEND</span><strong id="model-value">Not configured</strong></div>
+            <div class="metric-section">
+              <div class="metric-section-heading"><span>SERVER</span><small>J.A.R.V.I.S. app host</small></div>
+              <div class="monitor-grid server-grid">
+                <div class="metric-readout server-metric"><span id="cpu-label">SERVER CPU</span><strong id="cpu-value">Checking</strong><div class="metric-track" id="cpu-meter-track" hidden><i id="cpu-meter"></i></div></div>
+                <div class="metric-readout server-metric"><span id="ram-label">SERVER RAM</span><strong id="ram-value">Checking</strong><div class="metric-track" id="ram-meter-track" hidden><i id="ram-meter"></i></div></div>
+                <div class="metric-readout server-metric"><span id="disk-label">SERVER STORAGE</span><strong id="disk-value">Checking</strong><div class="metric-track" id="disk-meter-track" hidden><i id="disk-meter"></i></div></div>
+              </div>
             </div>
+            <div class="metric-section">
+              <div class="metric-section-heading"><span>THIS DEVICE</span><small>Browser-reported details</small></div>
+              <div class="monitor-grid device-grid">
+                <div class="device-metric"><span>DEVICE</span><strong id="device-type-value">Checking</strong></div>
+                <div class="device-metric"><span>BROWSER / PLATFORM</span><strong id="platform-value">Checking</strong></div>
+                <div class="device-metric" data-device-group="mobile"><span>BATTERY</span><strong id="battery-value">Checking</strong></div>
+                <div class="device-metric" data-device-group="mobile"><span>BROWSER MEMORY</span><strong id="browser-memory-value">Checking</strong></div>
+                <div><span>NETWORK</span><strong id="network-value">Checking</strong></div>
+              </div>
+            </div>
+            <details class="metric-details">
+              <summary>Capabilities and connection</summary>
+              <div class="monitor-grid">
+                <div><span>VOICE INPUT</span><strong id="voice-value">Checking</strong></div>
+                <div><span>VOICE OUTPUT</span><strong id="voice-output-value">Checking</strong></div>
+                <div><span>JARVIS CONNECTION</span><strong id="backend-connection-value">Checking</strong></div>
+                <div><span>LOCAL HISTORY</span><strong id="memory-value">Checking</strong></div>
+                <div><span>AI BACKEND</span><strong id="model-value">Not configured</strong></div>
+              </div>
+            </details>
             <p class="monitor-context" id="monitor-context">Device details use browser-reported information. Hardware readings describe the J.A.R.V.I.S. server.</p>
           </section>
-          <section class="dashboard-panel briefing-panel" aria-labelledby="briefing-title">
-            <div class="panel-heading"><div><span class="eyebrow">RETRIEVED SOURCES</span><h2 id="briefing-title">News &amp; Briefing</h2></div></div>
+          <section class="dashboard-panel quick-panel" aria-labelledby="quick-title">
+            <div class="panel-heading"><div><span class="eyebrow">SHORTCUTS</span><h2 id="quick-title">Quick Actions</h2></div></div>
+            <div class="quick-actions">
+              <button type="button" data-quick-action="capture" data-requires-full-access><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8m-4-3v3m-6-12h5m-5 4h9"/></svg><span>Vision</span></button>
+              <button type="button" data-quick-action="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4zM8 13h8m-8 3h6"/></svg><span>Files</span></button>
+              <button type="button" data-quick-action="applications"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span>Apps</span></button>
+              <button type="button" data-quick-action="search" data-requires-full-access><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><span>Search</span></button>
+              <button type="button" data-quick-action="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>Chat</span></button>
+              <button type="button" data-quick-action="study"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 8 9-5 9 5-9 5-9-5Zm3 2v6c3.5 3 8.5 3 12 0v-6m3-2v7"/></svg><span>Study</span><span class="nav-state" id="study-quick-indicator">OFF</span></button>
+              <div class="focus-timer-row"><span>FOCUS TIMER</span><strong id="focus-timer-display">25:00</strong><button type="button" id="focus-timer-button" aria-pressed="false">Start</button></div>
+            </div>
+          </section>
+          <details class="dashboard-panel dashboard-accordion briefing-panel" aria-labelledby="briefing-title">
+            <summary class="panel-heading"><div><span class="eyebrow">RETRIEVED SOURCES</span><h2 id="briefing-title">News &amp; Briefing</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
             <p class="briefing-note">Source-linked web results with a Wikipedia fallback; coverage may be limited.</p>
             <button class="briefing-button" id="news-button" type="button" data-requires-full-access>Fetch a news briefing <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
             <div class="briefing-results" id="briefing-results" aria-live="polite"></div>
-          </section>
-          <section class="dashboard-panel upload-panel" aria-labelledby="upload-title">
-            <div class="panel-heading"><div><span class="eyebrow">LOCAL DOCUMENTS</span><h2 id="upload-title">File upload</h2></div></div>
+          </details>
+          <details class="dashboard-panel dashboard-accordion upload-panel" aria-labelledby="upload-title">
+            <summary class="panel-heading"><div><span class="eyebrow">LOCAL DOCUMENTS</span><h2 id="upload-title">File upload</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
             <p class="briefing-note">Add a small text, Markdown, or CSV file to your next chat message.</p>
             <button class="briefing-button" id="dashboard-attach-button" type="button"><span>Choose a text file</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v5h14v-5"/></svg></button>
             <p class="dashboard-file-status" id="dashboard-file-status">No file selected</p>
-          </section>
-          <section class="dashboard-panel app-hub-panel" aria-labelledby="app-hub-panel-title" data-app-hub>
-            <div class="panel-heading"><div><span class="eyebrow">PERSONAL LAUNCHER</span><h2 id="app-hub-panel-title">JARVIS APP HUB</h2></div><div class="app-hub-panel-actions"><button class="app-hub-add" type="button" data-hub-action="vision" data-requires-full-access title="Enable Full Access to use Vision">Vision</button><button class="app-hub-add" type="button" data-hub-action="add">Add App</button></div></div>
+          </details>
+          <details class="dashboard-panel dashboard-accordion app-hub-panel" aria-labelledby="app-hub-panel-title" data-app-hub>
+            <summary class="panel-heading"><div><span class="eyebrow">PERSONAL LAUNCHER</span><h2 id="app-hub-panel-title">JARVIS APP HUB</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
+            <div class="app-hub-panel-actions"><button class="app-hub-add" type="button" data-hub-action="vision" data-requires-full-access title="Enable Full Access to use Vision">Vision</button><button class="app-hub-add" type="button" data-hub-action="add">Add App</button></div>
             <p class="app-hub-note">Your shortcuts are saved on this device. Websites open in a new tab; Android app, dialer, and message links depend on browser and device support.</p>
             <div class="app-hub-tools">
               <label class="sr-only" for="app-hub-search-panel">Search saved apps</label>
@@ -174,9 +222,9 @@
             </form>
             <p class="app-hub-status" data-hub-status role="status" aria-live="polite"></p>
             <p class="app-hub-safety">Websites and Android links open outside JARVIS when supported. APKs and native apps cannot run inside a website; uploaded icons are images only and are never executed.</p>
-          </section>
-          <section class="dashboard-panel ai-status-panel" aria-labelledby="ai-status-title">
-            <div class="panel-heading"><div><span class="eyebrow">INTELLIGENCE CORE</span><h2 id="ai-status-title">AI status</h2></div><i class="status-pulse"></i></div>
+          </details>
+          <details class="dashboard-panel dashboard-accordion ai-status-panel" aria-labelledby="ai-status-title">
+            <summary class="panel-heading"><div><span class="eyebrow">INTELLIGENCE CORE</span><h2 id="ai-status-title">AI status</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
             <div class="ai-status-readout"><span>PROVIDER</span><strong id="left-ai-status">CHECKING</strong><p id="left-ai-detail">Connecting to J.A.R.V.I.S. services...</p></div>
             <div class="status-divider"></div>
             <div class="mini-readout"><span>SESSION</span><strong id="left-session-status">READY</strong></div>
@@ -184,39 +232,13 @@
             <div class="mini-readout"><span>MODE</span><strong id="left-mode-status">STANDARD</strong></div>
             <div class="mini-readout"><span>LANGUAGE</span><strong id="left-language-status">ENGLISH</strong></div>
             <div class="mini-readout"><span>MEMORY</span><strong id="left-memory-status">LOCAL</strong></div>
-          </section>
-          <section class="dashboard-panel quick-panel" aria-labelledby="quick-title">
-            <div class="panel-heading"><div><span class="eyebrow">SHORTCUTS</span><h2 id="quick-title">Quick Actions</h2></div></div>
-            <div class="quick-actions">
-              <button type="button" data-quick-action="capture" data-requires-full-access><span>01</span>Capture screen</button>
-              <button type="button" data-quick-action="files"><span>02</span>Search attached files</button>
-              <button type="button" data-quick-action="applications"><span>03</span>Open web app</button>
-              <button type="button" data-quick-action="search" data-requires-full-access><span>04</span>Search the web</button>
-              <button type="button" data-quick-action="chat"><span>05</span>Open AI chat</button>
-              <button type="button" data-quick-action="study"><span>06</span><span>Study mode</span><span class="nav-state" id="study-quick-indicator">OFF</span></button>
-              <div class="focus-timer-row"><span>FOCUS TIMER</span><strong id="focus-timer-display">25:00</strong><button type="button" id="focus-timer-button" aria-pressed="false">Start</button></div>
-            </div>
-          </section>
-          <section class="dashboard-panel activity-panel" id="activity-panel" aria-labelledby="activity-title">
-            <div class="panel-heading"><div><span class="eyebrow">SESSION TRACE</span><h2 id="activity-title">Activity feed</h2></div><span class="live-label">LOCAL</span></div>
+          </details>
+          <details class="dashboard-panel dashboard-accordion activity-panel" id="activity-panel" aria-labelledby="activity-title">
+            <summary class="panel-heading"><div><span class="eyebrow">SESSION TRACE</span><h2 id="activity-title">Activity feed</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
             <ol id="activity-log" class="activity-log" aria-live="polite"><li><i aria-hidden="true"></i><span>Interface initialized</span><time>NOW</time></li></ol>
-          </section>
+          </details>
         </aside>
-        <div class="holo-state-strip" id="holo-state-strip" role="group" aria-label="Assistant states">
-          <span class="holo-state" data-holo-state="listening"><i aria-hidden="true"></i><span>Listening</span></span>
-          <span class="holo-state" data-holo-state="thinking"><i aria-hidden="true"></i><span>Thinking</span></span>
-          <span class="holo-state" data-holo-state="speaking"><i aria-hidden="true"></i><span>Speaking</span></span>
-          <span class="holo-state" data-holo-state="online"><i aria-hidden="true"></i><span>Online</span></span>
-        </div>
         <p class="sr-only" id="holo-state-announcement" role="status" aria-live="polite">Waiting for server status.</p>
-        <div class="dashboard-commandbar">
-          <form class="dashboard-command" id="dashboard-command-form">
-            <button class="voice-console-button primary dashboard-command-mic" id="dashboard-mic-button" type="button" aria-label="Start voice input" aria-pressed="false" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span class="sr-only">Talk to J.A.R.V.I.S.</span></button>
-            <label class="sr-only" for="dashboard-message">Send a message to J.A.R.V.I.S.</label>
-            <input id="dashboard-message" type="text" maxlength="4000" autocomplete="off" placeholder="Ask J.A.R.V.I.S.">
-            <button type="submit" aria-label="Send command" title="Send command"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5 16-3-7-8-1Zm8 1 8-9"/></svg></button>
-          </form>
-        </div>
         </div>
 
         <nav class="new-feature-bar" aria-label="Dashboard quick navigation">
@@ -265,6 +287,311 @@
           <p class="attachment-note" id="attachment-note" hidden></p>
           <p class="privacy-line">History stays in this browser. Text attachments are sent with your message to the configured AI provider; voice recognition may use your browser's speech service.</p>
         </section>
+        <section class="jarvis-lab" id="jarvis-lab" aria-labelledby="jarvis-lab-title" hidden>
+          <header class="lab-header">
+            <div class="lab-heading-copy">
+              <span class="eyebrow">J.A.R.V.I.S. / EXPERIMENTAL WORKSPACE</span>
+              <h1 id="jarvis-lab-title" tabindex="-1">J.A.R.V.I.S. LAB</h1>
+              <p>A dedicated space for shaping, extending, and developing your assistant.</p>
+            </div>
+            <button class="lab-return-button" id="lab-return-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7M7 12h14"/></svg>
+              <span>Return to J.A.R.V.I.S.</span>
+            </button>
+          </header>
+          <div class="lab-status-bar" role="status">
+            <span><i aria-hidden="true"></i> LAB INTERFACE ONLINE</span>
+            <span>STEP 06 · SAFETY GATES ACTIVE</span>
+          </div>
+          <div class="lab-module-grid" aria-label="J.A.R.V.I.S. LAB modules">
+            <article class="lab-module-card lab-module-action" data-lab-module="personalize" role="button" tabindex="0" aria-haspopup="true" aria-controls="personalize-panel">
+              <div class="lab-module-meta"><span>MODULE 01</span><span>INTERFACE READY</span></div>
+              <div class="lab-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20a7 7 0 0 1 14 0m-7-9v3m-3 3h6"/></svg></div>
+              <h2>Personalize</h2>
+              <p>Shape the assistant experience around your preferences and workflow.</p>
+              <span class="lab-module-state">OPEN PERSONALIZATION CONTROLS</span>
+            </article>
+            <article class="lab-module-card lab-module-action" data-lab-module="ai-modify" role="button" tabindex="0" aria-haspopup="true" aria-controls="ai-modify-panel">
+              <div class="lab-module-meta"><span>MODULE 02</span><span>INTERFACE PREVIEW</span></div>
+              <div class="lab-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v3m0 12v3M3 12h3m12 0h3m-2.6-6.4-2.1 2.1M7.7 16.3l-2.1 2.1m12.8 0-2.1-2.1M7.7 7.7 5.6 5.6"/><circle cx="12" cy="12" r="4"/></svg></div>
+              <h2>AI Modify</h2>
+              <p>A future workspace for configuring and refining assistant behavior.</p>
+              <span class="lab-module-state">OPEN CHANGE PROPOSAL INTERFACE</span>
+            </article>
+            <article class="lab-module-card lab-module-action" data-lab-module="code-studio" role="button" tabindex="0" aria-haspopup="true" aria-controls="code-studio-panel">
+              <div class="lab-module-meta"><span>MODULE 03</span><span>LOCAL PREVIEW</span></div>
+              <div class="lab-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></svg></div>
+              <h2>Code Studio</h2>
+              <p>A dedicated development environment for future J.A.R.V.I.S. projects.</p>
+              <span class="lab-module-state">OPEN LOCAL CODE WORKSPACE</span>
+            </article>
+            <article class="lab-module-card lab-module-action" data-lab-module="extensions" role="button" tabindex="0" aria-haspopup="true" aria-controls="extensions-panel">
+              <div class="lab-module-meta"><span>MODULE 04</span><span>LOCAL MANAGER</span></div>
+              <div class="lab-module-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.4-6.4-2.1 2.1M7.7 16.3l-2.1 2.1m12.8 0-2.1-2.1M7.7 7.7 5.6 5.6"/><circle cx="12" cy="12" r="3"/></svg></div>
+              <h2>Extensions</h2>
+              <p>An interface for future add-ons that expand assistant capabilities.</p>
+              <span class="lab-module-state">OPEN SAFE EXTENSION MANAGER</span>
+            </article>
+          </div>
+          <section class="lab-safety-panel" id="lab-safety-panel" aria-labelledby="lab-safety-title">
+            <div class="lab-safety-heading">
+              <div>
+                <span class="eyebrow">CENTRAL SAFETY LAYER / READ-ONLY</span>
+                <h2 id="lab-safety-title">Safety &amp; Recovery</h2>
+                <p>Project file changes, backup creation, and rollback are not enabled. LAB modules remain isolated and local.</p>
+              </div>
+              <span class="lab-safety-lock" aria-label="Project changes disabled">PROJECT LOCKED</span>
+            </div>
+            <div class="lab-safety-grid">
+              <article>
+                <h3>Backup Manager</h3>
+                <p>Future backups use timestamped, collision-safe IDs in a separate store; no project files are currently accessible.</p>
+                <span class="lab-safety-state">No backup created</span>
+                <button type="button" disabled>Create backup · unavailable</button>
+              </article>
+              <article>
+                <h3>Change Approval</h3>
+                <p>Future changes require workspace-relative paths, a visible file list and redacted diff, passing checks, and explicit approval.</p>
+                <span class="lab-safety-state" id="lab-safety-change-state">Disabled · project files cannot be changed by J.A.R.V.I.S. LAB.</span>
+                <button type="button" disabled>Approve project changes · disabled</button>
+              </article>
+              <article>
+                <h3>Validation Gate</h3>
+                <p>Every proposed change must pass its listed validation checks before approval. LAB does not execute generated code.</p>
+                <span class="lab-safety-state">No changes to validate</span>
+              </article>
+              <article>
+                <h3>Rollback</h3>
+                <p>Future rollback requires confirmation and a separate backup of the current state before restoration.</p>
+                <span class="lab-safety-state">Unavailable · no project backups</span>
+                <button type="button" disabled>Restore backup · unavailable</button>
+              </article>
+              <article>
+                <h3>Secrets Protection</h3>
+                <p>Credential-like values are redacted from previews, history, clipboard copies, and downloads. Packages with detected credentials are rejected.</p>
+                <span class="lab-safety-state">Secret checks active</span>
+              </article>
+            </div>
+          </section>
+          <section class="personalize-panel" id="personalize-panel" aria-labelledby="personalize-title" hidden>
+            <div class="personalize-heading">
+              <div>
+                <span class="eyebrow">MODULE 01 / PERSONAL SETTINGS</span>
+                <h2 id="personalize-title" tabindex="-1">Personalize J.A.R.V.I.S.</h2>
+                <p>Preview your interface choices before applying them. These preferences are stored separately from J.A.R.V.I.S. settings.</p>
+              </div>
+              <button class="personalize-back-button" id="personalize-cancel" type="button">Back to LAB</button>
+            </div>
+            <div class="personalize-content">
+              <form class="personalize-controls" id="personalize-form">
+                <fieldset class="personalize-field">
+                  <legend>Theme</legend>
+                  <div class="personalize-choice-row">
+                    <label><input type="radio" name="lab-theme" value="dark"><span>Dark</span></label>
+                    <label><input type="radio" name="lab-theme" value="light"><span>Light</span></label>
+                    <label><input type="radio" name="lab-theme" value="system"><span>System</span></label>
+                  </div>
+                </fieldset>
+                <fieldset class="personalize-field">
+                  <legend>Accent color</legend>
+                  <div class="personalize-accent-row">
+                    <label><input type="radio" name="lab-accent" value="cyan"><span class="accent-swatch accent-cyan"></span><span>Cyan</span></label>
+                    <label><input type="radio" name="lab-accent" value="blue"><span class="accent-swatch accent-blue"></span><span>Blue</span></label>
+                    <label><input type="radio" name="lab-accent" value="violet"><span class="accent-swatch accent-violet"></span><span>Violet</span></label>
+                    <label><input type="radio" name="lab-accent" value="mint"><span class="accent-swatch accent-mint"></span><span>Mint</span></label>
+                    <label><input type="radio" name="lab-accent" value="amber"><span class="accent-swatch accent-amber"></span><span>Amber</span></label>
+                  </div>
+                </fieldset>
+                <label class="personalize-select-label" for="lab-density-select">Layout density
+                  <select id="lab-density-select">
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                </label>
+                <label class="personalize-select-label" for="lab-voice-select">LAB voice preference
+                  <select id="lab-voice-select"><option value="">System default</option></select>
+                </label>
+                <p class="personalize-help" id="lab-voice-help">Saved separately; this does not change J.A.R.V.I.S. speech settings.</p>
+                <fieldset class="personalize-field personalize-widget-field">
+                  <legend>Dashboard widgets</legend>
+                  <label><input type="checkbox" name="lab-widget-assistant" checked><span>Assistant presence</span></label>
+                  <label><input type="checkbox" name="lab-widget-status" checked><span>Assistant status</span></label>
+                  <label><input type="checkbox" name="lab-widget-voice" checked><span>Voice panel</span></label>
+                  <label><input type="checkbox" name="lab-widget-chat" checked><span>Chat history</span></label>
+                  <label><input type="checkbox" name="lab-widget-system" checked><span>System monitor</span></label>
+                </fieldset>
+              </form>
+              <section class="personalize-preview" id="personalize-preview" aria-label="Live interface preview">
+                <div class="personalize-preview-top"><span>LIVE PREVIEW</span><span>J.A.R.V.I.S.</span></div>
+                <div class="personalize-preview-presence" data-preview-widget="assistant">
+                  <span class="preview-orb" aria-hidden="true"></span>
+                  <strong>At your service.</strong>
+                  <small>PERSONAL AI</small>
+                  <span class="personalize-preview-voice" id="personalize-preview-voice">System default voice</span>
+                </div>
+                <div class="personalize-preview-widgets">
+                  <span data-preview-widget="status">ASSISTANT STATUS</span>
+                  <span data-preview-widget="voice">VOICE CHANNEL</span>
+                  <span data-preview-widget="chat">CHAT HISTORY</span>
+                  <span data-preview-widget="system">SYSTEM MONITOR</span>
+                </div>
+                <p class="personalize-preview-note" id="personalize-preview-note" aria-live="polite">System theme · Comfortable layout</p>
+              </section>
+            </div>
+            <div class="personalize-actions">
+              <p id="personalize-status" role="status" aria-live="polite">Changes are preview-only until applied.</p>
+              <div>
+                <button class="personalize-secondary-button" id="personalize-reset" type="button">Reset</button>
+                <button class="personalize-secondary-button" id="personalize-cancel-footer" type="button">Cancel</button>
+                <button class="personalize-apply-button" id="personalize-apply" type="button">Apply</button>
+              </div>
+            </div>
+          </section>
+          <section class="ai-modify-panel" id="ai-modify-panel" aria-labelledby="ai-modify-title" hidden>
+            <div class="ai-modify-heading">
+              <div>
+                <span class="eyebrow">MODULE 02 / CHANGE PROPOSALS</span>
+                <h2 id="ai-modify-title" tabindex="-1">AI Modify</h2>
+                <p>Describe a change and review the plan, affected workspace files, and code diff before any future approval.</p>
+              </div>
+              <button class="personalize-back-button" id="ai-modify-back" type="button">Back to LAB</button>
+            </div>
+            <div class="ai-modify-safety" role="status">
+              <strong>Interface-only mode</strong>
+              <span id="ai-modify-availability">AI plan generation is not connected. Requests stay in this browser; no AI request, file write, code execution, or backup is performed.</span>
+              <small>Do not include API keys, passwords, tokens, or other secrets. History stores event metadata only, never your request text.</small>
+            </div>
+            <div class="ai-modify-request" id="ai-modify-form" role="group" aria-labelledby="ai-modify-request-label">
+              <label id="ai-modify-request-label" for="ai-modify-request">What would you like to change?</label>
+              <textarea id="ai-modify-request" maxlength="4000" rows="5" placeholder="Describe the J.A.R.V.I.S. change you have in mind..." autocomplete="off"></textarea>
+              <div class="ai-modify-request-actions">
+                <span>Workspace scope: this J.A.R.V.I.S. project only</span>
+                <button class="personalize-apply-button" id="ai-modify-analyze" type="button">Analyze request</button>
+              </div>
+            </div>
+            <section class="ai-modify-review" aria-label="Proposed implementation review">
+              <div class="ai-modify-review-heading">
+                <h3>Proposed implementation plan</h3>
+                <span id="ai-modify-plan-status">No plan generated</span>
+              </div>
+              <p id="ai-modify-plan">A proposal will appear here only when a trusted AI integration is available. Nothing has been generated.</p>
+              <div class="ai-modify-files">
+                <h4>Affected project files</h4>
+                <ul id="ai-modify-files"><li>No files proposed</li></ul>
+              </div>
+              <div class="ai-modify-diff-section">
+                <h4>Code diff preview</h4>
+                <pre id="ai-modify-diff"><code>No diff available. No code has been generated or applied.</code></pre>
+              </div>
+              <p class="ai-modify-backup-note">Future approved changes must be workspace-confined, explicitly approved, backed up before writes, and reversible.</p>
+              <div class="ai-modify-review-actions">
+                <p id="ai-modify-status" role="status" aria-live="polite">AI Modify is currently interface-only.</p>
+                <div>
+                  <button class="personalize-secondary-button" id="ai-modify-cancel" type="button">Cancel</button>
+                  <button class="personalize-secondary-button" id="ai-modify-reject" type="button">Reject</button>
+                  <button class="personalize-apply-button" id="ai-modify-approve" type="button" disabled>Approve changes</button>
+                </div>
+              </div>
+            </section>
+            <section class="ai-modify-history" aria-labelledby="ai-modify-history-title">
+              <div class="ai-modify-review-heading">
+                <h3 id="ai-modify-history-title">Request / proposal history</h3>
+                <span>LOCAL · PRIVATE METADATA ONLY</span>
+              </div>
+              <ol id="ai-modify-history"><li class="ai-modify-history-empty">No proposal activity yet.</li></ol>
+            </section>
+          </section>
+          <section class="code-studio-panel" id="code-studio-panel" aria-labelledby="code-studio-title" hidden>
+            <div class="code-studio-heading">
+              <div>
+                <span class="eyebrow">MODULE 03 / LOCAL CODE WORKSPACE</span>
+                <h2 id="code-studio-title" tabindex="-1">Code Studio</h2>
+                <p>Work with code text locally. This studio never runs code or changes project files.</p>
+              </div>
+              <button class="personalize-back-button" id="code-studio-back" type="button">Back to LAB</button>
+            </div>
+            <div class="code-studio-safety" role="note">
+              <strong>Untrusted text · never executed</strong>
+              <span>Code stays in this tab and is not sent to an AI provider. Imports are previews only; exports download a separate copy and never write into the J.A.R.V.I.S. project.</span>
+              <small>Do not paste or export API keys, passwords, tokens, or other secrets. Review any local code before sharing it.</small>
+            </div>
+            <div class="code-studio-toolbar">
+              <label for="code-studio-language">Language
+                <select id="code-studio-language">
+                  <option value="javascript">JavaScript</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="python">Python</option>
+                  <option value="html">HTML</option>
+                  <option value="css">CSS</option>
+                  <option value="json">JSON</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="text">Plain text</option>
+                </select>
+              </label>
+              <span id="code-studio-highlight-status" role="status">Syntax highlighting unavailable · plain text mode</span>
+              <label class="code-studio-readonly-toggle"><input id="code-studio-readonly" type="checkbox"><span>Read-only preview</span></label>
+            </div>
+            <div class="code-studio-editor-wrap">
+              <label class="sr-only" for="code-studio-editor">Code editor text</label>
+              <textarea id="code-studio-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" placeholder="Paste or type code here. Code is treated as untrusted text and is never executed."></textarea>
+              <div class="code-studio-editor-footer"><span id="code-studio-count">0 characters · 1 line</span><span>LOCAL TAB ONLY · NO PROJECT FILE ACCESS</span></div>
+            </div>
+            <div class="code-studio-actions">
+              <button class="personalize-secondary-button" id="code-studio-import" type="button">Import local file</button>
+              <input id="code-studio-file" type="file" accept=".js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.html,.htm,.css,.json,.md,.txt" hidden>
+              <button class="personalize-secondary-button" id="code-studio-copy" type="button">Copy code</button>
+              <button class="personalize-secondary-button" id="code-studio-clear" type="button">Clear</button>
+              <button class="personalize-apply-button" id="code-studio-export" type="button">Export copy</button>
+            </div>
+            <p class="code-studio-status" id="code-studio-status" role="status" aria-live="polite">Ready for local text preview. Import and export require confirmation.</p>
+            <section class="code-studio-review" id="code-studio-review" aria-labelledby="code-studio-review-title">
+              <div class="ai-modify-review-heading">
+                <h3 id="code-studio-review-title">Local code review</h3>
+                <span>STATIC HEURISTICS · NO EXECUTION</span>
+              </div>
+              <p id="code-studio-review-summary">Paste or import code to see local, non-executing review suggestions.</p>
+              <ul id="code-studio-findings"><li>No review findings.</li></ul>
+            </section>
+          </section>
+          <section class="extensions-panel" id="extensions-panel" aria-labelledby="extensions-title" hidden>
+            <div class="extensions-heading">
+              <div>
+                <span class="eyebrow">MODULE 04 / LOCAL PACKAGE MANAGER</span>
+                <h2 id="extensions-title" tabindex="-1">Extensions</h2>
+                <p>Review package metadata and requested permissions. Managed extensions remain inert; no imported code is loaded or executed.</p>
+              </div>
+              <button class="personalize-back-button" id="extensions-back" type="button">Back to LAB</button>
+            </div>
+            <div class="extensions-safety" role="note">
+              <strong>Untrusted packages · no runtime access</strong>
+              <span>Packages are stored separately from J.A.R.V.I.S. settings. Extensions cannot access AI provider configuration, API keys, passwords, tokens, or other secrets.</span>
+              <small>Only .jarvis-extension.json and .jext JSON packages up to 512 KB are accepted. Package files are treated as data, never imported as application scripts.</small>
+            </div>
+            <div class="extensions-import-row">
+              <input id="extensions-package-file" type="file" accept=".jarvis-extension.json,.jext,application/json" hidden>
+              <button class="personalize-apply-button" id="extensions-import" type="button">Import package</button>
+              <span>Import creates a pending-review entry. Nothing is enabled until you review permissions and approve.</span>
+            </div>
+            <p class="extensions-status" id="extensions-status" role="status" aria-live="polite">No package selected.</p>
+            <section class="extensions-list-section" aria-labelledby="extensions-list-title">
+              <div class="ai-modify-review-heading">
+                <h3 id="extensions-list-title">Managed packages</h3>
+                <span id="extensions-count">0 EXTENSIONS</span>
+              </div>
+              <div class="extensions-list" id="extensions-list">
+                <p class="extensions-empty">No imported extensions.</p>
+              </div>
+            </section>
+            <section class="extensions-history-section" aria-labelledby="extensions-history-title">
+              <div class="ai-modify-review-heading">
+                <h3 id="extensions-history-title">Management history</h3>
+                <span>LOCAL · PRIVATE METADATA</span>
+              </div>
+              <ol id="extensions-history"><li class="extensions-history-empty">No extension activity yet.</li></ol>
+            </section>
+          </section>
+          <p class="lab-disclaimer">LAB STEP 06 ADDS CENTRAL SAFETY GATES. Project changes, generated-code execution, and extension execution remain disabled.</p>
+        </section>
       </main>
       </div>
       <nav class="feature-toolbar" aria-label="Desktop feature shortcuts">
@@ -277,12 +604,12 @@
         <button type="button" data-nav="settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.9 3Z"/></svg><span>Settings</span></button>
       </nav>
       <nav class="mobile-nav" aria-label="Mobile navigation">
-        <button class="is-current" type="button" data-nav="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>AI Chat</span></button>
+        <button class="is-current" type="button" data-nav="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg><span>Home</span></button>
+        <button type="button" data-nav="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>Chat</span></button>
         <button type="button" data-nav="voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Voice</span></button>
-        <button type="button" data-nav="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4zM8 13h8m-8 3h6"/></svg><span>Files</span></button>
-        <button type="button" data-nav="applications"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span>Browser</span></button>
-        <button type="button" data-nav="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Monitor</span></button>
+        <button type="button" data-nav="applications"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span>Apps</span></button>
         <button type="button" data-nav="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
+        <button type="button" data-nav="lab" aria-label="Open J.A.R.V.I.S. LAB"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6m-5 0v6l-5.5 9.2A1.8 1.8 0 0 0 6 21h12a1.8 1.8 0 0 0 1.5-2.8L14 9V3"/><path d="M8 15h8m-6-3h4"/></svg><span>LAB</span></button>
       </nav>
       <footer class="footer-line"><span>J.A.R.V.I.S. <b>01</b></span><span id="footer-status">BROWSER-BASED | PERMISSION-BOUND</span></footer>
     </div>
@@ -389,14 +716,14 @@
         <button class="nav-item" type="button" data-nav="memory">Memory</button>
       </div>
     </dialog>
-    <aside class="runtime-diagnostics" id="runtime-diagnostics" hidden aria-label="J.A.R.V.I.S. diagnostics">
+    <aside class="runtime-diagnostics is-speech-diagnostics" id="runtime-diagnostics" hidden aria-label="Android speech diagnostics">
       <div class="runtime-diagnostics-heading">
-        <strong>J.A.R.V.I.S. diagnostics</strong>
+        <strong>Temporary Android Speech Diagnostics</strong>
         <button id="close-runtime-diagnostics" type="button" aria-label="Close diagnostics">Close</button>
       </div>
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
-    <script src="/diagnostics.js?hud=27"></script>
-    <script src="/app.js?hud=39" type="module"></script>
+    <script src="/diagnostics.js?hud=28"></script>
+    <script src="/app.js?hud=48" type="module"></script>
   </body>
 </html>

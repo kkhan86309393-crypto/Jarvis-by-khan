@@ -263,8 +263,16 @@ function getUpstreamRequestError(error) {
 
 async function readUpstreamJson(upstream, provider) {
   try {
-    return await upstream.json();
+    const data = await upstream.json();
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw Object.assign(new Error(`${provider} returned an invalid JSON response object.`), {
+        status: 502,
+        code: 'INVALID_UPSTREAM_RESPONSE',
+      });
+    }
+    return data;
   } catch (error) {
+    if (error?.code === 'INVALID_UPSTREAM_RESPONSE') throw error;
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw getUpstreamRequestError(error);
     throw Object.assign(new Error(`${provider} returned an invalid response. Check the selected model and provider configuration.`), {
       status: 502,
@@ -416,6 +424,16 @@ async function configureAI(body) {
   return publicAIConfig();
 }
 
+export function getAssistantText(content) {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((part) => part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
+}
+
 async function handleChat(request, response) {
   const body = await readJson(request);
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -520,11 +538,14 @@ async function handleChat(request, response) {
       });
     }
     const data = await readUpstreamJson(upstream, 'AI provider');
-    const content = data.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) {
-      throw Object.assign(new Error('AI provider returned an empty response.'), { status: 502 });
+    const content = getAssistantText(data.choices?.[0]?.message?.content);
+    if (!content) {
+      throw Object.assign(new Error('AI provider returned no usable text. Check the selected model response format and provider logs.'), {
+        status: 502,
+        code: 'EMPTY_AI_RESPONSE',
+      });
     }
-    sendJson(response, 200, { reply: content.trim(), provider: config.model });
+    sendJson(response, 200, { reply: content, provider: config.model });
     return;
   }
 
@@ -609,16 +630,16 @@ async function handleVision(request, response) {
   }
 
   const data = await readUpstreamJson(upstream, providerName);
-  const content = config.provider === 'ollama'
+  const content = getAssistantText(config.provider === 'ollama'
     ? data.message?.content
-    : data.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
+    : data.choices?.[0]?.message?.content);
+  if (!content) {
     throw Object.assign(new Error('The selected AI model returned no Vision response. Confirm that it supports image input.'), {
       status: 502,
       code: 'EMPTY_VISION_RESPONSE',
     });
   }
-  sendJson(response, 200, { reply: content.trim(), provider: providerName });
+  sendJson(response, 200, { reply: content, provider: providerName });
 }
 
 async function inspectOllama(config) {
@@ -898,6 +919,17 @@ export function createAppServer() {
         return;
       }
       const status = error.status || (error.name === 'TimeoutError' || error.name === 'AbortError' ? 504 : 502);
+      if (url.pathname.startsWith('/api/')) {
+        const code = typeof error.code === 'string' ? error.code : `HTTP_${status}`;
+        const message = sanitizeProviderErrorMessage(error.message, getAIConfig()?.apiKey || '', status);
+        console.error('[J.A.R.V.I.S.] API request failed', JSON.stringify({
+          method: request.method,
+          path: url.pathname,
+          status,
+          code,
+          message,
+        }));
+      }
       sendJson(response, status, {
         error: error.message || 'The request could not be completed.',
         ...(typeof error.code === 'string' ? { code: error.code } : {}),
