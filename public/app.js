@@ -410,10 +410,9 @@ function loadPreferences() {
 
 function loadWorkspaceView() {
   try {
-    const defaultView = window.matchMedia?.('(max-width: 780px)').matches ? 'dashboard' : 'chat';
-    return readWorkspaceView(localStorage, defaultView);
+    return readWorkspaceView(localStorage, 'dashboard');
   } catch {
-    return 'chat';
+    return 'dashboard';
   }
 }
 
@@ -491,6 +490,8 @@ const wakeWordRecoveryPolicy = createWakeWordRecoveryPolicy();
 const microphonePermissionGuard = createMicrophonePermissionGuard();
 const portraitAnimation = createPortraitAnimation({
   onChange: (detail) => {
+    elements.avatarImage.dataset.blink = detail.blink;
+    elements.avatarImage.dataset.mouth = detail.mouth;
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
 });
@@ -1651,7 +1652,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
       || state.assistantMode !== 'speaking'
     ) return;
     applySpeechBoundaryCue(speechText, event, (opening, viseme) => {
-      portraitAnimation.setViseme(playbackId, viseme);
+      portraitAnimation.setViseme(playbackId, viseme, opening);
       if (avatar3dActivated && avatar3dInstance) {
         avatar3dInstance.setMouth?.(opening);
         avatar3dInstance.setViseme?.(viseme);

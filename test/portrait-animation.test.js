@@ -60,7 +60,7 @@ function createHarness({ reducedMotion = false, random = () => 0 } = {}) {
   };
 }
 
-test('blinking runs independently of speech with a short, staged closure', () => {
+test('blinking runs independently of speech through closure and reopening stages', () => {
   const harness = createHarness();
 
   assert.equal(harness.current.blink, 'open');
@@ -68,11 +68,11 @@ test('blinking runs independently of speech with a short, staged closure', () =>
   harness.advance(2_800);
   assert.equal(harness.current.blink, 'half');
   assert.equal(harness.current.speaking, false);
-  harness.advance(45);
+  harness.advance(75);
   assert.equal(harness.current.blink, 'closed');
-  harness.advance(65);
-  assert.equal(harness.current.blink, 'half');
-  harness.advance(55);
+  harness.advance(80);
+  assert.equal(harness.current.blink, 'reopening');
+  harness.advance(85);
   assert.equal(harness.current.blink, 'open');
 
   harness.animation.destroy();
@@ -86,16 +86,50 @@ test('speech visemes are playback-scoped and return to neutral on pause, resume,
   assert.equal(animation.startSpeech(12), true);
   assert.equal(animation.setViseme(12, 'oh'), true);
   assert.equal(harness.current.viseme, 'oh');
+  assert.equal(harness.current.mouth, 'medium');
   assert.equal(animation.pauseSpeech(12), true);
   assert.equal(harness.current.viseme, 'neutral');
+  assert.equal(harness.current.mouth, 'rest');
   assert.equal(harness.current.speaking, false);
   assert.equal(animation.setViseme(12, 'aa'), false);
   assert.equal(animation.resumeSpeech(12), true);
   assert.equal(animation.setViseme(12, 'ee'), true);
   assert.equal(animation.finishSpeech(12), true);
   assert.equal(harness.current.viseme, 'neutral');
+  assert.equal(harness.current.mouth, 'rest');
   assert.equal(harness.current.speaking, false);
   assert.equal(animation.setViseme(12, 'oh'), false);
+
+  animation.destroy();
+});
+
+test('speech opening cues transition through the four portrait mouth states', () => {
+  const harness = createHarness();
+  const { animation } = harness;
+
+  assert.equal(harness.current.mouth, 'rest');
+  animation.startSpeech(21);
+  assert.equal(animation.setViseme(21, 'aa', 0.08), true);
+  assert.equal(harness.current.mouth, 'rest');
+  assert.equal(animation.setViseme(21, 'ih', 0.28), true);
+  assert.equal(harness.current.mouth, 'slight');
+  assert.equal(animation.setViseme(21, 'ou', 0.5), true);
+  assert.equal(harness.current.mouth, 'medium');
+  assert.equal(animation.setViseme(21, 'aa', 0.72), true);
+  assert.equal(harness.current.mouth, 'wide');
+  harness.advance(2_800);
+  assert.equal(harness.current.blink, 'half');
+  assert.equal(harness.current.mouth, 'wide');
+  harness.advance(75);
+  assert.equal(harness.current.blink, 'closed');
+  assert.equal(harness.current.mouth, 'wide');
+  harness.advance(80);
+  assert.equal(harness.current.blink, 'reopening');
+  assert.equal(harness.current.mouth, 'wide');
+  harness.advance(85);
+  assert.equal(harness.current.blink, 'open');
+  assert.equal(animation.finishSpeech(21), true);
+  assert.equal(harness.current.mouth, 'rest');
 
   animation.destroy();
 });
@@ -111,6 +145,7 @@ test('stale playback callbacks cannot replace or clear the current mouth state',
   assert.equal(animation.setViseme(1, 'oh'), false);
   assert.equal(harness.current.speaking, true);
   assert.equal(harness.current.viseme, 'neutral');
+  assert.equal(harness.current.mouth, 'rest');
   assert.equal(animation.setViseme(2, 'ee'), true);
   assert.equal(animation.cancelSpeech(), true);
   assert.equal(harness.current.viseme, 'neutral');
@@ -131,6 +166,7 @@ test('reduced motion disables blink and mouth movement, including when enabled m
   harness.setReducedMotion(true);
   assert.equal(harness.current.blink, 'open');
   assert.equal(harness.current.viseme, 'neutral');
+  assert.equal(harness.current.mouth, 'rest');
   assert.equal(harness.animation.setViseme(3, 'oh'), false);
   harness.advance(10_000);
   assert.equal(harness.current.blink, 'open');

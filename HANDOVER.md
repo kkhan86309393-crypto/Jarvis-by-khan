@@ -86,16 +86,16 @@ These changes are committed locally in the progress snapshot above; review that 
 - Mouth state resets on pause, end, error, timeout, and cancellation; playback identifiers reject stale callbacks.
 - Speech lifecycle is wired from `public/app.js`; optional 3D avatar controls remain separate.
 
-This is **not visible facial animation yet**. No CSS masks or fabricated overlays are used. The existing portrait remains unchanged. The JPG/reference and screenshot assets are not pixel-aligned facial overlays and must not be used as live animation frames.
+The static portrait now has a visible, approximate blink made from CSS eyelid overlays. Their size and placement are constrained to the eye area, with staged open/half/closed states and reduced-motion handling. The canonical portrait remains unchanged; the closed-eye reference image is not loaded by production markup or styles. This is a visual approximation, not a photorealistic eyelid reconstruction.
 
-Still required for visible animation: aligned, transparent, full-canvas 1199×1312 RGBA facial assets, at minimum half/closed blink frames plus neutral and viseme mouth frames (`aa`, `ee`, `oh`; optionally `ih`/`ou`). They must be authored/retouched against the original portrait and composited/alignment-checked before wiring visuals.
+For more natural blink contours and accurate speech lip-sync, aligned, transparent, full-canvas 1199×1312 RGBA facial assets or a facial rig are still needed. Any new assets should be authored/retouched against the original portrait and alignment-checked; the closed-eye reference and screenshots must not be used as production portrait frames.
 
 ## Validation
 
-Last validation on the current worktree:
+Latest validation:
 
 - `npm run check`: passed, including avatar bundle build and JavaScript syntax checks.
-- `node --test`: passed, 199 tests, 0 failures.
+- `node --test test/portrait-animation.test.js test/server.test.js test/service-worker.test.js`: passed, 52 tests, 0 failures.
 - `git diff --check`: passed.
 
 The test suite prints expected simulated upstream/API failures from negative-path tests; the final suite status is still 199/199 passing.

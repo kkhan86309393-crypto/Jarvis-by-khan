@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>J.A.R.V.I.S. 2D Portrait Idle Motion Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #07101f;
+        color: #e7f2ff;
+        font: 15px/1.5 system-ui, sans-serif;
+      }
+
+      body { max-width: 900px; margin: 0 auto; padding: 28px 20px 44px; }
+      h1 { margin: 0 0 8px; font-size: 1.5rem; }
+      p { max-width: 680px; color: #adbed4; }
+      .preview { width: min(100%, 430px); margin: 24px auto; }
+      .stage {
+        position: relative;
+        overflow: hidden;
+        width: 100%;
+        aspect-ratio: 1199 / 1312;
+        border: 1px solid rgba(104, 194, 255, .36);
+        border-radius: 47% 47% 33% 33% / 34% 34% 25% 25%;
+        background: radial-gradient(ellipse at 50% 42%, rgba(32, 113, 190, .19), #07101f 69%);
+        box-shadow: 0 0 36px rgba(39, 139, 241, .24);
+      }
+      .artwork { position: absolute; inset: 0; transform: scale(1); transform-origin: 50% 52%; animation: gentle-breath 7s ease-in-out infinite; }
+      .artwork img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 42%; }
+      .blink-layer, .mouth-layer { opacity: 0; }
+      .blink-half { animation: blink-half 7s linear infinite; }
+      .blink-closed { animation: blink-closed 7s linear infinite; }
+      .blink-reopening { animation: blink-reopening 7s linear infinite; }
+      .mouth-rest { opacity: 1; }
+      .motion-label { margin-top: 12px; color: #a9eaff; text-align: center; font-size: .82rem; letter-spacing: .08em; }
+      .details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 640px; margin: 24px auto 0; }
+      .details p { margin: 0; padding: 12px; border: 1px solid #253951; border-radius: 8px; background: #0c192a; font-size: .9rem; }
+      @keyframes gentle-breath {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.007); }
+      }
+      @keyframes blink-half {
+        0%, 43%, 44.5%, 100% { opacity: 0; }
+        43.5%, 44% { opacity: 1; }
+      }
+      @keyframes blink-closed {
+        0%, 44.4%, 45.2%, 100% { opacity: 0; }
+        44.6%, 45% { opacity: 1; }
+      }
+      @keyframes blink-reopening {
+        0%, 45.1%, 46.5%, 100% { opacity: 0; }
+        45.5%, 46% { opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .artwork, .blink-layer { animation: none !important; }
+        .artwork { transform: none; }
+      }
+      @media (max-width: 560px) {
+        body { padding: 20px 14px 32px; }
+        .preview { width: min(100%, 350px); }
+        .details { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>2D Portrait — gentle idle breathing</h1>
+    <p>A deliberately subtle 0.7% scale pulse over seven seconds. The portrait, blink layer, and resting mouth layer share one animated wrapper, so their alignment is preserved. No rotation or application files are involved.</p>
+    <main>
+      <section class="preview" aria-label="Animated 2D portrait preview">
+        <div class="stage">
+          <div class="artwork">
+            <img src="../../public/jarvis-portrait.png" alt="Original J.A.R.V.I.S. portrait">
+            <img class="blink-layer blink-half" src="../../public/jarvis-eye-blink-half.png" alt="">
+            <img class="blink-layer blink-closed" src="../../public/jarvis-eye-blink-closed.png" alt="">
+            <img class="blink-layer blink-reopening" src="../../public/jarvis-eye-blink-reopening.png" alt="">
+            <img class="mouth-layer mouth-rest" src="../../public/jarvis-mouth-rest.png" alt="">
+            <img class="mouth-layer" src="../../public/jarvis-mouth-slight.png" alt="">
+            <img class="mouth-layer" src="../../public/jarvis-mouth-medium.png" alt="">
+            <img class="mouth-layer" src="../../public/jarvis-mouth-wide.png" alt="">
+          </div>
+        </div>
+        <div class="motion-label">IDLE · SLOW BREATH · EYES MAY BLINK</div>
+      </section>
+      <section class="details" aria-label="Preview design notes">
+        <p><strong>Motion:</strong> slow scale only, from 100% to 100.7%, with a smooth return.</p>
+        <p><strong>Alignment:</strong> portrait, eyelids, and all mouth states move together as one layer group.</p>
+        <p><strong>Scope:</strong> isolated 2D preview only; no 3D Avatar, Earth, hologram, or interface changes.</p>
+        <p><strong>Accessibility:</strong> reduced-motion preference disables the breathing and blink preview.</p>
+      </section>
+    </main>
+  </body>
+</html>

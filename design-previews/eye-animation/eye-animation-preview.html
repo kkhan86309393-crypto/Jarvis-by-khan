@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>J.A.R.V.I.S. Eye Animation Preview</title>
+    <style>
+      :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #07101f; color: #e7f2ff; }
+      body { max-width: 1180px; margin: 0 auto; padding: 28px 20px 44px; }
+      h1 { margin: 0 0 8px; font-size: 1.5rem; }
+      p { max-width: 760px; color: #adbed4; }
+      .sequence { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 24px; }
+      figure { margin: 0; padding: 10px; border: 1px solid #253951; border-radius: 10px; background: #0c192a; }
+      figcaption { margin: 0 0 8px; font-weight: 650; color: #a9eaff; }
+      .portrait { position: relative; overflow: hidden; width: 100%; aspect-ratio: 1199 / 1312; background: #000; }
+      .portrait img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+      .portrait .overlay { pointer-events: none; }
+      .note { margin-top: 20px; font-size: .9rem; }
+      @media (max-width: 720px) { .sequence { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    </style>
+  </head>
+  <body>
+    <h1>J.A.R.V.I.S. Eye Animation — visual concept</h1>
+    <p>Original portrait is shown unchanged as the base. Transparent PNG eyelid layers are previews only and are not connected to the application.</p>
+    <main class="sequence">
+      <figure>
+        <figcaption>1 · Open</figcaption>
+        <div class="portrait"><img src="../../public/jarvis-portrait.png" alt="Original open-eye portrait"></div>
+      </figure>
+      <figure>
+        <figcaption>2 · Half-closed</figcaption>
+        <div class="portrait">
+          <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+          <img class="overlay" src="eyelids-half.png" alt="">
+        </div>
+      </figure>
+      <figure>
+        <figcaption>3 · Closed</figcaption>
+        <div class="portrait">
+          <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+          <img class="overlay" src="eyelids-closed.png" alt="">
+        </div>
+      </figure>
+      <figure>
+        <figcaption>4 · Reopening</figcaption>
+        <div class="portrait">
+          <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+          <img class="overlay" src="eyelids-reopening.png" alt="">
+        </div>
+      </figure>
+    </main>
+    <p class="note">These concept layers adapt the supplied closed-eye reference to the open portrait; facial lighting and lash styling still need review. No production files or original portrait pixels were modified.</p>
+  </body>
+</html>

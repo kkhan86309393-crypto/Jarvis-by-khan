@@ -13,13 +13,27 @@ export function createPortraitAnimation({
 } = {}) {
   let blink = 'open';
   let viseme = 'neutral';
+  let mouth = 'rest';
   let speaking = false;
   let activePlaybackId = null;
   let destroyed = false;
   const blinkTimers = new Set();
 
   function emit() {
-    if (!destroyed) onChange({ blink, viseme, speaking });
+    if (!destroyed) onChange({ blink, viseme, mouth, speaking });
+  }
+
+  function getMouthState(nextViseme, opening) {
+    if (!Number.isFinite(opening)) {
+      if (nextViseme === 'neutral') return 'rest';
+      if (nextViseme === 'ih' || nextViseme === 'ee') return 'slight';
+      if (nextViseme === 'oh' || nextViseme === 'ou') return 'medium';
+      return 'wide';
+    }
+    if (opening <= 0.12) return 'rest';
+    if (opening <= 0.4) return 'slight';
+    if (opening <= 0.64) return 'medium';
+    return 'wide';
   }
 
   function scheduleBlink(callback, delay) {
@@ -44,15 +58,15 @@ export function createPortraitAnimation({
         blink = 'closed';
         emit();
         scheduleBlink(() => {
-          blink = 'half';
+          blink = 'reopening';
           emit();
           scheduleBlink(() => {
             blink = 'open';
             emit();
             scheduleNextBlink();
-          }, 55);
-        }, 65);
-      }, 45);
+          }, 85);
+        }, 80);
+      }, 75);
     }, BLINK_MIN_INTERVAL_MS + random() * BLINK_INTERVAL_RANGE_MS);
   }
 
@@ -61,6 +75,7 @@ export function createPortraitAnimation({
     if (reducedMotionQuery?.matches) {
       blink = 'open';
       viseme = 'neutral';
+      mouth = 'rest';
       emit();
     } else {
       scheduleNextBlink();
@@ -79,6 +94,7 @@ export function createPortraitAnimation({
     activePlaybackId = null;
     speaking = false;
     viseme = 'neutral';
+    mouth = 'rest';
     emit();
     return true;
   }
@@ -102,10 +118,11 @@ export function createPortraitAnimation({
       activePlaybackId = playbackId;
       speaking = true;
       viseme = 'neutral';
+      mouth = 'rest';
       emit();
       return true;
     },
-    setViseme(playbackId, nextViseme) {
+    setViseme(playbackId, nextViseme, opening) {
       if (
         destroyed
         || playbackId !== activePlaybackId
@@ -114,6 +131,7 @@ export function createPortraitAnimation({
         || !VISMESES.has(nextViseme)
       ) return false;
       viseme = nextViseme;
+      mouth = getMouthState(nextViseme, opening);
       emit();
       return true;
     },
@@ -121,6 +139,7 @@ export function createPortraitAnimation({
       if (destroyed || playbackId !== activePlaybackId) return false;
       speaking = false;
       viseme = 'neutral';
+      mouth = 'rest';
       emit();
       return true;
     },
@@ -128,6 +147,7 @@ export function createPortraitAnimation({
       if (destroyed || playbackId !== activePlaybackId) return false;
       speaking = true;
       viseme = 'neutral';
+      mouth = 'rest';
       emit();
       return true;
     },
@@ -136,6 +156,7 @@ export function createPortraitAnimation({
       activePlaybackId = null;
       speaking = false;
       viseme = 'neutral';
+      mouth = 'rest';
       emit();
       return true;
     },

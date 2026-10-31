@@ -69,18 +69,25 @@ async function dispatchFetch(worker, request) {
   return responsePromise;
 }
 
-test('installs the lightweight app shell without avatar assets', async () => {
+test('installs the app shell with the portrait blink overlays', async () => {
   const worker = createWorker();
   let installation;
   worker.listeners.get('install')({ waitUntil: (promise) => { installation = promise; } });
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=53'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=60'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-portrait.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-eye-blink-half.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-eye-blink-closed.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-eye-blink-reopening.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-mouth-rest.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-mouth-slight.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-mouth-medium.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-mouth-wide.png'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/portrait-animation.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/diagnostics.js?hud=28'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=56'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=58'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-planner.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-memory.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/smart-command-router.js'));
@@ -106,7 +113,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v66');
+  assert.equal(version, 'jarvis-shell-v73');
 
   let ignored = false;
   worker.listeners.get('message')({

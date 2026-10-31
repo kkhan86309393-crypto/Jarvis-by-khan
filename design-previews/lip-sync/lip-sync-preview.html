@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>J.A.R.V.I.S. Lip-Sync Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #07101f;
+        color: #e7f2ff;
+        font: 15px/1.5 system-ui, sans-serif;
+      }
+
+      body { max-width: 1180px; margin: 0 auto; padding: 28px 20px 44px; }
+      h1 { margin: 0 0 8px; font-size: 1.5rem; }
+      p { max-width: 760px; color: #adbed4; }
+      .states { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 24px; }
+      figure { margin: 0; padding: 10px; border: 1px solid #253951; border-radius: 10px; background: #0c192a; }
+      figcaption { margin: 0 0 8px; font-weight: 650; color: #a9eaff; }
+      .portrait { position: relative; overflow: hidden; width: 100%; aspect-ratio: 23 / 11; background: #07101f; }
+      .portrait img { position: absolute; top: -463.64%; left: -217.39%; width: 521.3%; height: 1192.73%; max-width: none; object-fit: fill; }
+      .mouth { pointer-events: none; }
+      .motion-preview { display: grid; grid-template-columns: minmax(220px, 360px) minmax(220px, 1fr); align-items: center; gap: 24px; margin-top: 28px; }
+      .motion-preview figure { max-width: 380px; }
+      .motion-portrait .mouth { opacity: 0; }
+      .motion-portrait .mouth-slight { animation: mouth-slight 5s ease-in-out infinite; }
+      .motion-portrait .mouth-medium { animation: mouth-medium 5s ease-in-out infinite; }
+      .motion-portrait .mouth-wide { animation: mouth-wide 5s ease-in-out infinite; }
+      @keyframes mouth-slight {
+        0%, 8%, 18%, 24%, 64%, 72%, 76%, 80%, 100% { opacity: 0; }
+        14%, 20%, 68%, 74% { opacity: 1; }
+      }
+      @keyframes mouth-medium {
+        0%, 22%, 30%, 38%, 50%, 58%, 66%, 100% { opacity: 0; }
+        26%, 34%, 54%, 56% { opacity: 1; }
+      }
+      @keyframes mouth-wide {
+        0%, 38%, 54%, 100% { opacity: 0; }
+        42%, 46%, 50% { opacity: 1; }
+      }
+      .sequence { display: flex; flex-wrap: wrap; gap: 8px; color: #adbed4; }
+      .sequence span { padding: 5px 9px; border: 1px solid #253951; border-radius: 999px; background: #0c192a; }
+      .note { margin-top: 20px; font-size: .9rem; }
+      @media (max-width: 720px) {
+        .states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .motion-preview { grid-template-columns: 1fr; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .motion-portrait .mouth { animation: none; opacity: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>J.A.R.V.I.S. Portrait Lip-Sync — visual preview</h1>
+    <p>Close-up comparison of the original 1199×1312 portrait's lip contour. The source portrait remains unchanged; only the inner mouth opening is overlaid, with warm cavity shading and softly feathered edges. No teeth or replacement facial details are added.</p>
+
+    <main>
+      <section class="states" aria-label="Mouth shape comparison">
+        <figure>
+          <figcaption>Resting · original lips</figcaption>
+          <div class="portrait"><img src="../../public/jarvis-portrait.png" alt="Unchanged portrait in its natural closed-mouth resting state"></div>
+        </figure>
+        <figure>
+          <figcaption>Slight · narrow central opening</figcaption>
+          <div class="portrait">
+            <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+            <img class="mouth" src="mouth-slight.png" alt="">
+          </div>
+        </figure>
+        <figure>
+          <figcaption>Medium · rounded and deeper</figcaption>
+          <div class="portrait">
+            <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+            <img class="mouth" src="mouth-medium.png" alt="">
+          </div>
+        </figure>
+        <figure>
+          <figcaption>Wide · fuller natural opening</figcaption>
+          <div class="portrait">
+            <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+            <img class="mouth" src="mouth-wide.png" alt="">
+          </div>
+        </figure>
+      </section>
+
+      <section class="motion-preview" aria-label="Animated lip-sync sequence">
+        <figure>
+          <figcaption>Animated return to rest</figcaption>
+          <div class="portrait motion-portrait">
+            <img src="../../public/jarvis-portrait.png" alt="Original portrait">
+            <img class="mouth mouth-slight" src="mouth-slight.png" alt="">
+            <img class="mouth mouth-medium" src="mouth-medium.png" alt="">
+            <img class="mouth mouth-wide" src="mouth-wide.png" alt="">
+          </div>
+        </figure>
+        <div>
+          <p>Preview sequence, looping with soft transitions:</p>
+          <div class="sequence" aria-label="Resting, slight, medium, wide, medium, slight, resting">
+            <span>Rest</span><span>Slight</span><span>Medium</span><span>Wide</span><span>Medium</span><span>Slight</span><span>Rest</span>
+          </div>
+          <p class="note">The resting view shows the original portrait pixels without an overlay. All mouth layers are transparent PNGs aligned to the original canvas.</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

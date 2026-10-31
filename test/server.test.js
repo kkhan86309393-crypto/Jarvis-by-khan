@@ -146,6 +146,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.png"/);
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar"/);
+  assert.match(html, /class="portrait-blink" aria-hidden="true"/);
+  assert.doesNotMatch(html, /closed-eye-portrait-reference\.png/);
   assert.doesNotMatch(html, /ai-avatar\.jpg/);
   assert.doesNotMatch(html, /avatar-shortcuts/);
   assert.equal((html.match(/class="orbit orbit-(?:one|two)"/g) || []).length, 2);
@@ -284,7 +286,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?hud=56/);
+  assert.match(html, /app\.js\?hud=58/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -330,7 +332,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /setWorkspaceView\('chat'\)/);
   assert.match(client, /toggleStudyMode/);
   assert.match(client, /loadSystemMetrics/);
-  assert.match(interfaceSwitcher, /LEGACY_PREFERENCE_KEYS = \['jarvis\.interface\.mode\.v6', 'jarvis\.interface\.mode\.v5', 'jarvis\.interface\.mode\.v4'\]/);
+  assert.match(interfaceSwitcher, /const PREFERENCE_KEY = 'jarvis\.interface\.mode\.v8'/);
+  assert.match(interfaceSwitcher, /LEGACY_PREFERENCE_KEYS = \[\s*'jarvis\.interface\.mode\.v7',\s*'jarvis\.interface\.mode\.v6',\s*'jarvis\.interface\.mode\.v5',\s*'jarvis\.interface\.mode\.v4'/);
   assert.match(html, /id="install-button"/);
   assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
   assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=3'\)/);
@@ -390,6 +393,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /updateMetricGauge\(elements\.diskMeterTrack, elements\.diskMeter, metrics\.diskPercent\)/);
   assert.match(client, /function handleDashboardFeature/);
   assert.match(client, /function updateHologramState\(\)/);
+  assert.match(client, /function loadWorkspaceView\(\) \{\s*try \{\s*return readWorkspaceView\(localStorage, 'dashboard'\)/);
   assert.match(client, /elements\.statePanelLive\.textContent = announcement\.toUpperCase\(\)/);
   assert.match(client, /elements\.holoWaveform\.classList\.toggle\('is-active', voiceActive\)/);
   assert.match(client, /state\.assistantMode = supportedModes\.includes\(mode\) \? mode : 'normal';[\s\S]*?updateHologramState\(\)/);
@@ -406,6 +410,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(deviceMonitor, /export function detectDeviceProfile/);
   assert.match(html, /Device details use browser-reported information/);
   assert.match(styles, /body\.new-interface \.right-rail[\s\S]*overflow-y: auto/);
+  assert.match(styles, /body\.new-interface \.dashboard-layout \{\s*height: auto;\s*min-height: 0;\s*display: flex;\s*flex-direction: column;/);
+  assert.match(styles, /body\.new-interface \.right-rail \{\s*grid-row: auto;\s*max-height: none;\s*overflow: visible;/);
+  assert.match(styles, /body\.new-interface \.right-rail > \.dashboard-panel \{\s*order: 0;/);
+  const finalDashboardLayout = styles.slice(styles.lastIndexOf('body.new-interface .dashboard-layout {\n  height: auto;'));
+  assert.match(finalDashboardLayout, /^body\.new-interface \.dashboard-layout \{\s*height: auto;\s*min-height: 0;\s*max-height: none;\s*display: flex;\s*flex-direction: column;/);
+  assert.match(finalDashboardLayout, /body\.new-interface \.right-rail \{\s*grid-area: auto;\s*grid-row: auto;\s*max-height: none;\s*display: flex;\s*flex-direction: column;\s*overflow: visible;/);
+  assert.match(styles, /@media \(max-width: 780px\)\s*\{\s*body\.new-interface \.dashboard-layout \{\s*gap: 12px;/);
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /<canvas class="avatar-canvas" id="avatar-canvas"[^>]*><\/canvas>\s*<div class="holo-emitter"/);
   assert.match(html, /<div class="avatar-frame portrait-cutout-frame">\s*<img class="ai-avatar/);
@@ -443,11 +454,34 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.doesNotMatch(dashboardStyles, /orbit-three|holo-grid|core-halo|hud-build-tag/);
   assert.match(dashboardStyles, /body\.new-interface \.dashboard-command \{[\s\S]*?grid-template-columns: 44px minmax\(0, 1fr\) 44px/);
   assert.match(dashboardStyles, /body\.new-interface \.state-panel \.holo-state-strip \{[\s\S]*?grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  const mobileDashboardStyles = styles.slice(styles.lastIndexOf('@media (max-width: 780px)'));
+  assert.match(mobileDashboardStyles, /body\.new-interface \.dashboard-layout \{[\s\S]*?height: auto;[\s\S]*?grid-template-areas: "presence" "status" "command" "info"/);
+  assert.match(mobileDashboardStyles, /body\.new-interface \.holo-stage \{[\s\S]*?width: min\(calc\(100vw - 22px\), 390px\)/);
+  assert.match(mobileDashboardStyles, /body\.new-interface \.holo-sphere-shell \{[\s\S]*?border: 1px solid/);
+  assert.match(mobileDashboardStyles, /body\.new-interface \.orbit-one,[\s\S]*?body\.new-interface \.orbit-two \{[\s\S]*?display: block/);
+  assert.match(mobileDashboardStyles, /body\.new-interface \.state-panel,[\s\S]*?body\.new-interface \.right-rail \.dashboard-panel \{[\s\S]*?background:[\s\S]*?box-shadow:/);
   assert.match(styles, /@keyframes holo-wave/);
   assert.match(styles, /\.holo-state\.is-current/);
   assert.match(styles, /\.activity-log \{ min-height: 150px; flex: 1/);
   assert.match(styles, /body\.new-interface \.presence \{[^}]*display: grid/);
   assert.match(styles, /body\.new-interface \.ai-avatar \{[^}]*object-fit: cover;[^}]*filter: none;/);
+  assert.match(html, /data-blink-state="half" src="\/jarvis-eye-blink-half\.png"/);
+  assert.match(html, /data-blink-state="closed" src="\/jarvis-eye-blink-closed\.png"/);
+  assert.match(html, /data-blink-state="reopening" src="\/jarvis-eye-blink-reopening\.png"/);
+  assert.match(html, /data-mouth-state="rest" src="\/jarvis-mouth-rest\.png"/);
+  assert.match(html, /data-mouth-state="slight" src="\/jarvis-mouth-slight\.png"/);
+  assert.match(html, /data-mouth-state="medium" src="\/jarvis-mouth-medium\.png"/);
+  assert.match(html, /data-mouth-state="wide" src="\/jarvis-mouth-wide\.png"/);
+  assert.match(styles, /\.ai-avatar\[data-blink="half"\] \+ \.portrait-blink \[data-blink-state="half"\]/);
+  assert.match(styles, /\.ai-avatar\[data-blink="closed"\] \+ \.portrait-blink \[data-blink-state="closed"\]/);
+  assert.match(styles, /\.ai-avatar\[data-blink="reopening"\] \+ \.portrait-blink \[data-blink-state="reopening"\]/);
+  assert.match(styles, /\.portrait-blink-layer \{[^}]*object-fit: cover;[^}]*opacity: 0;[^}]*transition: opacity 65ms/);
+  assert.match(styles, /\.portrait-blink-layer \{ opacity: 0 !important; transition: none; \}/);
+  assert.match(styles, /\.ai-avatar\[data-mouth="rest"\] \+ \.portrait-blink \+ \.portrait-speech \[data-mouth-state="rest"\]/);
+  assert.match(styles, /\.ai-avatar\[data-mouth="slight"\] \+ \.portrait-blink \+ \.portrait-speech \[data-mouth-state="slight"\]/);
+  assert.match(styles, /\.ai-avatar\[data-mouth="medium"\] \+ \.portrait-blink \+ \.portrait-speech \[data-mouth-state="medium"\]/);
+  assert.match(styles, /\.ai-avatar\[data-mouth="wide"\] \+ \.portrait-blink \+ \.portrait-speech \[data-mouth-state="wide"\]/);
+  assert.match(styles, /\.portrait-speech-layer \{ opacity: 0 !important; transition: none; \}/);
   assert.match(styles, /body\.new-interface \.holo-waveform\.is-active i/);
   assert.match(styles, /body\.new-interface \.holo-emitter/);
   assert.match(styles, /\.holo-stage\.is-globe-active > \.avatar-canvas \{[^}]*z-index: 2;[\s\S]*?transform: none;/);
@@ -458,9 +492,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-emitter::before \{[^}]*width: 32%;[\s\S]*?height: 220%;[\s\S]*?var\(--avatar-holo-secondary\) 96%/);
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-emitter::after \{[^}]*display: none;/);
   assert.match(styles, /@media \(max-width: 780px\)[\s\S]*?body\.new-interface \.holo-stage\.is-globe-active \{[^}]*width: min\(calc\(100vw - 28px\), 440px\)/);
-  assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: sticky/);
+  assert.match(mobileDashboardStyles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: static;[\s\S]*?bottom: auto;[\s\S]*?z-index: auto/);
+  assert.doesNotMatch(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*position: sticky/);
+  assert.match(mobileDashboardStyles, /body\.new-interface \.main-frame \{[^}]*padding: 7px 0 calc\(80px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?hud=53/);
+  assert.match(html, /styles\.css\?hud=60/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -477,13 +513,17 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v66/);
-  assert.match(worker, /styles\.css\?hud=53/);
+  assert.match(worker, /jarvis-shell-v73/);
+  assert.match(worker, /styles\.css\?hud=60/);
   assert.match(worker, /jarvis-portrait\.png/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=53/);
+  assert.match(worker, /jarvis-mouth-rest\.png/);
+  assert.match(worker, /jarvis-mouth-slight\.png/);
+  assert.match(worker, /jarvis-mouth-medium\.png/);
+  assert.match(worker, /jarvis-mouth-wide\.png/);
+  assert.doesNotMatch(worker, /closed-eye-portrait-reference\.png/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?hud=56/);
+  assert.match(worker, /app\.js\?hud=58/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -511,10 +551,12 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /TTS utterance onend/);
   assert.match(client, /createPortraitAnimation/);
   assert.match(client, /PORTRAIT_ANIMATION_EVENT/);
+  assert.match(client, /elements\.avatarImage\.dataset\.blink = detail\.blink/);
+  assert.match(client, /elements\.avatarImage\.dataset\.mouth = detail\.mouth/);
   assert.match(client, /portraitAnimation\.startSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.pauseSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.resumeSpeech\(playbackId\)/);
-  assert.match(client, /portraitAnimation\.setViseme\(playbackId, viseme\)/);
+  assert.match(client, /portraitAnimation\.setViseme\(playbackId, viseme, opening\)/);
   assert.match(client, /state\.assistantMode !== 'speaking'/);
   assert.match(client, /portraitAnimation\.finishSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.cancelSpeech\(\)/);
@@ -615,24 +657,24 @@ test('switches between the original chat and new dashboard in both directions', 
   }
 });
 
-test('defaults to the original interface and remembers the selected interface', () => {
-  const values = new Map([['jarvis.interface.mode.v6', 'new']]);
+test('defaults to the dashboard and remembers the selected interface', () => {
+  const values = new Map([['jarvis.interface.mode.v7', 'old']]);
   const storage = {
     getItem(key) { return values.get(key) ?? null; },
     setItem(key, value) { values.set(key, value); },
     removeItem(key) { values.delete(key); },
   };
 
-  assert.equal(readWorkspaceView(storage), 'chat');
-  assert.equal(values.has('jarvis.interface.mode.v6'), false);
+  assert.equal(readWorkspaceView(storage), 'dashboard');
+  assert.equal(values.has('jarvis.interface.mode.v7'), false);
   saveWorkspaceView('dashboard', storage);
   assert.equal(readWorkspaceView(storage), 'dashboard');
   saveWorkspaceView('chat', storage);
   assert.equal(readWorkspaceView(storage), 'chat');
-  assert.equal(values.get('jarvis.interface.mode.v7'), 'old');
+  assert.equal(values.get('jarvis.interface.mode.v8'), 'old');
 });
 
-test('uses the dashboard as the first-time mobile view while preserving saved choices', () => {
+test('uses the dashboard as the first-time view while preserving saved choices', () => {
   const values = new Map();
   const storage = {
     getItem(key) { return values.get(key) ?? null; },
@@ -640,6 +682,7 @@ test('uses the dashboard as the first-time mobile view while preserving saved ch
     removeItem(key) { values.delete(key); },
   };
 
+  assert.equal(readWorkspaceView(storage), 'dashboard');
   assert.equal(readWorkspaceView(storage, 'dashboard'), 'dashboard');
   assert.equal(readWorkspaceView(storage, 'chat'), 'chat');
   saveWorkspaceView('chat', storage);
@@ -682,6 +725,32 @@ test('serves the transparent J.A.R.V.I.S. portrait as a local PNG asset', async 
   assert.equal(image.readUInt32BE(16), 1_199);
   assert.equal(image.readUInt32BE(20), 1_312);
   assert.equal(image[25], 6, 'the portrait PNG should retain its RGBA transparency');
+});
+
+test('serves the approved portrait blink overlays as aligned transparent PNG assets', async () => {
+  for (const stage of ['half', 'closed', 'reopening']) {
+    const response = await fetch(`${baseUrl}/jarvis-eye-blink-${stage}.png`);
+    const image = Buffer.from(await response.arrayBuffer());
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /image\/png/);
+    assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(image.readUInt32BE(16), 1_199);
+    assert.equal(image.readUInt32BE(20), 1_312);
+    assert.equal(image[25], 6, `${stage} overlay should retain RGBA transparency`);
+  }
+});
+
+test('serves the approved portrait mouth overlays as aligned transparent PNG assets', async () => {
+  for (const state of ['rest', 'slight', 'medium', 'wide']) {
+    const response = await fetch(`${baseUrl}/jarvis-mouth-${state}.png`);
+    const image = Buffer.from(await response.arrayBuffer());
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /image\/png/);
+    assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(image.readUInt32BE(16), 1_199);
+    assert.equal(image.readUInt32BE(20), 1_312);
+    assert.equal(image[25], 6, `${state} overlay should retain RGBA transparency`);
+  }
 });
 
 test('serves and retains the bundled avatar face reference as a local JPEG asset', async () => {

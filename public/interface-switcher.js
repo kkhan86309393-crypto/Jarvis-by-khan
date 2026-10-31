@@ -1,7 +1,12 @@
-const PREFERENCE_KEY = 'jarvis.interface.mode.v7';
-const LEGACY_PREFERENCE_KEYS = ['jarvis.interface.mode.v6', 'jarvis.interface.mode.v5', 'jarvis.interface.mode.v4'];
+const PREFERENCE_KEY = 'jarvis.interface.mode.v8';
+const LEGACY_PREFERENCE_KEYS = [
+  'jarvis.interface.mode.v7',
+  'jarvis.interface.mode.v6',
+  'jarvis.interface.mode.v5',
+  'jarvis.interface.mode.v4',
+];
 
-export function readWorkspaceView(storage, defaultView = 'chat') {
+export function readWorkspaceView(storage, defaultView = 'dashboard') {
   for (const key of LEGACY_PREFERENCE_KEYS) storage.removeItem(key);
   const savedView = storage.getItem(PREFERENCE_KEY);
   if (savedView === 'new') return 'dashboard';

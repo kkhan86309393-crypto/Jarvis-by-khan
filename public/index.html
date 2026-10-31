@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?hud=53">
+    <link rel="stylesheet" href="/styles.css?hud=60">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -77,6 +77,17 @@
                 <span class="holo-hud holo-hud-right" aria-hidden="true"><i></i><span>NEURAL LINK</span><small>ONLINE</small></span>
                 <div class="avatar-frame portrait-cutout-frame">
                   <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/jarvis-portrait.png" alt="J.A.R.V.I.S. female assistant portrait" width="1199" height="1312" fetchpriority="high" decoding="async" draggable="false">
+                  <span class="portrait-blink" aria-hidden="true">
+                    <img class="portrait-blink-layer" data-blink-state="half" src="/jarvis-eye-blink-half.png" alt="">
+                    <img class="portrait-blink-layer" data-blink-state="closed" src="/jarvis-eye-blink-closed.png" alt="">
+                    <img class="portrait-blink-layer" data-blink-state="reopening" src="/jarvis-eye-blink-reopening.png" alt="">
+                  </span>
+                  <span class="portrait-speech" aria-hidden="true">
+                    <img class="portrait-speech-layer" data-mouth-state="rest" src="/jarvis-mouth-rest.png" alt="">
+                    <img class="portrait-speech-layer" data-mouth-state="slight" src="/jarvis-mouth-slight.png" alt="">
+                    <img class="portrait-speech-layer" data-mouth-state="medium" src="/jarvis-mouth-medium.png" alt="">
+                    <img class="portrait-speech-layer" data-mouth-state="wide" src="/jarvis-mouth-wide.png" alt="">
+                  </span>
                   <span class="portrait-scanline" aria-hidden="true"></span>
                 </div>
                 <span class="playback-indicator" aria-hidden="true"></span>
@@ -809,6 +820,6 @@
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
     <script src="/diagnostics.js?hud=28"></script>
-    <script src="/app.js?hud=56" type="module"></script>
+    <script src="/app.js?hud=58" type="module"></script>
   </body>
 </html>
