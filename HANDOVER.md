@@ -10,10 +10,11 @@ J.A.R.V.I.S. is a cross-platform personal assistant: a Node.js-served browser/PW
 - Local path: `/workspaces/Jarvis-by-khan`
 - Development environment: Linux workspace / VS Code Codespace
 - Current branch: `backup/jarvis-handoff-20261030`
-- Current HEAD before this handover: `924d9217a064f7649931cd0bf9e571bf3aa900f6`
+- Base commit: `924d9217a064f7649931cd0bf9e571bf3aa900f6`
+- Progress snapshot commit: `9a5d62c96a70ba3918acc84bf0df3730178e1b25` (`Save JARVIS progress and prepare project handover`)
 - Remote: `origin` → `https://github.com/kkhan86309393-crypto/Jarvis-by-khan`
-- Branch tracking: `origin/backup/jarvis-handoff-20261030`; it was up to date at inspection.
-- No commit or push for the current worktree changes has been made yet.
+- Branch tracks `origin/backup/jarvis-handoff-20261030`.
+- The progress snapshot is committed locally. A normal push was attempted but Git could not obtain the required password/authentication. The remote still points to the base commit above; authenticate normally and push this branch. No force-push was used.
 
 ## Technologies
 
@@ -40,9 +41,9 @@ J.A.R.V.I.S. is a cross-platform personal assistant: a Node.js-served browser/PW
 - `test/`: unit, integration, server, speech, avatar, and service-worker tests.
 - `public/avatar3d.bundle.js`: generated build output, ignored by Git; do not stage it.
 
-## Worktree state at handover
+## Worktree state and included snapshot
 
-The base commit above is unchanged. Before staging, the worktree contains:
+The progress snapshot contains the approved project changes below. The following tracked paths were modified:
 
 Modified tracked files:
 
@@ -63,7 +64,7 @@ Untracked image staging decisions confirmed by the user:
 - Keep `public/a_high_detail_sci_fi_holographic_tech_illustration.png` (1269×1240 RGBA; unused concept illustration) local and untracked.
 - Keep `public/file_000000003c208208acf876139a63a9f6.png` (724×2172 RGB; mobile screenshot/reference) local and untracked.
 
-No staged changes were present at inspection. `.env`/`.env.*`, key files, `node_modules/`, and generated avatar bundle are ignored. No credentials or environment files appeared in the staged/untracked file listing. The older `HANDOFF.md` is an earlier snapshot and does not reflect this current worktree; prefer this document.
+The commit also adds this `HANDOVER.md`. The progress commit was created after all staged and unstaged diffs passed the requested validation. The current checkout is one documentation-status commit ahead of the progress snapshot described above; this status update records the failed push. The four excluded image references remain local, untracked, and unstaged. `.env`/`.env.*`, key files, `node_modules/`, and generated avatar bundle are ignored. No credentials or environment files appeared in the staged/untracked file listing. The older `HANDOFF.md` is an earlier snapshot and does not reflect this current worktree; prefer this document.
 
 ## Completed project work represented in the worktree
 
@@ -74,7 +75,7 @@ No staged changes were present at inspection. `.env`/`.env.*`, key files, `node_
 - Static portrait updated in the current UI to a transparent cutout image.
 - Portrait animation state hook wired to speech lifecycle; details below.
 
-These are existing worktree changes, not yet committed or published. Review the diff before staging and preserve all existing edits.
+These changes are committed locally in the progress snapshot above; review that commit before continuing.
 
 ## Portrait blinking and lip-sync status
 
@@ -101,14 +102,11 @@ The test suite prints expected simulated upstream/API failures from negative-pat
 
 ## Remaining work and safe sequence
 
-1. Decide whether the old tracked portrait deletion is intentional and which untracked image references (if any) belong in the repository. Avoid committing duplicate portraits, concept art, or a screenshot without explicit approval.
-2. Review the complete diff and stage only the approved project changes. Keep `.env`, secrets, credentials, `node_modules/`, and generated output out of Git.
-3. Re-run `npm run check`, `node --test`, and `git diff --check` immediately before committing.
-4. Commit with `Save JARVIS progress and prepare project handover`.
-5. Verify the remote branch has not advanced; push normally only if it is still a safe fast-forward. Never force-push or overwrite remote commits.
-6. For portrait visuals, create and review aligned facial overlays before implementing the rendering layer.
-7. Test Android Chrome speech replay/wake-word behavior on the target device; browser tests cannot establish actual speaker output or OS-level recognition reliability.
+1. Authenticate to GitHub with normal approved credentials, verify the remote branch still has no newer commits, and push the local branch with a normal fast-forward. Never force-push or overwrite remote commits.
+2. Keep the four explicitly excluded untracked reference images local unless the user later approves adding them. The canonical portrait and intentional old-portrait deletion are already in the progress commit.
+3. For portrait visuals, create and review aligned facial overlays before implementing the rendering layer.
+4. Test Android Chrome speech replay/wake-word behavior on the target device; browser tests cannot establish actual speaker output or OS-level recognition reliability.
 
 ## Instructions for the next ChatGPT account
 
-Continue in this **same existing repository and branch/history**. Do not initialize a new repository, recreate the project, or replace its existing files. First inspect `git status`, `git branch --show-current`, `git remote -v`, and the latest commits. Preserve any uncommitted changes. Resolve the image/deletion staging decision and verify whether this handover's changes were committed/pushed before doing further work.
+Continue in this **same existing repository and branch/history**. Do not initialize a new repository, recreate the project, or replace its existing files. First inspect `git status`, `git branch --show-current`, `git remote -v`, and the latest commits. Preserve any uncommitted changes. The implementation snapshot is already committed locally; the push is pending GitHub authentication. Verify remote history and push normally only if it remains a fast-forward.
