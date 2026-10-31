@@ -10,9 +10,12 @@ import {
   animateBuiltInAvatar,
   createReferenceFaceTexture,
   createBuiltInAvatar,
+  createHolographicGlobe,
+  animateHolographicGlobe,
   estimateAudioMouthOpening,
   estimateMouthCue,
   frameAvatarPortrait,
+  getAvatarRenderQuality,
   inspectAvatarRig,
   parseAvatarGlb,
   readAvatarFile,
@@ -174,6 +177,42 @@ test('adds subtle head movement without discarding the model rest pose', () => {
   assert.equal(head.rotation.z, baseRotation.z + Math.sin(0.35) * 0.008);
 });
 
+test('selects reduced avatar quality for mobile and low-power devices', () => {
+  assert.deepEqual(getAvatarRenderQuality({
+    navigator: { hardwareConcurrency: 8, deviceMemory: 8 },
+    viewportWidth: 1280,
+    devicePixelRatio: 2,
+    hasCoarsePointer: false,
+  }), {
+    isMobile: false,
+    isLowPower: false,
+    antialias: true,
+    pixelRatio: 1.35,
+  });
+  assert.deepEqual(getAvatarRenderQuality({
+    navigator: { hardwareConcurrency: 8, userAgentData: { mobile: true } },
+    viewportWidth: 390,
+    devicePixelRatio: 3,
+    hasCoarsePointer: true,
+  }), {
+    isMobile: true,
+    isLowPower: false,
+    antialias: false,
+    pixelRatio: 1,
+  });
+  assert.deepEqual(getAvatarRenderQuality({
+    navigator: { hardwareConcurrency: 4, connection: { saveData: false } },
+    viewportWidth: 1280,
+    devicePixelRatio: 1.5,
+    hasCoarsePointer: false,
+  }), {
+    isMobile: false,
+    isLowPower: true,
+    antialias: false,
+    pixelRatio: 1,
+  });
+});
+
 test('maps the bundled reference photo onto a lightweight, lit face texture', () => {
   const previousDocument = globalThis.document;
   const drawCalls = [];
@@ -221,12 +260,20 @@ test('creates a built-in holographic avatar with facial controls and animation',
   for (const name of ['face', 'hair-cap', 'left-side-hair', 'right-side-hair', 'eyelid-1', 'eyelid--1', 'iris-1', 'mouth', 'shoulders']) {
     assert.ok(root.getObjectByName(name), `expected built-in avatar part ${name}`);
   }
-  assert.equal(root.getObjectByName('face').material.map.image.width, 64);
+  assert.equal(root.getObjectByName('face').material.map.image.width, 128);
   assert.equal(root.getObjectByName('hair-cap').material.color.getHex(), 0x211711);
   assert.equal(root.getObjectByName('eyelid-1').material.color.getHex(), 0xd8ad98);
   assert.equal(root.getObjectByName('iris-1').children[0].material.color.getHex(), 0x70472e);
+  for (const name of ['nose-bridge', 'nose-tip', 'nose-wing--1', 'nose-wing-1', 'sclera--1', 'sclera-1', 'eye-reflection--1', 'eye-reflection-1', 'upper-lip', 'lower-lip']) {
+    assert.ok(root.getObjectByName(name), `expected refined facial detail ${name}`);
+  }
+  assert.equal(root.getObjectByName('nose-wing--1').position.x, -root.getObjectByName('nose-wing-1').position.x);
+  assert.equal(root.getObjectByName('eye--1').position.x, -root.getObjectByName('eye-1').position.x);
   assert.equal(rig.lids[0].position.x, -0.19);
   assert.equal(rig.mouth.position.y, -0.32);
+  assert.equal(rig.brows.length, 2);
+  assert.ok(root.getObjectByName('brow--1'));
+  assert.ok(root.getObjectByName('brow-1'));
 
   animateBuiltInAvatar(rig, { blinkValue: 0, mouthValue: 0 });
   const openLidScale = rig.lids[0].scale.y;
@@ -245,6 +292,93 @@ test('creates a built-in holographic avatar with facial controls and animation',
     object.geometry?.dispose();
     object.material?.dispose();
   });
+});
+
+test('creates a procedural Earth with continent texture, grid, orbit rings, particles, and scanline', () => {
+  const { root, globe, orbitRings, particles, scanline } = createHolographicGlobe();
+  assert.equal(root.name, 'jarvis-holographic-earth');
+  for (const name of ['earth-globe', 'earth-atmosphere', 'earth-ocean', 'earth-continents', 'earth-latitude-0', 'earth-longitude-0']) {
+    assert.ok(root.getObjectByName(name), `expected globe feature ${name}`);
+  }
+  assert.equal(orbitRings.length, 2);
+  assert.equal(root.getObjectByName('earth-ocean').material.transparent, true);
+  assert.ok(root.getObjectByName('earth-ocean').material.opacity < 0.2);
+  assert.equal(root.getObjectByName('earth-ocean').material.depthWrite, false);
+  assert.equal(particles.geometry.attributes.position.count, 84);
+  assert.equal(scanline.geometry.attributes.position.count, 97);
+
+  const texture = root.getObjectByName('earth-continents').material.map;
+  assert.equal(texture.image.width, 768);
+  assert.equal(texture.image.height, 384);
+  const samplePixel = (longitude, latitude) => {
+    const x = Math.round(((longitude + 180) / 360) * (texture.image.width - 1));
+    const y = Math.round(((latitude + 90) / 180) * (texture.image.height - 1));
+    const offset = (y * texture.image.width + x) * 4;
+    return [...texture.image.data.slice(offset, offset + 4)];
+  };
+  assert.ok(samplePixel(-100, 40)[3] > samplePixel(-40, 0)[3], 'North America should be brighter than open ocean');
+  assert.ok(samplePixel(-77.14, 1.06)[0] > 100, 'coastline pixels should have a bright cyan edge');
+  assert.ok(samplePixel(-77.85, 1.06)[3] > samplePixel(-40, 0)[3], 'nearby ocean pixels should carry a soft coastal glow');
+
+  const globeGrid = globe.children.filter((object) => /^earth-(latitude|longitude)-/.test(object.name));
+  assert.equal(globeGrid.length, 53, 'the globe should use a denser ten-degree latitude/longitude grid');
+  assert.ok(root.getObjectByName('earth-latitude--80'));
+  assert.ok(root.getObjectByName('earth-longitude-350'));
+  assert.equal(root.getObjectByName('earth-latitude-0').geometry.attributes.position.count, 181);
+
+  animateHolographicGlobe({ globe, orbitRig: root.getObjectByName('earth-orbit-rings'), particles, scanline }, 4);
+  assert.ok(globe.rotation.y > 0);
+  const rotatedY = globe.rotation.y;
+  animateHolographicGlobe({ globe, orbitRig: root.getObjectByName('earth-orbit-rings'), particles, scanline }, 8, { reducedMotion: true });
+  assert.equal(globe.rotation.y, rotatedY);
+
+  root.traverse((object) => {
+    object.geometry?.dispose();
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => material?.dispose());
+  });
+});
+
+test('gives built-in avatar assistant states distinct facial cues', () => {
+  const pose = (expression) => {
+    const { root, rig } = createBuiltInAvatar();
+    rig.seconds = 1;
+    animateBuiltInAvatar(rig, expression);
+    const result = {
+      browY: rig.brows.map((brow) => brow.position.y),
+      browRotation: rig.brows.map((brow) => brow.rotation.z),
+      headRoll: rig.head.rotation.z,
+      gazeY: rig.gazeY,
+      mouthX: rig.mouth.scale.x,
+      mouthY: rig.mouth.scale.y,
+      mouthPositionY: rig.mouth.position.y,
+      mouthRotation: rig.mouth.rotation.z,
+      lidScale: rig.lids[0].scale.y,
+    };
+    root.traverse((object) => {
+      object.geometry?.dispose();
+      object.material?.dispose();
+    });
+    return result;
+  };
+
+  const neutral = pose({});
+  const happy = pose({ happy: 0.72 });
+  const thinking = pose({ thinking: 0.68 });
+  const listening = pose({ attentive: 0.62 });
+  const speaking = pose({ mouthValue: 0.7, mouthViseme: 'oh' });
+  const error = pose({ frown: 0.72 });
+
+  assert.ok(happy.browY[0] > neutral.browY[0]);
+  assert.ok(happy.mouthX > neutral.mouthX);
+  assert.ok(thinking.browY[0] < neutral.browY[0]);
+  assert.ok(thinking.gazeY > neutral.gazeY);
+  assert.ok(listening.browY[0] > neutral.browY[0]);
+  assert.ok(listening.headRoll > neutral.headRoll);
+  assert.ok(speaking.mouthY > neutral.mouthY);
+  assert.ok(error.mouthPositionY < neutral.mouthPositionY);
+  assert.ok(error.mouthRotation < neutral.mouthRotation);
+  assert.ok(error.lidScale > neutral.lidScale);
 });
 
 test('speech word boundaries forward English and Hindi approximate viseme cues', () => {
@@ -361,5 +495,146 @@ test('unload invalidates pending model loads and disposes their stale scene', as
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
+  }
+});
+
+test('loads and unloads the holographic Earth through the shared renderer lifecycle', () => {
+  const previousGlobals = new Map(
+    ['window', 'document', 'ResizeObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame']
+      .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+  );
+  const classes = new Set();
+  const listeners = new Map();
+  let animationCallback = null;
+  let animationRequests = 0;
+  let renderCount = 0;
+  let rendererDisposed = false;
+  let motionListenerRemoved = false;
+  let clearAlpha;
+  let renderedSize;
+  let renderedScene;
+  let renderedCamera;
+  let devicePixelRatio = 1;
+  const renderer = {
+    outputColorSpace: null,
+    setPixelRatio(value) { devicePixelRatio = value; },
+    getPixelRatio() { return devicePixelRatio; },
+    setSize(width, height) { renderedSize = [width, height]; },
+    setClearColor(_color, alpha) { clearAlpha = alpha; },
+    render(scene, camera) {
+      renderCount += 1;
+      renderedScene = scene;
+      renderedCamera = camera;
+    },
+    dispose() { rendererDisposed = true; },
+  };
+  const frame = {
+    classList: {
+      add(...names) { names.forEach((name) => classes.add(name)); },
+      remove(...names) { names.forEach((name) => classes.delete(name)); },
+    },
+    setAttribute() {},
+    getBoundingClientRect() { return { width: 320, height: 320 }; },
+  };
+  const canvas = {
+    hidden: true,
+    addEventListener(name, callback) { listeners.set(name, callback); },
+    getBoundingClientRect() { return { width: 640, height: 640 }; },
+  };
+  const image = {
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+    },
+  };
+  const status = { textContent: '', dataset: {} };
+
+  globalThis.window = {
+    matchMedia() {
+      return {
+        matches: true,
+        addEventListener() {},
+        removeEventListener() { motionListenerRemoved = true; },
+      };
+    },
+    addEventListener() {},
+  };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {} };
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.IntersectionObserver = undefined;
+  globalThis.requestAnimationFrame = (callback) => {
+    animationRequests += 1;
+    animationCallback = callback;
+    return animationRequests;
+  };
+  globalThis.cancelAnimationFrame = () => {};
+
+  try {
+    const globe = initializeAvatar3d({
+      frame,
+      canvas,
+      image,
+      mouthOverlay: { hidden: false },
+      fileInput: null,
+      modelButton: null,
+      status,
+      createRenderer: () => renderer,
+    });
+
+    assert.equal(globe.loadBuiltInGlobe(), true);
+    assert.equal(canvas.hidden, false);
+    assert.equal(clearAlpha, 0, 'transparent renderer clear must leave the portrait visible');
+    assert.deepEqual(renderedSize, [640, 640], 'globe renderer should use the full stage canvas size');
+    assert.ok(classes.has('is-3d-active'));
+    assert.ok(classes.has('is-globe-active'));
+    assert.equal(classes.has('is-3d-hidden'), false, 'the Earth must render behind the visible portrait');
+    assert.equal(canvas.hidden, false);
+    assert.match(status.textContent, /Holographic Earth online/);
+
+    animationCallback(1_000);
+    assert.equal(renderCount, 1);
+    const globeRoot = renderedScene.getObjectByName('jarvis-holographic-earth');
+    assert.ok(globeRoot, 'the Earth and orbital effects should share one transformed root');
+    assert.equal(globeRoot.scale.x, 1.5, 'the Earth should fill more of the projection while remaining behind the portrait');
+    assert.deepEqual(globeRoot.position.toArray(), [0, 0, 0], 'the Earth should align horizontally and vertically with the portrait');
+    const halfVisibleAngle = Math.atan(
+      Math.tan(THREE.MathUtils.degToRad(renderedCamera.fov / 2))
+      * Math.min(renderedCamera.aspect, 1),
+    );
+    const visibleFrameRadius = renderedCamera.position.z * Math.sin(halfVisibleAngle);
+    const particlePositions = globeRoot.getObjectByName('earth-particles').geometry.attributes.position;
+    const outerParticle = Math.max(
+      ...Array.from({ length: particlePositions.count }, (_, index) => {
+        return Math.hypot(particlePositions.getX(index), particlePositions.getY(index), particlePositions.getZ(index));
+      }),
+    );
+    const outerOrbit = Math.max(...globeRoot.getObjectByName('earth-orbit-rings').children.map(
+      (ring) => ring.geometry.parameters.radius + ring.geometry.parameters.tube,
+    ));
+    const outerContentRadius = Math.max(outerParticle, outerOrbit, 1.075) * globeRoot.scale.x;
+    assert.ok(
+      visibleFrameRadius > outerContentRadius,
+      'camera framing should include the complete globe, atmosphere, particles, and orbital rings',
+    );
+    assert.equal(animationRequests, 1, 'reduced-motion mode should render a still globe without an animation loop');
+
+    assert.equal(globe.loadBuiltInAvatar(), true);
+    assert.equal(classes.has('is-globe-active'), false);
+    assert.equal(classes.has('is-3d-hidden'), true, 'the optional 3D avatar mode should retain its existing portrait replacement');
+
+    globe.unload();
+    assert.equal(rendererDisposed, true);
+    assert.equal(motionListenerRemoved, true);
+    assert.equal(canvas.hidden, true);
+    assert.equal(classes.has('is-3d-hidden'), false);
+    assert.equal(classes.has('is-globe-active'), false);
+  } finally {
+    for (const [key, descriptor] of previousGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
   }
 });

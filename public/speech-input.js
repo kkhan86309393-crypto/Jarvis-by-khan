@@ -46,7 +46,8 @@ export function resolveVoiceOutputEnabled(savedPreference, speechSynthesisSuppor
   return typeof savedPreference === 'boolean' ? savedPreference : true;
 }
 
-export function primeSpeechSynthesis(synthesis, UtteranceConstructor, language) {
+export function primeSpeechSynthesis(synthesis, UtteranceConstructor, language, recognitionActive = false) {
+  if (recognitionActive) return false;
   if (typeof synthesis?.speak !== 'function' || typeof UtteranceConstructor !== 'function') return false;
   try {
     const utterance = new UtteranceConstructor(' ');
@@ -175,38 +176,56 @@ export function nextWakeWordRestartDelay(delay) {
 
 export const WAKE_WORD_MAX_RESTART_ATTEMPTS = 5;
 export const WAKE_WORD_STABLE_SESSION_DURATION_MS = 30_000;
+export const WAKE_WORD_RETRY_COOLDOWN_MS = 30_000;
 
 export function createWakeWordRecoveryPolicy({
   maxAttempts = WAKE_WORD_MAX_RESTART_ATTEMPTS,
   stableDurationMs = WAKE_WORD_STABLE_SESSION_DURATION_MS,
+  cooldownMs = WAKE_WORD_RETRY_COOLDOWN_MS,
+  now = Date.now,
 } = {}) {
   let restartAttempts = 0;
-  let circuitOpen = false;
+  let cooldownUntil = 0;
+  const retryCooldownMs = Number.isFinite(cooldownMs)
+    ? Math.max(0, cooldownMs)
+    : WAKE_WORD_RETRY_COOLDOWN_MS;
+
+  const getCooldownRemaining = () => Math.max(0, cooldownUntil - now());
 
   const reset = () => {
     restartAttempts = 0;
-    circuitOpen = false;
+    cooldownUntil = 0;
   };
-  const canRetry = () => !circuitOpen && restartAttempts < maxAttempts;
+  const canRetry = () => getCooldownRemaining() === 0 && restartAttempts < maxAttempts;
 
   return {
     get restartAttempts() {
       return restartAttempts;
     },
     get circuitOpen() {
-      return circuitOpen;
+      return getCooldownRemaining() > 0;
+    },
+    get cooldownRemainingMs() {
+      return getCooldownRemaining();
     },
     canRetry,
     recordRestartAttempt() {
       if (!canRetry()) {
-        circuitOpen = true;
         return null;
       }
       restartAttempts += 1;
       return restartAttempts;
     },
-    openCircuit() {
-      circuitOpen = true;
+    startCooldown() {
+      if (getCooldownRemaining() > 0) return getCooldownRemaining();
+      cooldownUntil = now() + retryCooldownMs;
+      restartAttempts = 0;
+      return getCooldownRemaining();
+    },
+    finishCooldown() {
+      if (getCooldownRemaining() > 0) return false;
+      cooldownUntil = 0;
+      return true;
     },
     resetForManualRetry() {
       reset();

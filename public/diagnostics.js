@@ -12,6 +12,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     'SpeechRecognition started',
     'SpeechRecognition start failed',
     'SpeechRecognition results received',
+    'SpeechRecognition stop requested',
     'Wake-word match evaluated',
     'Wake-word status',
     'Wake-word listening blocked',
@@ -20,6 +21,8 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     'Wake-word automatic restart scheduled',
     'Wake-word automatic restart attempted',
     'Wake-word circuit breaker opened',
+    'Wake-word retry cooldown scheduled',
+    'Wake-word retry cooldown ended',
     'SpeechRecognition stop failed',
     'TTS utterance skipped',
     'TTS utterance deferred',
@@ -32,7 +35,21 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     'TTS utterance onend',
     'TTS utterance onerror',
     'TTS utterance start timeout',
+    'TTS silent priming attempted',
     'TTS resume failed',
+  ]);
+  const recognitionStopReasons = new Set([
+    'chat-submit',
+    'explicit-stop',
+    'final-result-submitted',
+    'language-changed',
+    'manual-mic-toggle',
+    'manual-wake-takeover',
+    'microphone-permission-denied',
+    'page-lifecycle',
+    'start-timeout',
+    'tts-deferred',
+    'wake-word-disabled',
   ]);
   const wakeWordRestartReasons = new Set([
     'assistant-workflow-complete',
@@ -57,6 +74,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     'permission-updated',
     'setting-changed',
     'retry-limit-reached',
+    'cooldown-expired',
     'manual-retry-waiting-for-end',
     'manual-retry',
   ]);
@@ -67,6 +85,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     'duplicate-text',
     'page-unfocused',
     'recognition-active',
+    'user-gesture',
   ]);
   let appReady = false;
   let serviceWorkerVersion = 'not available';
@@ -203,7 +222,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     if (['query', 'change'].includes(detail.source)) fields.push(`source=${detail.source}`);
     if (['visible', 'hidden', 'prerender'].includes(detail.visibility)) fields.push(`visibility=${detail.visibility}`);
     if (typeof detail.voiceOutputEnabled === 'boolean') fields.push(`voiceOutputEnabled=${detail.voiceOutputEnabled}`);
-    for (const field of ['continuous', 'finalResult', 'matched', 'activated', 'alreadyActivated', 'unexpected', 'wakeWordTriggered', 'enabled', 'focused', 'secureContext', 'speaking', 'pending', 'paused', 'started']) {
+    for (const field of ['continuous', 'finalResult', 'matched', 'activated', 'alreadyActivated', 'unexpected', 'wakeWordTriggered', 'enabled', 'focused', 'secureContext', 'speaking', 'pending', 'paused', 'started', 'recognitionActive', 'queued']) {
       if (typeof detail[field] === 'boolean') fields.push(`${field}=${detail[field]}`);
     }
     for (const field of ['maxAlternatives', 'resultCount', 'alternativeCount', 'attempt', 'delayMs', 'durationMs', 'queueDurationMs', 'elapsedMs', 'limit']) {
@@ -211,6 +230,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     }
     if (wakeWordRestartReasons.has(detail.reason)) fields.push(`reason=${detail.reason}`);
     else if (wakeWordDiagnosticReasons.has(detail.reason)) fields.push(`reason=${detail.reason}`);
+    else if (recognitionStopReasons.has(detail.reason)) fields.push(`reason=${detail.reason}`);
     else if (ttsDiagnosticReasons.has(detail.reason)) fields.push(`reason=${detail.reason}`);
     speechEvents.push(`${timestamp} ${eventName}${fields.length ? ` (${fields.join(', ')})` : ''}`);
     if (speechEvents.length > 30) speechEvents.shift();
