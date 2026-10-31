@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?hud=43">
+    <link rel="stylesheet" href="/styles.css?hud=53">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -67,15 +67,24 @@
             <div class="avatar-hero">
               <div class="holo-stage" id="holo-stage">
                 <div class="holo-sphere-shell" aria-hidden="true"><i></i></div>
+                <canvas class="avatar-canvas" id="avatar-canvas" aria-hidden="true" hidden></canvas>
                 <div class="holo-emitter" aria-hidden="true"></div>
+                <span class="holo-platform" aria-hidden="true"></span>
                 <div class="orbit orbit-one" aria-hidden="true"></div>
                 <div class="orbit orbit-two" aria-hidden="true"></div>
                 <div class="holo-particles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-                <div class="avatar-frame">
-                  <img class="ai-avatar is-normal" id="ai-avatar" src="/5234e417739a8221c0d6ce9c25d690ff69dd8de1860b0b9394bad1a30df599e4.png" alt="J.A.R.V.I.S. female assistant portrait" width="1254" height="1254" fetchpriority="high" decoding="async" draggable="false">
+                <span class="holo-hud holo-hud-left" aria-hidden="true"><i></i><span>LIVE PROJECTION</span><small>01 / 03</small></span>
+                <span class="holo-hud holo-hud-right" aria-hidden="true"><i></i><span>NEURAL LINK</span><small>ONLINE</small></span>
+                <div class="avatar-frame portrait-cutout-frame">
+                  <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/jarvis-portrait.png" alt="J.A.R.V.I.S. female assistant portrait" width="1199" height="1312" fetchpriority="high" decoding="async" draggable="false">
                   <span class="portrait-scanline" aria-hidden="true"></span>
                 </div>
                 <span class="playback-indicator" aria-hidden="true"></span>
+              </div>
+              <div class="avatar-model-controls">
+                <button class="avatar-model-button" id="activate-3d-avatar" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate 3D Avatar</button>
+                <button class="avatar-model-button" id="activate-holographic-earth" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate Holographic Earth</button>
+                <p class="avatar-model-status" id="avatar-model-status" role="status" aria-live="polite"></p>
               </div>
             </div>
             <p class="assistant-greeting">Hello. I am here when you need me.</p>
@@ -142,7 +151,7 @@
           <section class="dashboard-panel system-panel" id="system-panel" data-lab-widget="system" aria-labelledby="system-title">
             <div class="panel-heading"><div><span class="eyebrow">LIVE STATUS</span><h2 id="system-title">Real-Time Info</h2></div><i class="status-pulse"></i></div>
             <div class="metric-section">
-              <div class="metric-section-heading"><span>SERVER</span><small>J.A.R.V.I.S. app host</small></div>
+              <div class="metric-section-heading"><span>SERVER</span><small>App host · updates every 30s</small></div>
               <div class="monitor-grid server-grid">
                 <div class="metric-readout server-metric"><span id="cpu-label">SERVER CPU</span><strong id="cpu-value">Checking</strong><div class="metric-track" id="cpu-meter-track" hidden><i id="cpu-meter"></i></div></div>
                 <div class="metric-readout server-metric"><span id="ram-label">SERVER RAM</span><strong id="ram-value">Checking</strong><div class="metric-track" id="ram-meter-track" hidden><i id="ram-meter"></i></div></div>
@@ -150,8 +159,9 @@
               </div>
             </div>
             <div class="metric-section">
-              <div class="metric-section-heading"><span>THIS DEVICE</span><small>Browser-reported details</small></div>
+              <div class="metric-section-heading"><span>THIS DEVICE</span><small>Browser-reported · availability varies</small></div>
               <div class="monitor-grid device-grid">
+                <div class="device-datetime-readout"><span>LOCAL DATE &amp; TIME</span><time id="local-datetime-value" datetime="">Updating…</time></div>
                 <div class="device-metric"><span>DEVICE</span><strong id="device-type-value">Checking</strong></div>
                 <div class="device-metric"><span>BROWSER / PLATFORM</span><strong id="platform-value">Checking</strong></div>
                 <div class="device-metric" data-device-group="mobile"><span>BATTERY</span><strong id="battery-value">Checking</strong></div>
@@ -237,6 +247,79 @@
             <summary class="panel-heading"><div><span class="eyebrow">SESSION TRACE</span><h2 id="activity-title">Activity feed</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
             <ol id="activity-log" class="activity-log" aria-live="polite"><li><i aria-hidden="true"></i><span>Interface initialized</span><time>NOW</time></li></ol>
           </details>
+          <section class="dashboard-panel planner-panel" id="planner-panel" aria-labelledby="planner-title">
+            <div class="panel-heading"><div><span class="eyebrow">SAVED ON THIS DEVICE</span><h2 id="planner-title">Notes &amp; Tasks</h2></div><i class="status-pulse"></i></div>
+            <section class="task-priority" id="task-priority" aria-labelledby="task-priority-title">
+              <div class="priority-heading"><span class="eyebrow">LOCAL PRODUCTIVITY</span><h3 id="task-priority-title">Daily Insights</h3></div>
+              <p class="priority-summary" id="priority-summary" aria-live="polite">Checking local tasks…</p>
+              <div class="insight-metrics" role="group" aria-label="Task and focus statistics">
+                <div><span>Total tasks</span><strong id="insight-total-tasks">0</strong></div>
+                <div><span>Pending</span><strong id="insight-pending-tasks">0</strong></div>
+                <div><span>Completed</span><strong id="insight-completed-tasks">0</strong></div>
+                <div><span>Completed today</span><strong id="insight-completed-today">0</strong></div>
+                <div><span title="Completed focus sessions recorded in this session's visible activity feed">Focus sessions · session feed</span><strong id="insight-focus-sessions">0</strong></div>
+              </div>
+              <p class="insight-oldest" id="insight-oldest-task"></p>
+              <p class="insight-next-action" id="insight-next-action"></p>
+              <p class="priority-activity" id="priority-activity"></p>
+              <div class="priority-suggestion" id="priority-suggestion" hidden>
+                <p class="priority-task-title" id="priority-task-title"></p>
+                <p class="priority-reason" id="priority-reason"></p>
+                <p class="priority-session">Suggested session: 25 minutes with the existing focus timer.</p>
+                <div class="priority-actions"><button class="planner-primary" id="priority-accept" type="button">Start focus session</button><button class="planner-secondary" id="priority-dismiss" type="button">Dismiss</button></div>
+              </div>
+              <p class="priority-empty" id="priority-empty" hidden></p>
+            </section>
+            <div class="planner-grid">
+              <section class="planner-section" id="notes-section" aria-labelledby="notes-title">
+                <div class="planner-section-heading"><h3 id="notes-title">Smart notes</h3><span>LOCAL</span></div>
+                <form class="planner-form" id="note-form">
+                  <label for="note-title">Title</label>
+                  <input id="note-title" name="title" type="text" maxlength="120" autocomplete="off" placeholder="Note title" required>
+                  <label for="note-content">Note</label>
+                  <textarea id="note-content" name="content" rows="4" maxlength="12000" placeholder="Write a note..."></textarea>
+                  <div class="planner-form-actions"><button class="planner-primary" id="note-save-button" type="submit">Save note</button><button class="planner-secondary" id="note-cancel-button" type="button" hidden>Cancel</button></div>
+                  <p class="planner-status" id="note-status" role="status" aria-live="polite"></p>
+                </form>
+                <label class="sr-only" for="note-search">Search saved notes</label>
+                <input class="planner-search" id="note-search" type="search" placeholder="Search notes">
+                <ul class="planner-list note-list" id="notes-list" aria-live="polite"><li class="planner-empty">No notes yet. Add one above.</li></ul>
+              </section>
+              <section class="planner-section" id="tasks-section" aria-labelledby="tasks-title">
+                <div class="planner-section-heading"><h3 id="tasks-title">Tasks</h3><span>NO REMINDERS</span></div>
+                <form class="planner-form" id="task-form">
+                  <label for="task-title">Task</label>
+                  <input id="task-title" name="title" type="text" maxlength="200" autocomplete="off" placeholder="What needs doing?" required>
+                  <label for="task-details">Details <span class="planner-optional">optional</span></label>
+                  <textarea id="task-details" name="details" rows="2" maxlength="2000" placeholder="Add a short detail..."></textarea>
+                  <div class="planner-form-actions"><button class="planner-primary" id="task-save-button" type="submit">Add task</button><button class="planner-secondary" id="task-cancel-button" type="button" hidden>Cancel</button></div>
+                  <p class="planner-status" id="task-status" role="status" aria-live="polite"></p>
+                </form>
+                <div class="task-group" id="pending-tasks-group"><h4>Pending <span id="pending-task-count">0</span></h4><ul class="planner-list task-list" id="pending-task-list" aria-live="polite"><li class="planner-empty">No pending tasks.</li></ul></div>
+                <div class="task-group" id="completed-tasks-group"><h4>Completed <span id="completed-task-count">0</span></h4><ul class="planner-list task-list" id="completed-task-list" aria-live="polite"><li class="planner-empty">No completed tasks.</li></ul></div>
+              </section>
+            </div>
+          </section>
+          <section class="dashboard-panel smart-memory-panel" id="smart-memory-panel" aria-labelledby="smart-memory-title">
+            <div class="panel-heading">
+              <div><span class="eyebrow">PRIVATE · THIS DEVICE</span><h2 id="smart-memory-title">Smart Memory</h2></div>
+              <label class="switch" for="smart-memory-enabled-dashboard"><input id="smart-memory-enabled-dashboard" type="checkbox" aria-label="Use approved memories in AI context"><span></span></label>
+            </div>
+            <p class="smart-memory-privacy">Add memories yourself, review each one, and explicitly approve it for AI context. Memories are stored in this browser; approved relevant entries are sent with your message to the configured AI provider when you chat. No memory-specific external service is used. Do not save credentials or sensitive personal, financial, or medical information.</p>
+            <form class="planner-form smart-memory-form" id="smart-memory-form">
+              <label for="smart-memory-type">Memory type</label>
+              <select id="smart-memory-type" name="type"><option value="preference">Preference</option><option value="fact">Important fact</option></select>
+              <label for="smart-memory-title-input">Title</label>
+              <input id="smart-memory-title-input" name="title" type="text" maxlength="100" autocomplete="off" placeholder="For example: Preferred response style" required>
+              <label for="smart-memory-content-input">Memory</label>
+              <textarea id="smart-memory-content-input" name="content" rows="3" maxlength="1000" placeholder="Add a preference or fact you want J.A.R.V.I.S. to remember..." required></textarea>
+              <div class="planner-form-actions"><button class="planner-primary" id="smart-memory-save" type="submit">Save memory</button><button class="planner-secondary" id="smart-memory-cancel" type="button" hidden>Cancel</button><button class="planner-secondary danger-button" id="smart-memory-clear" type="button">Clear all memories</button></div>
+              <p class="planner-status" id="smart-memory-status" role="status" aria-live="polite"></p>
+            </form>
+            <label class="sr-only" for="smart-memory-search">Search saved memories</label>
+            <input class="planner-search" id="smart-memory-search" type="search" placeholder="Search memories">
+            <ul class="planner-list smart-memory-list" id="smart-memory-list" aria-live="polite"><li class="planner-empty">No memories saved on this device.</li></ul>
+          </section>
         </aside>
         <p class="sr-only" id="holo-state-announcement" role="status" aria-live="polite">Waiting for server status.</p>
         </div>
@@ -634,6 +717,7 @@
           <div class="setting-actions"><button class="secondary-button" id="share-link-button" type="button">Share Link</button><button class="secondary-button" id="copy-link-button" type="button">Copy Link</button></div>
           <p class="share-status" id="share-status" role="status" aria-live="polite"></p>
         </section>
+        <label class="setting-row" for="avatar-theme-select"><span><strong>Avatar visual theme</strong><small>Choose the holographic colors used by J.A.R.V.I.S.</small></span><select id="avatar-theme-select"><option value="electric-blue">Electric Blue</option><option value="neon-purple">Neon Purple</option><option value="matrix-green">Matrix Green</option><option value="cyber-amber">Cyber Amber</option><option value="holographic-cyan">Holographic Cyan</option><option value="neon-pink">Neon Pink</option></select></label>
         <label class="setting-row access-row" for="access-token"><span><strong>Server access key</strong><small>Only needed when the server administrator enabled access protection. Kept in memory until this tab closes.</small></span><input id="access-token" type="password" autocomplete="off" spellcheck="false" placeholder="Optional access key"></label>
         <label class="setting-row" for="language-select"><span><strong>Conversation language</strong><small>Used for AI replies and voice recognition</small></span><select id="language-select"><option value="en">English</option><option value="hi">Hindi</option></select></label>
         <label class="setting-row" for="voice-select"><span><strong>Speech voice</strong><small id="voice-support">Available voices depend on your device</small></span><select id="voice-select"><option value="">System default</option></select></label>
@@ -641,6 +725,7 @@
         <div class="setting-row"><span><strong>Voice output</strong><small>Speak assistant replies aloud</small></span><label class="switch"><input id="voice-enabled" type="checkbox"><span></span><b class="sr-only">Enable voice output</b></label></div>
         <div class="setting-row"><span><strong>Wake-word detection</strong><small id="wake-word-support">Say "Hey JARVIS" or "हे जार्विस" while this app is open. Requires microphone permission; browser support varies.</small></span><label class="switch"><input id="wake-word-enabled" type="checkbox"><span></span><b class="sr-only">Enable wake-word detection</b></label></div>
         <div class="setting-row"><span><strong>Save conversation history</strong><small>Stored only in this browser on this device</small></span><label class="switch"><input id="memory-enabled" type="checkbox" checked><span></span><b class="sr-only">Save conversation history</b></label></div>
+        <div class="setting-row"><span><strong>Use approved Smart Memories</strong><small>Only memories you review and approve are considered for relevant AI replies. Stored locally.</small></span><label class="switch"><input id="smart-memory-enabled" type="checkbox"><span></span><b class="sr-only">Use approved Smart Memories</b></label></div>
         <div class="setting-actions"><button class="secondary-button" id="preview-voice" type="button">Preview voice</button><button class="secondary-button" id="more-tools-button" type="button">More tools</button><button class="secondary-button danger-button" id="settings-clear" type="button">Clear saved data</button></div>
         <p class="settings-disclaimer">Microphone access and available voices are controlled by your browser and operating system. This app cannot control your computer or phone outside the permissions your browser provides.</p>
       </div>
@@ -724,6 +809,6 @@
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
     <script src="/diagnostics.js?hud=28"></script>
-    <script src="/app.js?hud=48" type="module"></script>
+    <script src="/app.js?hud=56" type="module"></script>
   </body>
 </html>

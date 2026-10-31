@@ -133,6 +133,8 @@ test('primes speech synthesis silently for English and Hindi user gestures', () 
     { text: ' ', volume: 0, lang: 'hi-IN' },
   ]);
   assert.equal(resumed, 2);
+  assert.equal(primeSpeechSynthesis(synthesis, FakeUtterance, 'en', true), false);
+  assert.equal(spoken.length, 2);
   assert.equal(primeSpeechSynthesis({}, FakeUtterance, 'en'), false);
   assert.equal(primeSpeechSynthesis(synthesis, null, 'en'), false);
   assert.equal(primeSpeechSynthesis({ speak() { throw new Error('blocked'); } }, FakeUtterance, 'en'), false);
@@ -337,14 +339,16 @@ test('keeps recognition active after an error until the matching end event', () 
   assert.equal(lifecycle.begin(second), true);
 });
 
-test('bounds repeated wake restarts and resets the circuit only after speech or a stable session', () => {
-  const policy = createWakeWordRecoveryPolicy({ maxAttempts: 3, stableDurationMs: 30_000 });
+test('bounds wake restart attempts and resets cooldown after speech or a stable session', () => {
+  const policy = createWakeWordRecoveryPolicy({ maxAttempts: 3, stableDurationMs: 30_000, cooldownMs: 1_000 });
 
   for (let ending = 1; ending <= 3; ending += 1) {
     assert.equal(policy.recordRestartAttempt(), ending);
   }
   assert.equal(policy.canRetry(), false);
   assert.equal(policy.recordRestartAttempt(), null);
+  assert.equal(policy.circuitOpen, false);
+  assert.equal(policy.startCooldown(), 1_000);
   assert.equal(policy.circuitOpen, true);
 
   assert.equal(policy.recordSessionDuration(29_999), false);
@@ -359,10 +363,35 @@ test('bounds repeated wake restarts and resets the circuit only after speech or 
   assert.equal(policy.canRetry(), true);
 
   policy.recordRestartAttempt();
-  policy.openCircuit();
+  policy.startCooldown();
   policy.resetForManualRetry();
   assert.equal(policy.circuitOpen, false);
   assert.equal(policy.restartAttempts, 0);
+});
+
+test('automatically retries beyond five short Android recognition sessions after cooldown', () => {
+  let now = 1_000;
+  const policy = createWakeWordRecoveryPolicy({
+    maxAttempts: 5,
+    cooldownMs: 30_000,
+    now: () => now,
+  });
+
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      assert.equal(policy.recordRestartAttempt(), attempt);
+      assert.equal(policy.recordSessionDuration(5_500), false);
+    }
+    assert.equal(policy.canRetry(), false);
+    assert.equal(policy.startCooldown(), 30_000);
+    assert.equal(policy.circuitOpen, true);
+    assert.equal(policy.cooldownRemainingMs, 30_000);
+
+    now += 30_000;
+    assert.equal(policy.finishCooldown(), true);
+    assert.equal(policy.circuitOpen, false);
+    assert.equal(policy.canRetry(), true);
+  }
 });
 
 test('detects English and Hindi wake phrases and extracts a following command', () => {

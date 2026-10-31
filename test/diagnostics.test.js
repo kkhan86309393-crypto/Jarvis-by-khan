@@ -6,7 +6,7 @@ import test from 'node:test';
 const diagnosticsSource = await readFile(new URL('../public/diagnostics.js', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 
-function runDiagnostics(search = '?diagnostics=1&token=private', cacheVersion = 'jarvis-shell-v53') {
+function runDiagnostics(search = '?diagnostics=1&token=private', cacheVersion = 'jarvis-shell-v61') {
   const windowListeners = new Map();
   const documentListeners = new Map();
   const output = { textContent: '' };
@@ -100,7 +100,7 @@ test('diagnostics show browser, speech capabilities, voices, settings, and activ
   assert.match(output.textContent, /Google हिन्दी \[hi-IN\]/);
   assert.match(output.textContent, /Voice Output setting: enabled/);
   assert.match(output.textContent, /visibility=visible, focused=true/);
-  assert.match(output.textContent, /Service-worker cache version: jarvis-shell-v53/);
+  assert.match(output.textContent, /Service-worker cache version: jarvis-shell-v61/);
   assert.doesNotMatch(output.textContent, /token=private|secret|reply text/);
 });
 
@@ -254,6 +254,55 @@ test('diagnostics show wake recognition lifecycle, match results, and restart at
   assert.doesNotMatch(output.textContent, /private transcript/);
 });
 
+test('diagnostics identify recognition stop reasons and TTS priming overlap without transcripts', () => {
+  const { output, windowListeners } = runDiagnostics();
+  const recordSpeechEvent = windowListeners.get('jarvis:speech-diagnostic');
+
+  recordSpeechEvent({
+    detail: {
+      event: 'SpeechRecognition stop requested',
+      language: 'en-US',
+      purpose: 'wake',
+      reason: 'page-lifecycle',
+      started: true,
+      transcript: 'private transcript',
+    },
+  });
+  recordSpeechEvent({
+    detail: {
+      event: 'TTS silent priming attempted',
+      language: 'en-US',
+      reason: 'recognition-active',
+      recognitionActive: true,
+      queued: true,
+      transcript: 'private transcript',
+    },
+  });
+  recordSpeechEvent({
+    detail: {
+      event: 'Wake-word retry cooldown scheduled',
+      attempt: 5,
+      delayMs: 30_000,
+      reason: 'retry-limit-reached',
+      transcript: 'private transcript',
+    },
+  });
+  recordSpeechEvent({
+    detail: {
+      event: 'Wake-word retry cooldown ended',
+      attempt: 0,
+      reason: 'cooldown-expired',
+      transcript: 'private transcript',
+    },
+  });
+
+  assert.match(output.textContent, /SpeechRecognition stop requested \(language=en-US, purpose=wake, started=true, reason=page-lifecycle\)/);
+  assert.match(output.textContent, /TTS silent priming attempted \(language=en-US, recognitionActive=true, queued=true, reason=recognition-active\)/);
+  assert.match(output.textContent, /Wake-word retry cooldown scheduled \(attempt=5, delayMs=30000, reason=retry-limit-reached\)/);
+  assert.match(output.textContent, /Wake-word retry cooldown ended \(attempt=0, reason=cooldown-expired\)/);
+  assert.doesNotMatch(output.textContent, /private transcript/);
+});
+
 test('diagnostics remain hidden unless explicitly enabled in the URL', () => {
   const { panel, output, windowListeners } = runDiagnostics('?diagnostics=0');
 
@@ -266,17 +315,24 @@ test('speech paths report AI, recognition, and TTS lifecycle events to diagnosti
   assert.match(appSource, /reportSpeechDiagnostic\('AI reply reaches speak\(\)'/);
   assert.match(appSource, /reportSpeechDiagnostic\('SpeechRecognition error'/);
   assert.match(appSource, /reportSpeechDiagnostic\('SpeechRecognition start requested'/);
+  assert.match(appSource, /reportSpeechDiagnostic\('SpeechRecognition stop requested'/);
   assert.match(appSource, /reportSpeechDiagnostic\('SpeechRecognition started'/);
   assert.match(appSource, /reportSpeechDiagnostic\('SpeechRecognition results received'/);
   assert.match(appSource, /reportSpeechDiagnostic\('Wake-word match evaluated'/);
   assert.match(appSource, /reportSpeechDiagnostic\('SpeechRecognition ended'/);
   assert.match(appSource, /reportSpeechDiagnostic\('Wake-word automatic restart attempted'/);
+  assert.match(appSource, /wakeWordRecoveryPolicy\.startCooldown\(\)/);
+  assert.match(appSource, /wakeWordRecoveryPolicy\.finishCooldown\(\)/);
+  assert.match(appSource, /resumeWakeWordDetection\('retry-cooldown-ended'\)/);
+  assert.doesNotMatch(appSource, /if \(wakeWordRecoveryPolicy\.circuitOpen\) return/);
   assert.match(appSource, /reportSpeechDiagnostic\('Wake-word listening blocked'/);
   assert.match(appSource, /reportSpeechDiagnostic\('Microphone permission status'/);
   assert.match(appSource, /reportWakeWordStatus\('startup'\)/);
   assert.match(appSource, /reportTtsDiagnostic\('TTS utterance onstart'/);
   assert.match(appSource, /reportTtsDiagnostic\('TTS utterance onerror'/);
   assert.match(appSource, /reportTtsDiagnostic\('TTS utterance onend'/);
+  assert.match(appSource, /reportTtsDiagnostic\('TTS silent priming attempted'/);
+  assert.match(appSource, /state\.preferences\.language,\s*Boolean\(state\.recognition\)/);
 });
 
 test('TTS completion does not count as a playback start', () => {

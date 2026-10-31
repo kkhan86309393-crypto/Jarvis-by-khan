@@ -30,7 +30,38 @@ import {
   shouldRunWakeWord,
   WAKE_WORD_MAX_RESTART_ATTEMPTS,
 } from './speech-input.js';
-import { selectRecentChatContext } from './chat-context.js';
+import { applySpeechBoundaryCue } from './avatar-cues.js';
+import {
+  createPortraitAnimation,
+  PORTRAIT_ANIMATION_EVENT,
+} from './portrait-animation.js';
+import { parseSmartCommand } from './smart-command-router.js';
+import {
+  createMemory,
+  loadMemories,
+  MEMORIES_STORAGE_KEY,
+  removeMemory,
+  saveMemories,
+  selectMemoryAwareChatContext,
+  setMemoryContextApproval,
+  updateMemory,
+  upsertMemory,
+} from './local-memory.js';
+import {
+  createNote,
+  createTask,
+  loadNotes,
+  loadTasks,
+  NOTES_STORAGE_KEY,
+  getDailyProductivityInsights,
+  getTaskPrioritySummary,
+  saveNotes,
+  saveTasks,
+  setTaskCompleted,
+  TASKS_STORAGE_KEY,
+  updateNote,
+  updateTask,
+} from './local-planner.js';
 import {
   DEFAULT_LAB_PREFERENCES,
   LAB_PREFERENCES_KEY,
@@ -72,10 +103,19 @@ import {
 
 const HISTORY_KEY = 'jarvis.history.v1';
 const PREFERENCES_KEY = 'jarvis.preferences.v1';
+const AVATAR_THEMES = new Set([
+  'electric-blue',
+  'neon-purple',
+  'matrix-green',
+  'cyber-amber',
+  'holographic-cyan',
+  'neon-pink',
+]);
 const historyLimit = 80;
 const maxVisionDimension = 1_280;
 const maxVisionImageBytes = 500 * 1024;
 const speechDiagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1';
+const localDateTimeFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const defaults = {
   language: 'en',
   voiceURI: '',
@@ -85,6 +125,8 @@ const defaults = {
   memoryEnabled: true,
   fullAccessEnabled: false,
   studyMode: false,
+  avatarTheme: 'electric-blue',
+  smartMemoryEnabled: false,
 };
 
 const elements = {
@@ -96,6 +138,13 @@ const elements = {
   searchToggle: document.querySelector('#search-toggle'),
   mic: document.querySelector('#mic-button'),
   dashboardLayout: document.querySelector('#dashboard-layout'),
+  holoStage: document.querySelector('#holo-stage'),
+  avatarFrame: document.querySelector('.avatar-frame'),
+  avatarCanvas: document.querySelector('#avatar-canvas'),
+  avatarImage: document.querySelector('#ai-avatar'),
+  avatarActivateButton: document.querySelector('#activate-3d-avatar'),
+  earthActivateButton: document.querySelector('#activate-holographic-earth'),
+  avatarStatus: document.querySelector('#avatar-model-status'),
   labLayout: document.querySelector('#jarvis-lab'),
   labModules: document.querySelector('.lab-module-grid'),
   labSafetyPanel: document.querySelector('#lab-safety-panel'),
@@ -168,6 +217,9 @@ const elements = {
   wakeWordEnabled: document.querySelector('#wake-word-enabled'),
   wakeWordSupport: document.querySelector('#wake-word-support'),
   memoryEnabled: document.querySelector('#memory-enabled'),
+  smartMemoryEnabled: document.querySelector('#smart-memory-enabled'),
+  smartMemoryEnabledDashboard: document.querySelector('#smart-memory-enabled-dashboard'),
+  avatarTheme: document.querySelector('#avatar-theme-select'),
   install: document.querySelector('#install-button'),
   installHelp: document.querySelector('#install-help'),
   installInstructions: document.querySelector('#install-instructions'),
@@ -178,6 +230,7 @@ const elements = {
   accessNote: document.querySelector('#access-mode-note'),
   activityLog: document.querySelector('#activity-log'),
   networkValue: document.querySelector('#network-value'),
+  localDateTimeValue: document.querySelector('#local-datetime-value'),
   voiceValue: document.querySelector('#voice-value'),
   voiceOutputValue: document.querySelector('#voice-output-value'),
   backendConnectionValue: document.querySelector('#backend-connection-value'),
@@ -249,6 +302,50 @@ const elements = {
   moreNavigationDialog: document.querySelector('#more-navigation-dialog'),
   focusTimerDisplay: document.querySelector('#focus-timer-display'),
   focusTimerButton: document.querySelector('#focus-timer-button'),
+  noteForm: document.querySelector('#note-form'),
+  noteTitle: document.querySelector('#note-title'),
+  noteContent: document.querySelector('#note-content'),
+  noteSaveButton: document.querySelector('#note-save-button'),
+  noteCancelButton: document.querySelector('#note-cancel-button'),
+  noteSearch: document.querySelector('#note-search'),
+  noteList: document.querySelector('#notes-list'),
+  noteStatus: document.querySelector('#note-status'),
+  taskForm: document.querySelector('#task-form'),
+  taskTitle: document.querySelector('#task-title'),
+  taskDetails: document.querySelector('#task-details'),
+  taskSaveButton: document.querySelector('#task-save-button'),
+  taskCancelButton: document.querySelector('#task-cancel-button'),
+  taskStatus: document.querySelector('#task-status'),
+  pendingTaskCount: document.querySelector('#pending-task-count'),
+  completedTaskCount: document.querySelector('#completed-task-count'),
+  pendingTaskList: document.querySelector('#pending-task-list'),
+  completedTaskList: document.querySelector('#completed-task-list'),
+  prioritySummary: document.querySelector('#priority-summary'),
+  insightTotalTasks: document.querySelector('#insight-total-tasks'),
+  insightPendingTasks: document.querySelector('#insight-pending-tasks'),
+  insightCompletedTasks: document.querySelector('#insight-completed-tasks'),
+  insightCompletedToday: document.querySelector('#insight-completed-today'),
+  insightFocusSessions: document.querySelector('#insight-focus-sessions'),
+  insightOldestTask: document.querySelector('#insight-oldest-task'),
+  insightNextAction: document.querySelector('#insight-next-action'),
+  priorityActivity: document.querySelector('#priority-activity'),
+  prioritySuggestion: document.querySelector('#priority-suggestion'),
+  priorityTaskTitle: document.querySelector('#priority-task-title'),
+  priorityReason: document.querySelector('#priority-reason'),
+  priorityEmpty: document.querySelector('#priority-empty'),
+  priorityAccept: document.querySelector('#priority-accept'),
+  priorityDismiss: document.querySelector('#priority-dismiss'),
+  smartMemoryPanel: document.querySelector('#smart-memory-panel'),
+  smartMemoryForm: document.querySelector('#smart-memory-form'),
+  smartMemoryType: document.querySelector('#smart-memory-type'),
+  smartMemoryTitle: document.querySelector('#smart-memory-title-input'),
+  smartMemoryContent: document.querySelector('#smart-memory-content-input'),
+  smartMemorySave: document.querySelector('#smart-memory-save'),
+  smartMemoryCancel: document.querySelector('#smart-memory-cancel'),
+  smartMemoryClear: document.querySelector('#smart-memory-clear'),
+  smartMemoryStatus: document.querySelector('#smart-memory-status'),
+  smartMemorySearch: document.querySelector('#smart-memory-search'),
+  smartMemoryList: document.querySelector('#smart-memory-list'),
 };
 
 function reportSpeechDiagnostic(event, details = {}) {
@@ -304,8 +401,10 @@ function loadPreferences() {
     voiceEnabled: resolveVoiceOutputEnabled(stored.voiceEnabled, 'speechSynthesis' in window),
     wakeWordEnabled: stored.wakeWordEnabled === true,
     memoryEnabled: stored.memoryEnabled !== false,
+    smartMemoryEnabled: stored.smartMemoryEnabled === true,
     fullAccessEnabled: stored.fullAccessEnabled === true,
     studyMode: stored.studyMode === true,
+    avatarTheme: AVATAR_THEMES.has(stored.avatarTheme) ? stored.avatarTheme : 'electric-blue',
   };
 }
 
@@ -351,6 +450,18 @@ const state = {
   displayStream: null,
   focusRemaining: 25 * 60,
   focusTimerId: null,
+  notes: [],
+  tasks: [],
+  memories: [],
+  notesAvailable: false,
+  tasksAvailable: false,
+  memoriesAvailable: false,
+  editingNoteId: null,
+  editingTaskId: null,
+  editingMemoryId: null,
+  dismissedTaskSuggestions: new Set(),
+  suggestedTaskId: null,
+  focusTaskId: null,
   captureObjectUrl: null,
   visionFrame: null,
   visionSending: false,
@@ -367,12 +478,22 @@ const state = {
 
 let personalizeDraft = null;
 let codeStudioPreviewSource = null;
+let avatar3dInstance = null;
+let avatar3dModulePromise = null;
+let avatar3dActivationPending = false;
+let avatar3dActivated = false;
+let avatar3dActiveMode = '';
 
 let healthRequestSequence = 0;
 const recognitionLifecycle = createRecognitionLifecycle();
 const speechReplayController = createSpeechReplayController(() => renderMessages());
 const wakeWordRecoveryPolicy = createWakeWordRecoveryPolicy();
 const microphonePermissionGuard = createMicrophonePermissionGuard();
+const portraitAnimation = createPortraitAnimation({
+  onChange: (detail) => {
+    elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
+  },
+});
 
 function loadHistory() {
   if (!state.preferences.memoryEnabled) return [];
@@ -400,22 +521,408 @@ function saveHistory() {
   }
 }
 
+function formatPlannerDate(value) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+function createPlannerButton(label, action, id) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'planner-item-action';
+  button.dataset.plannerAction = action;
+  button.dataset.itemId = id;
+  button.textContent = label;
+  return button;
+}
+
+function renderNotes() {
+  const query = elements.noteSearch.value.trim().toLocaleLowerCase();
+  const notes = state.notes.filter((note) => (
+    `${note.title}\n${note.content}`.toLocaleLowerCase().includes(query)
+  ));
+  elements.noteList.replaceChildren();
+
+  if (!notes.length) {
+    const empty = document.createElement('li');
+    empty.className = 'planner-empty';
+    empty.textContent = query ? 'No notes match this search.' : 'No notes yet. Add one above.';
+    elements.noteList.append(empty);
+    return;
+  }
+
+  for (const note of [...notes].reverse()) {
+    const item = document.createElement('li');
+    item.className = 'planner-item note-item';
+    const heading = document.createElement('div');
+    heading.className = 'planner-item-heading';
+    const title = document.createElement('strong');
+    title.textContent = note.title;
+    const dates = document.createElement('time');
+    dates.dateTime = note.updatedAt;
+    dates.textContent = `Created ${formatPlannerDate(note.createdAt)} · Updated ${formatPlannerDate(note.updatedAt)}`;
+    heading.append(title, dates);
+
+    const content = document.createElement('p');
+    content.className = 'planner-item-content';
+    content.textContent = note.content || 'No note text.';
+
+    const actions = document.createElement('div');
+    actions.className = 'planner-item-actions';
+    actions.append(
+      createPlannerButton('Edit', 'edit-note', note.id),
+      createPlannerButton('Delete', 'delete-note', note.id),
+    );
+    item.append(heading, content, actions);
+    elements.noteList.append(item);
+  }
+}
+
+function renderTaskPriority({ resetDismissed = false } = {}) {
+  if (resetDismissed) state.dismissedTaskSuggestions.clear();
+  const activityEntries = [...elements.activityLog.querySelectorAll('li')].map((item) => ({
+    message: item.querySelector('span')?.textContent || '',
+    timestamp: item.querySelector('time')?.dateTime || '',
+  }));
+  const priorityActivityEntries = activityEntries.map(({ message }) => message);
+  const priority = getTaskPrioritySummary(
+    state.tasks,
+    priorityActivityEntries,
+    new Date(),
+    [...state.dismissedTaskSuggestions],
+  );
+  const insights = getDailyProductivityInsights(state.tasks, activityEntries, new Date());
+  elements.prioritySummary.textContent = priority.summary;
+  elements.insightTotalTasks.textContent = String(insights.totalTasks);
+  elements.insightPendingTasks.textContent = String(insights.pendingTasks);
+  elements.insightCompletedTasks.textContent = String(insights.completedTasks);
+  elements.insightCompletedToday.textContent = String(insights.completedToday);
+  elements.insightFocusSessions.textContent = String(insights.focusSessionsToday);
+  elements.insightOldestTask.textContent = insights.oldestPendingTask
+    ? `Oldest pending: ${insights.oldestPendingTask.title}${insights.daysPending ? ` · ${insights.daysPending} day${insights.daysPending === 1 ? '' : 's'}` : ' · added today'}`
+    : 'Oldest pending: none';
+  elements.insightNextAction.textContent = `Next action: ${insights.nextAction}`;
+  elements.priorityActivity.textContent = insights.recentFocusActivity
+    ? `Available activity: ${insights.recentFocusActivity}`
+    : 'Available activity: no focus activity recorded in this session.';
+  state.suggestedTaskId = priority.suggestedTask?.id || null;
+
+  if (state.focusTaskId) {
+    const activeTask = state.tasks.find((task) => task.id === state.focusTaskId);
+    if (activeTask && !activeTask.completed) {
+      state.suggestedTaskId = activeTask.id;
+      elements.prioritySuggestion.hidden = false;
+      elements.priorityEmpty.hidden = true;
+      elements.priorityTaskTitle.textContent = activeTask.title;
+      elements.priorityReason.textContent = state.focusTimerId
+        ? 'A focus session for this task is running.'
+        : 'A focus session for this task is paused.';
+      elements.priorityAccept.textContent = state.focusTimerId ? 'Focus session active' : 'Resume focus session';
+      elements.priorityAccept.disabled = Boolean(state.focusTimerId);
+      return;
+    }
+    state.focusTaskId = null;
+  }
+
+  elements.priorityAccept.disabled = false;
+  elements.priorityAccept.textContent = 'Start focus session';
+  if (priority.suggestedTask) {
+    elements.prioritySuggestion.hidden = false;
+    elements.priorityEmpty.hidden = true;
+    elements.priorityTaskTitle.textContent = priority.suggestedTask.title;
+    elements.priorityReason.textContent = insights.nextAction;
+    return;
+  }
+
+  elements.prioritySuggestion.hidden = true;
+  elements.priorityEmpty.hidden = false;
+  elements.priorityEmpty.textContent = priority.pendingCount
+    ? 'All current suggestions are dismissed. Add or update a task to refresh priorities.'
+    : 'No pending tasks. Add a task whenever you are ready.';
+}
+
+function renderTasks({ resetDismissed = false } = {}) {
+  const pending = state.tasks.filter((task) => !task.completed);
+  const completed = state.tasks.filter((task) => task.completed);
+  elements.pendingTaskCount.textContent = String(pending.length);
+  elements.completedTaskCount.textContent = String(completed.length);
+
+  const renderTaskGroup = (list, tasks, emptyText) => {
+    list.replaceChildren();
+    if (!tasks.length) {
+      const empty = document.createElement('li');
+      empty.className = 'planner-empty';
+      empty.textContent = emptyText;
+      list.append(empty);
+      return;
+    }
+
+    for (const task of [...tasks].reverse()) {
+      const item = document.createElement('li');
+      item.className = `planner-item task-item${task.completed ? ' is-completed' : ''}`;
+      const row = document.createElement('div');
+      row.className = 'task-item-row';
+      const label = document.createElement('label');
+      label.className = 'task-check-label';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = task.completed;
+      checkbox.dataset.taskId = task.id;
+      checkbox.setAttribute('aria-label', `${task.completed ? 'Mark task incomplete' : 'Mark task complete'}: ${task.title}`);
+      const title = document.createElement('strong');
+      title.textContent = task.title;
+      label.append(checkbox, title);
+
+      const actions = document.createElement('div');
+      actions.className = 'planner-item-actions';
+      actions.append(
+        createPlannerButton('Edit', 'edit-task', task.id),
+        createPlannerButton('Delete', 'delete-task', task.id),
+      );
+      row.append(label, actions);
+      item.append(row);
+
+      if (task.content) {
+        const details = document.createElement('p');
+        details.className = 'planner-item-content';
+        details.textContent = task.content;
+        item.append(details);
+      }
+
+      const added = document.createElement('time');
+      added.className = 'task-added-date';
+      added.dateTime = task.createdAt;
+      added.textContent = `Added ${formatPlannerDate(task.createdAt)}`;
+      item.append(added);
+      list.append(item);
+    }
+  };
+
+  renderTaskGroup(elements.pendingTaskList, pending, 'No pending tasks.');
+  renderTaskGroup(elements.completedTaskList, completed, 'No completed tasks.');
+  renderTaskPriority({ resetDismissed });
+}
+
+function setPlannerFormAvailability(form, available) {
+  form.querySelectorAll('input, textarea, button').forEach((control) => {
+    control.disabled = !available;
+  });
+}
+
+function resetNoteForm() {
+  state.editingNoteId = null;
+  elements.noteForm.reset();
+  elements.noteSaveButton.textContent = 'Save note';
+  elements.noteCancelButton.hidden = true;
+}
+
+function resetTaskForm() {
+  state.editingTaskId = null;
+  elements.taskForm.reset();
+  elements.taskSaveButton.textContent = 'Add task';
+  elements.taskCancelButton.hidden = true;
+}
+
+function initializeLocalPlanner() {
+  try {
+    state.notes = loadNotes(localStorage);
+    state.notesAvailable = true;
+  } catch (error) {
+    elements.noteStatus.textContent = `Saved notes could not be loaded and will not be overwritten: ${error.message}`;
+  }
+
+  try {
+    state.tasks = loadTasks(localStorage);
+    state.tasksAvailable = true;
+  } catch (error) {
+    elements.taskStatus.textContent = `Saved tasks could not be loaded and will not be overwritten: ${error.message}`;
+  }
+
+  setPlannerFormAvailability(elements.noteForm, state.notesAvailable);
+  elements.noteSearch.disabled = !state.notesAvailable;
+  setPlannerFormAvailability(elements.taskForm, state.tasksAvailable);
+  renderNotes();
+  renderTasks({ resetDismissed: true });
+}
+
+function resetSmartMemoryForm() {
+  state.editingMemoryId = null;
+  elements.smartMemoryForm.reset();
+  elements.smartMemorySave.textContent = 'Save memory';
+  elements.smartMemoryCancel.hidden = true;
+}
+
+function setSmartMemoryAvailability(available) {
+  elements.smartMemoryForm.querySelectorAll('input, textarea, select, button').forEach((control) => {
+    control.disabled = !available;
+  });
+  elements.smartMemorySearch.disabled = !available;
+  elements.smartMemoryEnabled.disabled = !available;
+  elements.smartMemoryEnabledDashboard.disabled = !available;
+  elements.smartMemoryClear.disabled = false;
+}
+
+function renderSmartMemories() {
+  const query = elements.smartMemorySearch.value.trim().toLocaleLowerCase();
+  const memories = state.memories.filter((memory) => (
+    `${memory.type}\n${memory.title}\n${memory.content}`.toLocaleLowerCase().includes(query)
+  ));
+  elements.smartMemoryList.replaceChildren();
+
+  if (!memories.length) {
+    const empty = document.createElement('li');
+    empty.className = 'planner-empty';
+    empty.textContent = query ? 'No memories match this search.' : 'No memories saved on this device. Add one above when you choose.';
+    elements.smartMemoryList.append(empty);
+    return;
+  }
+
+  for (const memory of [...memories].reverse()) {
+    const item = document.createElement('li');
+    item.className = 'planner-item smart-memory-item';
+    const heading = document.createElement('div');
+    heading.className = 'planner-item-heading';
+    const title = document.createElement('strong');
+    title.textContent = memory.title;
+    const meta = document.createElement('time');
+    meta.dateTime = memory.updatedAt;
+    meta.textContent = `${memory.type === 'preference' ? 'Preference' : 'Fact'} · Created ${formatPlannerDate(memory.createdAt)} · Updated ${formatPlannerDate(memory.updatedAt)}`;
+    heading.append(title, meta);
+
+    const content = document.createElement('p');
+    content.className = 'planner-item-content';
+    content.textContent = memory.content;
+
+    const approval = document.createElement('label');
+    approval.className = 'smart-memory-approval';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = memory.includeInContext;
+    checkbox.disabled = !state.memoriesAvailable;
+    checkbox.dataset.memoryApprovalId = memory.id;
+    const approvalText = document.createElement('span');
+    approvalText.textContent = 'Approve this reviewed memory for AI context';
+    approval.append(checkbox, approvalText);
+
+    const actions = document.createElement('div');
+    actions.className = 'planner-item-actions';
+    const edit = createPlannerButton('Edit', 'edit-memory', memory.id);
+    const remove = createPlannerButton('Delete', 'delete-memory', memory.id);
+    edit.disabled = !state.memoriesAvailable;
+    remove.disabled = !state.memoriesAvailable;
+    actions.append(edit, remove);
+    item.append(heading, content, approval, actions);
+    elements.smartMemoryList.append(item);
+  }
+}
+
+function persistSmartMemories(memories) {
+  saveMemories(localStorage, memories);
+  state.memories = memories;
+  state.memoriesAvailable = true;
+  setSmartMemoryAvailability(true);
+  renderSmartMemories();
+}
+
+function setSmartMemoryEnabled(enabled) {
+  if (enabled && !state.memoriesAvailable) {
+    elements.smartMemoryStatus.textContent = 'Saved memories are unavailable; review the storage error before enabling them.';
+    syncSettings();
+    return;
+  }
+  const previous = state.preferences.smartMemoryEnabled;
+  state.preferences.smartMemoryEnabled = enabled;
+  elements.smartMemoryEnabled.checked = enabled;
+  elements.smartMemoryEnabledDashboard.checked = enabled;
+  try {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(state.preferences));
+    elements.smartMemoryStatus.textContent = enabled
+      ? 'Smart Memory is on. Only reviewed, approved preferences and relevant approved facts may be included in AI context.'
+      : 'Smart Memory is off. Saved memories remain on this device and will not be included in AI context.';
+  } catch (error) {
+    if (!enabled) {
+      state.preferences.smartMemoryEnabled = false;
+      elements.smartMemoryEnabled.checked = false;
+      elements.smartMemoryEnabledDashboard.checked = false;
+      elements.smartMemoryStatus.textContent = `Smart Memory is off for this session, but the setting could not be saved: ${error.message}`;
+      return;
+    }
+    state.preferences.smartMemoryEnabled = previous;
+    elements.smartMemoryEnabled.checked = previous;
+    elements.smartMemoryEnabledDashboard.checked = previous;
+    elements.smartMemoryStatus.textContent = `Smart Memory could not be enabled: ${error.message}`;
+  }
+}
+
+function initializeSmartMemories() {
+  try {
+    state.memories = loadMemories(localStorage);
+    state.memoriesAvailable = true;
+    elements.smartMemoryStatus.textContent = state.preferences.smartMemoryEnabled
+      ? 'Smart Memory is on. Only reviewed and explicitly approved memories can be considered for relevant AI replies.'
+      : 'Smart Memory is off. Saved memories will not be included in AI context.';
+  } catch (error) {
+    elements.smartMemoryStatus.textContent = `Saved memories could not be loaded and will not be overwritten: ${error.message}`;
+  }
+  setSmartMemoryAvailability(state.memoriesAvailable);
+  renderSmartMemories();
+}
+
+function handleSmartMemoryAction(event) {
+  const button = event.target.closest('[data-planner-action][data-item-id]');
+  if (!button) return;
+  const memory = state.memories.find((item) => item.id === button.dataset.itemId);
+  if (!memory) return;
+
+  if (button.dataset.plannerAction === 'edit-memory') {
+    state.editingMemoryId = memory.id;
+    elements.smartMemoryType.value = memory.type;
+    elements.smartMemoryTitle.value = memory.title;
+    elements.smartMemoryContent.value = memory.content;
+    elements.smartMemorySave.textContent = 'Update memory';
+    elements.smartMemoryCancel.hidden = false;
+    elements.smartMemoryStatus.textContent = memory.includeInContext
+      ? 'Review your changes. Saving changed content will remove its context approval until you approve it again.'
+      : 'Edit this saved memory.';
+    elements.smartMemoryTitle.focus();
+    return;
+  }
+
+  if (button.dataset.plannerAction === 'delete-memory' && window.confirm('Delete this saved memory from this device?')) {
+    try {
+      persistSmartMemories(removeMemory(state.memories, memory.id));
+      elements.smartMemoryStatus.textContent = 'Memory deleted from this device.';
+    } catch (error) {
+      elements.smartMemoryStatus.textContent = `Memory could not be deleted: ${error.message}`;
+    }
+  }
+}
+
+function openSmartMemoryPanel() {
+  setWorkspaceView('dashboard');
+  selectNavigation('memory');
+  elements.smartMemoryPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  elements.smartMemoryTitle.focus({ preventScroll: true });
+}
+
 function showFeedback(message = '') {
   elements.feedback.textContent = message;
   elements.dashboardFeedback.textContent = message;
 }
 
 function logActivity(message) {
+  const occurredAt = new Date();
   const item = document.createElement('li');
   const marker = document.createElement('i');
   const label = document.createElement('span');
   const time = document.createElement('time');
   label.textContent = message;
-  time.textContent = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date());
+  time.dateTime = occurredAt.toISOString();
+  time.textContent = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(occurredAt);
   item.append(marker, label, time);
   elements.activityLog.prepend(item);
   while (elements.activityLog.children.length > 6) elements.activityLog.lastElementChild.remove();
   elements.leftSessionStatus.textContent = 'ACTIVE';
+  renderTaskPriority();
 }
 
 function syncFullAccess() {
@@ -435,9 +942,25 @@ function syncFullAccess() {
   window.dispatchEvent(new Event('jarvis:full-access-change'));
 }
 
+function resetAvatarMouth() {
+  if (!avatar3dActivated) return;
+  avatar3dInstance?.setMouth?.(0);
+  avatar3dInstance?.setViseme?.('aa');
+}
+
+function syncAvatarAssistantState() {
+  if (!avatar3dActivated) return;
+  const avatarState = ['listening', 'thinking', 'speaking', 'happy', 'error'].includes(state.assistantMode)
+    ? state.assistantMode
+    : 'normal';
+  avatar3dInstance?.setState?.(avatarState);
+  if (state.assistantMode !== 'speaking') resetAvatarMouth();
+}
+
 function setAssistantState(mode, label) {
   const supportedModes = ['normal', 'listening', 'speaking', 'thinking', 'happy', 'error', 'offline'];
   state.assistantMode = supportedModes.includes(mode) ? mode : 'normal';
+  syncAvatarAssistantState();
   elements.assistantState.textContent = label;
   elements.voiceConsoleStatus.textContent = label;
   renderMicrophoneStatus();
@@ -479,6 +1002,81 @@ function updateHologramState() {
     : announcement === 'offline' ? 'J.A.R.V.I.S. is offline.'
       : `J.A.R.V.I.S. is ${announcement}.`;
   elements.statePanelLive.textContent = announcement.toUpperCase();
+}
+
+function updateProjectionButtons() {
+  elements.avatarActivateButton.disabled = avatar3dActivationPending || avatar3dActiveMode === 'avatar';
+  elements.earthActivateButton.disabled = avatar3dActivationPending || avatar3dActiveMode === 'earth';
+  elements.avatarActivateButton.textContent = avatar3dActivationPending && avatar3dActiveMode === 'loading-avatar'
+    ? 'Loading 3D Avatar...'
+    : avatar3dActiveMode === 'avatar' ? '3D Avatar Active' : 'Activate 3D Avatar';
+  elements.earthActivateButton.textContent = avatar3dActivationPending && avatar3dActiveMode === 'loading-earth'
+    ? 'Loading Holographic Earth...'
+    : avatar3dActiveMode === 'earth' ? 'Holographic Earth Active' : 'Activate Holographic Earth';
+  elements.avatarActivateButton.setAttribute('aria-pressed', String(avatar3dActiveMode === 'avatar'));
+  elements.earthActivateButton.setAttribute('aria-pressed', String(avatar3dActiveMode === 'earth'));
+}
+
+async function activate3DProjection(mode) {
+  const activeMode = mode === 'avatar' ? 'avatar' : 'earth';
+  if (avatar3dActivationPending || avatar3dActiveMode === activeMode) return;
+  avatar3dActivationPending = true;
+  avatar3dActiveMode = `loading-${activeMode}`;
+  updateProjectionButtons();
+  elements.avatarStatus.textContent = activeMode === 'avatar'
+    ? 'Loading the 3D renderer. Your portrait remains visible until it is ready.'
+    : 'Building the local holographic Earth. Your portrait remains visible until it is ready.';
+  elements.avatarStatus.dataset.state = 'loading';
+  elements.avatarFrame.setAttribute('aria-busy', 'true');
+
+  try {
+    let avatarModule;
+    try {
+      avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?earth=3'));
+    } catch (error) {
+      avatar3dModulePromise = null;
+      throw error;
+    }
+
+    avatar3dInstance ||= avatarModule.initializeAvatar3d({
+      frame: elements.avatarFrame,
+      stage: elements.holoStage,
+      canvas: elements.avatarCanvas,
+      image: elements.avatarImage,
+      status: elements.avatarStatus,
+    });
+
+    const projectionReady = activeMode === 'avatar'
+      ? avatar3dInstance.loadBuiltInAvatar()
+      : avatar3dInstance.loadBuiltInGlobe();
+    if (projectionReady) {
+      avatar3dActiveMode = activeMode;
+      avatar3dActivated = activeMode === 'avatar';
+      if (avatar3dActivated) syncAvatarAssistantState();
+    } else {
+      avatar3dActiveMode = '';
+      avatar3dActivated = false;
+    }
+  } catch {
+    elements.avatarFrame.setAttribute('aria-busy', 'false');
+    avatar3dActiveMode = '';
+    avatar3dActivated = false;
+    elements.avatarStatus.textContent = activeMode === 'avatar'
+      ? 'The 3D avatar could not load. The static portrait is still available; check WebGL or your connection and try again.'
+      : 'The holographic Earth could not load. The static portrait is still available; check WebGL or your connection and try again.';
+    elements.avatarStatus.dataset.state = 'error';
+  } finally {
+    avatar3dActivationPending = false;
+    updateProjectionButtons();
+  }
+}
+
+function activate3DAvatar() {
+  return activate3DProjection('avatar');
+}
+
+function activateHolographicEarth() {
+  return activate3DProjection('earth');
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
@@ -618,7 +1216,11 @@ function apiHeaders(json = false) {
 }
 
 async function sendChat(text, { retry = false, contextOverride = null, maxTokens = null, singleAttempt = false } = {}) {
-  const context = contextOverride || selectRecentChatContext(state.messages);
+  const context = contextOverride || selectMemoryAwareChatContext(
+    state.messages,
+    state.memories,
+    state.preferences.smartMemoryEnabled && state.memoriesAvailable,
+  );
   if (!retry) state.lastChatFailure = null;
   setDashboardChatState('thinking', 'J.A.R.V.I.S. is processing your message.');
   setAssistantState('thinking', 'PROCESSING REQUEST');
@@ -704,6 +1306,93 @@ function retryLastChat() {
   });
 }
 
+function showTaskGroup(group) {
+  setWorkspaceView('dashboard');
+  const target = document.querySelector(group === 'pending'
+    ? '#pending-tasks-group'
+    : '#completed-tasks-group');
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function handleSmartCommand(command) {
+  const openDashboard = () => {
+    setWorkspaceView('dashboard');
+    selectNavigation('dashboard');
+  };
+  const focusPlannerSection = (selector, focusSelector) => {
+    openDashboard();
+    const target = document.querySelector(selector);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.querySelector(focusSelector)?.focus({ preventScroll: true });
+  };
+
+  if (command.type === 'dashboard') {
+    openDashboard();
+    elements.dashboardLayout.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return 'Dashboard opened.';
+  }
+  if (command.type === 'notes') {
+    focusPlannerSection('#notes-section', '#note-title');
+    return state.notesAvailable ? 'Notes opened. Your saved notes are stored on this device.' : 'Notes opened, but local note storage is unavailable. Saved data was not changed.';
+  }
+  if (command.type === 'tasks') {
+    focusPlannerSection('#tasks-section', '#task-title');
+    return state.tasksAvailable ? 'Tasks opened. Your saved tasks are stored on this device.' : 'Tasks opened, but local task storage is unavailable. Saved data was not changed.';
+  }
+  if (command.type === 'pending-tasks' || command.type === 'completed-tasks') {
+    const group = command.type === 'pending-tasks' ? 'pending' : 'completed';
+    const tasks = state.tasks.filter((task) => task.completed === (group === 'completed'));
+    showTaskGroup(group);
+    if (!state.tasksAvailable) return 'Task data is unavailable; saved data was not changed.';
+    const labels = tasks.slice(0, 4).map((task) => task.title).join(', ');
+    const remaining = tasks.length > 4 ? `, and ${tasks.length - 4} more` : '';
+    return tasks.length
+      ? `${group === 'pending' ? 'Pending' : 'Completed'} tasks (${tasks.length}): ${labels}${remaining}.`
+      : `There are no ${group} tasks.`;
+  }
+  if (command.type === 'search-notes') {
+    focusPlannerSection('#notes-section', '#note-search');
+    if (!state.notesAvailable) return 'Saved note search is unavailable; local data was not changed.';
+    elements.noteSearch.value = command.query;
+    renderNotes();
+    if (!command.query) return 'Notes are open. Enter a phrase in Search notes to filter them.';
+    const query = command.query.toLocaleLowerCase();
+    const count = state.notes.filter((note) => (
+      `${note.title}\n${note.content}`.toLocaleLowerCase().includes(query)
+    )).length;
+    return count
+      ? `Found ${count} saved note${count === 1 ? '' : 's'} matching "${command.query}".`
+      : `No saved notes match "${command.query}".`;
+  }
+  if (command.type === 'start-focus') {
+    openDashboard();
+    if (state.focusTimerId) return 'The focus timer is already running.';
+    toggleFocusTimer();
+    return state.focusTaskId
+      ? `Focus timer resumed for "${state.tasks.find((task) => task.id === state.focusTaskId)?.title || 'selected task'}".`
+      : 'Focus timer started for 25 minutes.';
+  }
+  if (command.type === 'pause-focus') {
+    openDashboard();
+    if (!state.focusTimerId) return 'The focus timer is not running.';
+    toggleFocusTimer();
+    return 'Focus timer paused.';
+  }
+  if (command.type === 'system-status') {
+    openDashboard();
+    document.querySelector('#system-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return `System status: server CPU ${elements.cpuValue.textContent}; server memory ${elements.ramValue.textContent}; storage ${elements.diskValue.textContent}; this device ${elements.networkValue.textContent}.`;
+  }
+  return '';
+}
+
+function executeSmartCommand(command, originalText) {
+  const response = handleSmartCommand(command);
+  addMessage({ role: 'user', content: originalText });
+  addMessage({ role: 'assistant', content: response });
+  showFeedback(response);
+}
+
 async function searchWeb(query) {
   setDashboardChatState('thinking', 'Searching available web sources.');
   setAssistantState('thinking', 'SEARCHING THE WEB');
@@ -758,7 +1447,10 @@ function summarizeSearchResults(data, prompt) {
 
 function submitMessage(event) {
   event.preventDefault();
-  if (event.submitter === elements.send) primeVoiceOutput();
+  const command = !state.pendingAttachment && !state.searchMode
+    ? parseSmartCommand(elements.message.value.trim())
+    : null;
+  if (event.submitter === elements.send && !command) primeVoiceOutput();
   if (state.pending) return;
   const text = elements.message.value.trim();
   if (!text) return;
@@ -766,6 +1458,13 @@ function submitMessage(event) {
   const outgoingText = attachment ? `${text}\n\n[Attached file: ${attachment.name}]\n${attachment.content}` : text;
   if (outgoingText.length > 4_000) {
     showFeedback('Message and attachment together must be under 4,000 characters. Shorten the message or attach a smaller file.');
+    return;
+  }
+  if (command) {
+    elements.message.value = '';
+    elements.message.style.height = '';
+    showFeedback('');
+    executeSmartCommand(command, text);
     return;
   }
   elements.message.value = '';
@@ -777,7 +1476,7 @@ function submitMessage(event) {
   showFeedback('');
   if (state.recognitionWakeSession) {
     state.wakeWordResumePending = state.preferences.wakeWordEnabled;
-    requestStopListening();
+    requestStopListening(state.recognition, 'chat-submit');
   }
   addMessage({ role: 'user', content: outgoingText });
   state.pending = true;
@@ -805,11 +1504,19 @@ function selectedVoice() {
 
 function primeVoiceOutput() {
   if (!('speechSynthesis' in window) || !state.preferences.voiceEnabled) return false;
-  return primeSpeechSynthesis(
+  const queued = primeSpeechSynthesis(
     window.speechSynthesis,
     window.SpeechSynthesisUtterance || globalThis.SpeechSynthesisUtterance,
     state.preferences.language,
+    Boolean(state.recognition),
   );
+  reportTtsDiagnostic('TTS silent priming attempted', {
+    language: getSpeechRecognitionLanguage(state.preferences.language),
+    recognitionActive: Boolean(state.recognition),
+    reason: state.recognition ? 'recognition-active' : 'user-gesture',
+    queued,
+  });
+  return queued;
 }
 
 function startListeningFromUserGesture() {
@@ -864,10 +1571,11 @@ function speak(text, { onStart, onNotStarted } = {}) {
     });
     state.pendingSpeechText = speechText;
     state.pendingSpeechOptions = { onStart, onNotStarted };
-    requestStopListening();
+    requestStopListening(state.recognition, 'tts-deferred');
     return;
   }
   const playbackId = ++state.speechPlaybackId;
+  portraitAnimation.cancelSpeech();
   state.speechStartMonitorCancel?.();
   state.speechStartMonitorCancel = null;
   state.pendingSpeechText = null;
@@ -885,6 +1593,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
   } catch {
     reportTtsDiagnostic('TTS utterance creation failed', voiceDetails);
     state.speechOutputTexts.delete(speechText);
+    portraitAnimation.cancelSpeech();
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
@@ -899,6 +1608,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
   const markPlaybackStarted = () => {
     if (playbackStarted || playbackId !== state.speechPlaybackId) return;
     playbackStarted = true;
+    portraitAnimation.startSpeech(playbackId);
     state.speechStartMonitorCancel?.();
     state.speechStartMonitorCancel = null;
     setAssistantState('speaking', 'VOICE OUTPUT');
@@ -916,6 +1626,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
   };
   utterance.onpause = () => {
     if (playbackId !== state.speechPlaybackId) return;
+    portraitAnimation.pauseSpeech(playbackId);
     reportTtsDiagnostic('TTS utterance onpause', {
       ...voiceDetails,
       started: playbackStarted,
@@ -925,12 +1636,27 @@ function speak(text, { onStart, onNotStarted } = {}) {
   };
   utterance.onresume = () => {
     if (playbackId !== state.speechPlaybackId) return;
+    portraitAnimation.resumeSpeech(playbackId);
     reportTtsDiagnostic('TTS utterance onresume', {
       ...voiceDetails,
       started: playbackStarted,
       ...(startedAt === null ? {} : { durationMs: Math.max(0, Math.round(performance.now() - startedAt)) }),
     });
     setAssistantState('speaking', 'VOICE OUTPUT');
+  };
+  utterance.onboundary = (event) => {
+    if (
+      playbackId !== state.speechPlaybackId
+      || !playbackStarted
+      || state.assistantMode !== 'speaking'
+    ) return;
+    applySpeechBoundaryCue(speechText, event, (opening, viseme) => {
+      portraitAnimation.setViseme(playbackId, viseme);
+      if (avatar3dActivated && avatar3dInstance) {
+        avatar3dInstance.setMouth?.(opening);
+        avatar3dInstance.setViseme?.(viseme);
+      }
+    });
   };
   utterance.onend = () => {
     const endedAt = performance.now();
@@ -944,7 +1670,9 @@ function speak(text, { onStart, onNotStarted } = {}) {
       }),
     });
     state.speechOutputTexts.delete(speechText);
+    portraitAnimation.finishSpeech(playbackId);
     if (playbackId !== state.speechPlaybackId) return;
+    resetAvatarMouth();
     if (!playbackStarted) onNotStarted?.();
     state.speechStartMonitorCancel?.();
     state.speechStartMonitorCancel = null;
@@ -966,7 +1694,9 @@ function speak(text, { onStart, onNotStarted } = {}) {
       }),
     });
     state.speechOutputTexts.delete(speechText);
+    portraitAnimation.finishSpeech(playbackId);
     if (playbackId !== state.speechPlaybackId) return;
+    resetAvatarMouth();
     if (!playbackStarted) onNotStarted?.();
     state.speechStartMonitorCancel?.();
     state.speechStartMonitorCancel = null;
@@ -983,6 +1713,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
       error: error?.name || 'unknown',
     });
     state.speechOutputTexts.delete(speechText);
+    portraitAnimation.cancelSpeech();
     state.speechPlaybackId += 1;
     setAssistantState('', 'SYSTEM STANDBY');
     showFeedback('Speech output could not start on this device.');
@@ -1009,6 +1740,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
       });
       state.speechStartMonitorCancel = null;
       state.speechOutputTexts.delete(speechText);
+      portraitAnimation.finishSpeech(playbackId);
       state.speechPlaybackId += 1;
       setAssistantState('', 'SYSTEM STANDBY');
       showFeedback(getSpeechSynthesisErrorMessage('timeout'));
@@ -1019,6 +1751,8 @@ function speak(text, { onStart, onNotStarted } = {}) {
 }
 
 function stopSpeechOutput() {
+  resetAvatarMouth();
+  portraitAnimation.cancelSpeech();
   state.speechStartMonitorCancel?.();
   state.speechStartMonitorCancel = null;
   state.pendingSpeechText = null;
@@ -1764,27 +2498,24 @@ function disableWakeWord(message = '') {
 
 function resumeWakeWordDetection(reason = 'assistant-workflow-complete') {
   if (!state.wakeWordResumePending || !state.preferences.wakeWordEnabled) return;
-  if (wakeWordRecoveryPolicy.circuitOpen) return;
   if (!shouldRunWakeWord(state.preferences.wakeWordEnabled, document.visibilityState, state.wakeWordPagePaused, state.microphonePermission, pageIsFocused())) return;
   if (state.recognition || state.pending || isSpeechOutputBusy()) return;
-  if (!wakeWordRecoveryPolicy.canRetry()) {
-    wakeWordRecoveryPolicy.openCircuit();
-    state.wakeWordResumePending = false;
-    reportSpeechDiagnostic('Wake-word circuit breaker opened', {
-      attempt: wakeWordRecoveryPolicy.restartAttempts,
-      limit: WAKE_WORD_MAX_RESTART_ATTEMPTS,
-      reason: 'retry-limit-reached',
-    });
-    showFeedback('Wake-word listening paused after repeated recognition interruptions. Toggle wake-word detection off and on to retry.');
-    return;
-  }
   state.wakeWordResumePending = false;
   window.clearTimeout(state.wakeWordRestartTimer);
-  const restartDelay = state.wakeWordRestartDelay;
-  reportSpeechDiagnostic('Wake-word automatic restart scheduled', {
-    attempt: wakeWordRecoveryPolicy.restartAttempts + 1,
+  let cooldownRestart = wakeWordRecoveryPolicy.cooldownRemainingMs > 0;
+  let restartDelay = cooldownRestart
+    ? wakeWordRecoveryPolicy.cooldownRemainingMs
+    : state.wakeWordRestartDelay;
+  if (!cooldownRestart && !wakeWordRecoveryPolicy.canRetry()) {
+    restartDelay = wakeWordRecoveryPolicy.startCooldown();
+    cooldownRestart = true;
+    state.wakeWordRestartDelay = 600;
+    showFeedback('Wake-word listening will retry automatically after a short cooldown.');
+  }
+  reportSpeechDiagnostic(cooldownRestart ? 'Wake-word retry cooldown scheduled' : 'Wake-word automatic restart scheduled', {
+    attempt: cooldownRestart ? WAKE_WORD_MAX_RESTART_ATTEMPTS : wakeWordRecoveryPolicy.restartAttempts + 1,
     delayMs: restartDelay,
-    reason,
+    reason: cooldownRestart ? 'retry-limit-reached' : reason,
   });
   state.wakeWordRestartTimer = window.setTimeout(() => {
     state.wakeWordRestartTimer = null;
@@ -1798,15 +2529,20 @@ function resumeWakeWordDetection(reason = 'assistant-workflow-complete') {
       resumeWakeWordDetection();
       return;
     }
+    if (cooldownRestart) {
+      wakeWordRecoveryPolicy.finishCooldown();
+      reportSpeechDiagnostic('Wake-word retry cooldown ended', {
+        attempt: wakeWordRecoveryPolicy.restartAttempts,
+        reason: 'cooldown-expired',
+      });
+      state.wakeWordResumePending = true;
+      resumeWakeWordDetection('retry-cooldown-ended');
+      return;
+    }
     const attempt = wakeWordRecoveryPolicy.recordRestartAttempt();
     if (attempt === null) {
-      state.wakeWordResumePending = false;
-      reportSpeechDiagnostic('Wake-word circuit breaker opened', {
-        attempt: wakeWordRecoveryPolicy.restartAttempts,
-        limit: WAKE_WORD_MAX_RESTART_ATTEMPTS,
-        reason: 'retry-limit-reached',
-      });
-      showFeedback('Wake-word listening paused after repeated recognition interruptions. Toggle wake-word detection off and on to retry.');
+      state.wakeWordResumePending = true;
+      resumeWakeWordDetection('retry-limit-reached');
       return;
     }
     state.wakeWordResumePending = false;
@@ -1869,9 +2605,9 @@ function startListening(purpose = 'command', wakeHandoff = false, automaticWakeR
     if (state.recognitionWakeSession) {
       disableWakeWord('Wake-word detection is off. Listening for your request.');
       state.wakeWordManualTakeoverPending = true;
-      requestStopListening();
+      requestStopListening(state.recognition, 'manual-wake-takeover');
     } else if (state.listening && !recognitionLifecycle.isStopping(state.recognition)) {
-      requestStopListening();
+      requestStopListening(state.recognition, 'manual-mic-toggle');
     }
     return;
   }
@@ -2041,7 +2777,7 @@ function startListening(purpose = 'command', wakeHandoff = false, automaticWakeR
       elements.message.value = transcript;
     }
     if (finalResult && elements.message.value) {
-      requestStopListening(recognition);
+      requestStopListening(recognition, 'final-result-submitted');
       elements.form.requestSubmit();
     }
   };
@@ -2108,7 +2844,7 @@ function startListening(purpose = 'command', wakeHandoff = false, automaticWakeR
       ? 'Wake listening did not start. Retrying shortly; check microphone permission if this continues.'
       : message);
     setAssistantState('error', 'MICROPHONE START TIMED OUT');
-    requestStopListening(recognition);
+    requestStopListening(recognition, 'start-timeout');
   }, 10_000);
   try {
     recognition.start();
@@ -2141,8 +2877,14 @@ function startListening(purpose = 'command', wakeHandoff = false, automaticWakeR
   }
 }
 
-function requestStopListening(recognition = state.recognition) {
+function requestStopListening(recognition = state.recognition, reason = 'explicit-stop') {
   if (!recognition || recognition !== state.recognition || !recognitionLifecycle.requestStop(recognition)) return;
+  reportSpeechDiagnostic('SpeechRecognition stop requested', {
+    language: recognition.lang,
+    purpose: state.recognitionPurpose || 'command',
+    reason,
+    started: state.recognitionStartedAt !== null,
+  });
   try {
     recognition.stop();
   } catch (error) {
@@ -2219,13 +2961,22 @@ function stopListening(recognition = state.recognition, { unexpected = false, se
   }
 }
 
+function applyAvatarTheme(theme) {
+  const selectedTheme = AVATAR_THEMES.has(theme) ? theme : 'electric-blue';
+  document.documentElement.dataset.avatarTheme = selectedTheme;
+  elements.avatarTheme.value = selectedTheme;
+}
+
 function syncSettings() {
+  applyAvatarTheme(state.preferences.avatarTheme);
   elements.language.value = state.preferences.language;
   elements.speechRate.value = String(state.preferences.speechRate);
   elements.speechRateValue.textContent = Number(state.preferences.speechRate).toFixed(1);
   elements.voiceEnabled.checked = state.preferences.voiceEnabled;
   updateWakeWordSupport();
   elements.memoryEnabled.checked = state.preferences.memoryEnabled;
+  elements.smartMemoryEnabled.checked = state.preferences.smartMemoryEnabled;
+  elements.smartMemoryEnabledDashboard.checked = state.preferences.smartMemoryEnabled;
   elements.leftMemoryStatus.textContent = state.preferences.memoryEnabled ? 'LOCAL' : 'OFF';
   elements.leftMicStatus.textContent = getSpeechRecognitionConstructor(window) ? 'AVAILABLE' : 'UNSUPPORTED';
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
@@ -2352,6 +3103,12 @@ function updateMetricGauge(track, meter, value) {
   if (available) meter.style.width = `${value}%`;
 }
 
+function updateLocalDateTime() {
+  const now = new Date();
+  elements.localDateTimeValue.dateTime = now.toISOString();
+  elements.localDateTimeValue.textContent = localDateTimeFormatter.format(now);
+}
+
 function updateDeviceMonitor() {
   const profile = detectDeviceProfile(navigator);
   elements.deviceTypeValue.textContent = profile.deviceType;
@@ -2428,7 +3185,7 @@ async function updateMicrophonePermission(permissionStatus) {
     if (status.state === 'denied') {
       if (state.preferences.wakeWordEnabled) disableWakeWord('Microphone permission was denied. Wake-word detection is off until permission is granted again.');
       reportWakeWordStatus('setting-changed');
-      if (state.recognition) requestStopListening();
+      if (state.recognition) requestStopListening(state.recognition, 'microphone-permission-denied');
       renderMicrophoneStatus();
     }
     if (!permissionStatus) status.addEventListener?.('change', () => updateMicrophonePermission(status));
@@ -2510,7 +3267,7 @@ function pauseVoiceForPageLifecycle() {
   }
   if (state.recognition) {
     if (!state.recognitionWakeSession) showFeedback('Voice input paused while J.A.R.V.I.S. is unfocused or in the background. Tap the microphone to resume.');
-    requestStopListening();
+    requestStopListening(state.recognition, 'page-lifecycle');
   }
 }
 
@@ -2700,25 +3457,31 @@ function toggleFocusTimer() {
     state.focusTimerId = null;
     elements.focusTimerButton.textContent = 'Resume';
     elements.focusTimerButton.setAttribute('aria-pressed', 'false');
+    logActivity('Focus timer paused');
     return;
   }
   elements.focusTimerButton.textContent = 'Pause';
   elements.focusTimerButton.setAttribute('aria-pressed', 'true');
-  logActivity('Focus timer started');
   state.focusTimerId = window.setInterval(() => {
     state.focusRemaining -= 1;
     updateFocusTimerDisplay();
     if (state.focusRemaining <= 0) {
       window.clearInterval(state.focusTimerId);
       state.focusTimerId = null;
+      const completedTask = state.tasks.find((task) => task.id === state.focusTaskId);
+      state.focusTaskId = null;
       state.focusRemaining = 25 * 60;
       updateFocusTimerDisplay();
       elements.focusTimerButton.textContent = 'Start';
       elements.focusTimerButton.setAttribute('aria-pressed', 'false');
       showFeedback('Focus session complete.');
-      logActivity('Focus session complete');
+      logActivity(completedTask
+        ? `Focus session complete: ${completedTask.title}`
+        : 'Focus session complete');
     }
   }, 1000);
+  const task = state.tasks.find((item) => item.id === state.focusTaskId);
+  logActivity(task ? `Focus timer started: ${task.title}` : 'Focus timer started');
 }
 
 async function startScreenCapture(captureSequence) {
@@ -2951,8 +3714,7 @@ function handleNavigation(event) {
   } else if (destination === 'history') {
     showHistory();
   } else if (destination === 'memory') {
-    selectNavigation('memory');
-    showHistory();
+    openSmartMemoryPanel();
   } else if (destination === 'files') {
     elements.fileSearchQuery.value = '';
     searchAttachedFiles();
@@ -3130,6 +3892,8 @@ elements.shareLinkButton.addEventListener('click', async () => {
 });
 document.querySelector('#new-interface-button').addEventListener('click', () => setWorkspaceView('dashboard'));
 document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
+elements.avatarActivateButton.addEventListener('click', activate3DAvatar);
+elements.earthActivateButton.addEventListener('click', activateHolographicEarth);
 document.querySelector('#lab-return-button').addEventListener('click', returnToJarvisWorkspace);
 document.querySelector('[data-lab-module="personalize"]').addEventListener('click', openPersonalizePanel);
 document.querySelector('[data-lab-module="personalize"]').addEventListener('keydown', (event) => {
@@ -3199,7 +3963,7 @@ document.querySelector('#clear-button').addEventListener('click', () => {
   try { localStorage.removeItem(HISTORY_KEY); } catch { showFeedback('Saved history could not be cleared in this browser.'); }
 });
 document.querySelector('#settings-clear').addEventListener('click', () => {
-  if (!window.confirm('Clear saved conversation history and preferences from this browser?')) return;
+  if (!window.confirm('Clear saved conversation history, notes, tasks, Smart Memories, and preferences from this browser?')) return;
   state.messages = [];
   state.accessToken = '';
   elements.accessToken.value = '';
@@ -3208,17 +3972,43 @@ document.querySelector('#settings-clear').addEventListener('click', () => {
   try {
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem(PREFERENCES_KEY);
+    localStorage.removeItem(NOTES_STORAGE_KEY);
+    localStorage.removeItem(TASKS_STORAGE_KEY);
+    localStorage.removeItem(MEMORIES_STORAGE_KEY);
     localStorage.removeItem(LAB_PREFERENCES_KEY);
     localStorage.removeItem(LAB_AI_MODIFY_HISTORY_KEY);
   } catch {
     storageCleared = false;
   }
+  state.notes = [];
+  state.tasks = [];
+  state.memories = [];
+  state.dismissedTaskSuggestions.clear();
+  state.focusTaskId = null;
+  state.notesAvailable = storageCleared;
+  state.tasksAvailable = storageCleared;
+  state.memoriesAvailable = storageCleared;
+  resetNoteForm();
+  resetTaskForm();
+  setPlannerFormAvailability(elements.noteForm, state.notesAvailable);
+  elements.noteSearch.disabled = !state.notesAvailable;
+  setPlannerFormAvailability(elements.taskForm, state.tasksAvailable);
+  renderNotes();
+  renderTasks({ resetDismissed: true });
+  resetSmartMemoryForm();
+  setSmartMemoryAvailability(state.memoriesAvailable);
+  renderSmartMemories();
+  elements.smartMemoryStatus.textContent = storageCleared
+    ? 'Saved Smart Memories cleared from this device.'
+    : 'Saved Smart Memories could not be cleared; editing is disabled to protect the saved data.';
+  elements.noteStatus.textContent = storageCleared ? 'Saved notes cleared from this device.' : 'Saved notes could not be cleared; editing is disabled to protect the saved data.';
+  elements.taskStatus.textContent = storageCleared ? 'Saved tasks cleared from this device.' : 'Saved tasks could not be cleared; editing is disabled to protect the saved data.';
   state.preferences = { ...defaults };
   state.labPreferences = resetLabPreferencesDraft();
   applyLabPreferences(state.labPreferences, document);
   syncSettings();
   showFeedback(storageCleared
-    ? 'Saved data cleared from this browser.'
+    ? 'Saved data, including local notes, tasks, and Smart Memories, was cleared from this browser.'
     : 'Active settings were reset, but the browser could not confirm that all saved data was cleared.');
 });
 elements.dashboardCommandForm.addEventListener('submit', (event) => {
@@ -3268,6 +4058,230 @@ elements.screenCaptureDialog.addEventListener('close', () => {
   elements.captureStatus.textContent = '';
 });
 elements.focusTimerButton.addEventListener('click', toggleFocusTimer);
+elements.priorityAccept.addEventListener('click', () => {
+  const task = state.tasks.find((item) => item.id === state.suggestedTaskId && !item.completed);
+  if (!task || !state.tasksAvailable) {
+    elements.taskStatus.textContent = 'The suggested task is no longer available. Priorities have been refreshed.';
+    renderTaskPriority({ resetDismissed: true });
+    return;
+  }
+  state.focusTaskId = task.id;
+  if (!state.focusTimerId) {
+    toggleFocusTimer();
+  } else {
+    logActivity(`Focus task selected for active session: ${task.title}`);
+  }
+  elements.taskStatus.textContent = `Focus session selected for "${task.title}".`;
+});
+elements.priorityDismiss.addEventListener('click', () => {
+  const task = state.tasks.find((item) => item.id === state.suggestedTaskId);
+  if (!task) {
+    renderTaskPriority({ resetDismissed: true });
+    return;
+  }
+  state.dismissedTaskSuggestions.add(task.id);
+  logActivity(`Priority suggestion dismissed: ${task.title}`);
+});
+elements.noteForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!state.notesAvailable) return;
+  try {
+    const current = state.editingNoteId
+      ? state.notes.find((note) => note.id === state.editingNoteId)
+      : null;
+    if (state.editingNoteId && !current) throw new Error('This note is no longer available. Reload the dashboard and try again.');
+    const note = current
+      ? updateNote(current, { title: elements.noteTitle.value, content: elements.noteContent.value })
+      : createNote({ title: elements.noteTitle.value, content: elements.noteContent.value });
+    const notes = current
+      ? state.notes.map((item) => item.id === note.id ? note : item)
+      : [...state.notes, note];
+    saveNotes(localStorage, notes);
+    state.notes = notes;
+    resetNoteForm();
+    renderNotes();
+    elements.noteStatus.textContent = current ? 'Note updated on this device.' : 'Note saved on this device.';
+  } catch (error) {
+    elements.noteStatus.textContent = `Could not save note: ${error.message}`;
+  }
+});
+elements.noteCancelButton.addEventListener('click', () => {
+  resetNoteForm();
+  elements.noteStatus.textContent = '';
+});
+elements.noteSearch.addEventListener('input', renderNotes);
+elements.noteList.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-planner-action]');
+  if (!button) return;
+  const note = state.notes.find((item) => item.id === button.dataset.itemId);
+  if (!note) {
+    elements.noteStatus.textContent = 'This note is no longer available. Reload the dashboard and try again.';
+    return;
+  }
+  if (button.dataset.plannerAction === 'edit-note') {
+    state.editingNoteId = note.id;
+    elements.noteTitle.value = note.title;
+    elements.noteContent.value = note.content;
+    elements.noteSaveButton.textContent = 'Save changes';
+    elements.noteCancelButton.hidden = false;
+    elements.noteStatus.textContent = 'Editing note.';
+    elements.noteTitle.focus();
+    return;
+  }
+  if (button.dataset.plannerAction !== 'delete-note') return;
+  try {
+    const notes = state.notes.filter((item) => item.id !== note.id);
+    saveNotes(localStorage, notes);
+    state.notes = notes;
+    if (state.editingNoteId === note.id) resetNoteForm();
+    renderNotes();
+    elements.noteStatus.textContent = 'Note deleted from this device.';
+  } catch (error) {
+    elements.noteStatus.textContent = `Could not delete note: ${error.message}`;
+  }
+});
+elements.smartMemoryForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!state.memoriesAvailable) return;
+  try {
+    const current = state.editingMemoryId
+      ? state.memories.find((memory) => memory.id === state.editingMemoryId)
+      : null;
+    if (state.editingMemoryId && !current) throw new Error('This memory is no longer available. Reload the dashboard and try again.');
+    const fields = {
+      type: elements.smartMemoryType.value,
+      title: elements.smartMemoryTitle.value,
+      content: elements.smartMemoryContent.value,
+    };
+    const memory = current ? updateMemory(current, fields) : createMemory(fields);
+    persistSmartMemories(upsertMemory(state.memories, memory));
+    resetSmartMemoryForm();
+    elements.smartMemoryStatus.textContent = current
+      ? memory.includeInContext
+        ? 'Memory updated. Its existing context approval is unchanged.'
+        : 'Memory updated. Review it and approve it before it can enter AI context.'
+      : 'Memory saved on this device. Review it below and approve it before use in AI context.';
+  } catch (error) {
+    elements.smartMemoryStatus.textContent = `Could not save memory: ${error.message}`;
+  }
+});
+elements.smartMemoryCancel.addEventListener('click', () => {
+  resetSmartMemoryForm();
+  elements.smartMemoryStatus.textContent = '';
+});
+elements.smartMemorySearch.addEventListener('input', renderSmartMemories);
+elements.smartMemoryList.addEventListener('click', handleSmartMemoryAction);
+elements.smartMemoryList.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('input[data-memory-approval-id]');
+  if (!checkbox) return;
+  const memory = state.memories.find((item) => item.id === checkbox.dataset.memoryApprovalId);
+  if (!memory) return;
+  try {
+    const updated = setMemoryContextApproval(memory, checkbox.checked);
+    persistSmartMemories(upsertMemory(state.memories, updated));
+    elements.smartMemoryStatus.textContent = updated.includeInContext
+      ? 'This reviewed memory is approved for relevant AI context.'
+      : 'This memory will no longer be included in AI context.';
+  } catch (error) {
+    renderSmartMemories();
+    elements.smartMemoryStatus.textContent = `Memory approval could not be saved: ${error.message}`;
+  }
+});
+elements.smartMemoryClear.addEventListener('click', () => {
+  if (!window.confirm('Permanently clear all Smart Memories stored in this browser?')) return;
+  try {
+    localStorage.removeItem(MEMORIES_STORAGE_KEY);
+    state.memories = [];
+    state.memoriesAvailable = true;
+    setSmartMemoryAvailability(true);
+    resetSmartMemoryForm();
+    renderSmartMemories();
+    elements.smartMemoryStatus.textContent = 'All Smart Memories were cleared from this device.';
+  } catch (error) {
+    elements.smartMemoryStatus.textContent = `Saved memories could not be cleared: ${error.message}`;
+  }
+});
+elements.taskForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!state.tasksAvailable) return;
+  try {
+    const current = state.editingTaskId
+      ? state.tasks.find((task) => task.id === state.editingTaskId)
+      : null;
+    if (state.editingTaskId && !current) throw new Error('This task is no longer available. Reload the dashboard and try again.');
+    const task = current
+      ? updateTask(current, { title: elements.taskTitle.value, details: elements.taskDetails.value })
+      : createTask({ title: elements.taskTitle.value, details: elements.taskDetails.value });
+    const tasks = current
+      ? state.tasks.map((item) => item.id === task.id ? task : item)
+      : [...state.tasks, task];
+    saveTasks(localStorage, tasks);
+    state.tasks = tasks;
+    resetTaskForm();
+    renderTasks({ resetDismissed: true });
+    elements.taskStatus.textContent = current ? 'Task updated on this device.' : 'Task saved on this device.';
+  } catch (error) {
+    elements.taskStatus.textContent = `Could not save task: ${error.message}`;
+  }
+});
+elements.taskCancelButton.addEventListener('click', () => {
+  resetTaskForm();
+  elements.taskStatus.textContent = '';
+});
+const handleTaskListClick = (event) => {
+  const button = event.target.closest('button[data-planner-action]');
+  if (!button) return;
+  const task = state.tasks.find((item) => item.id === button.dataset.itemId);
+  if (!task) {
+    elements.taskStatus.textContent = 'This task is no longer available. Reload the dashboard and try again.';
+    return;
+  }
+  if (button.dataset.plannerAction === 'edit-task') {
+    state.editingTaskId = task.id;
+    elements.taskTitle.value = task.title;
+    elements.taskDetails.value = task.content;
+    elements.taskSaveButton.textContent = 'Save changes';
+    elements.taskCancelButton.hidden = false;
+    elements.taskStatus.textContent = 'Editing task.';
+    elements.taskTitle.focus();
+    return;
+  }
+  if (button.dataset.plannerAction !== 'delete-task') return;
+  try {
+    const tasks = state.tasks.filter((item) => item.id !== task.id);
+    saveTasks(localStorage, tasks);
+    state.tasks = tasks;
+    if (state.editingTaskId === task.id) resetTaskForm();
+    renderTasks({ resetDismissed: true });
+    elements.taskStatus.textContent = 'Task deleted from this device.';
+  } catch (error) {
+    elements.taskStatus.textContent = `Could not delete task: ${error.message}`;
+  }
+};
+elements.pendingTaskList.addEventListener('click', handleTaskListClick);
+elements.completedTaskList.addEventListener('click', handleTaskListClick);
+const handleTaskCompletionChange = (event) => {
+  const checkbox = event.target.closest('input[type="checkbox"][data-task-id]');
+  if (!checkbox || !state.tasksAvailable) return;
+  const task = state.tasks.find((item) => item.id === checkbox.dataset.taskId);
+  if (!task) {
+    elements.taskStatus.textContent = 'This task is no longer available. Reload the dashboard and try again.';
+    return;
+  }
+  try {
+    const updated = setTaskCompleted(task, checkbox.checked);
+    const tasks = state.tasks.map((item) => item.id === updated.id ? updated : item);
+    saveTasks(localStorage, tasks);
+    state.tasks = tasks;
+    renderTasks({ resetDismissed: true });
+    elements.taskStatus.textContent = updated.completed ? 'Task marked complete.' : 'Task marked pending.';
+  } catch (error) {
+    checkbox.checked = task.completed;
+    elements.taskStatus.textContent = `Could not update task: ${error.message}`;
+  }
+};
+elements.pendingTaskList.addEventListener('change', handleTaskCompletionChange);
+elements.completedTaskList.addEventListener('change', handleTaskCompletionChange);
 document.querySelector('[data-quick-action="files"]').addEventListener('click', () => {
   elements.fileSearchQuery.value = '';
   searchAttachedFiles();
@@ -3356,7 +4370,14 @@ elements.language.addEventListener('change', () => {
   elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
   updateVoiceList();
   savePreferences();
-  if (state.recognitionWakeSession) requestStopListening();
+  if (state.recognitionWakeSession) requestStopListening(state.recognition, 'language-changed');
+});
+elements.avatarTheme.addEventListener('change', () => {
+  state.preferences.avatarTheme = AVATAR_THEMES.has(elements.avatarTheme.value)
+    ? elements.avatarTheme.value
+    : 'electric-blue';
+  applyAvatarTheme(state.preferences.avatarTheme);
+  savePreferences();
 });
 elements.accessToken.addEventListener('input', () => {
   state.accessToken = elements.accessToken.value.trim();
@@ -3407,7 +4428,7 @@ elements.wakeWordEnabled.addEventListener('change', () => {
     startListening('wake');
     primeVoiceOutput();
   } else {
-    if (state.recognitionWakeSession) requestStopListening();
+    if (state.recognitionWakeSession) requestStopListening(state.recognition, 'wake-word-disabled');
     showFeedback('Wake-word detection is off.');
   }
 });
@@ -3431,6 +4452,12 @@ elements.memoryEnabled.addEventListener('change', () => {
   }
   savePreferences();
 });
+elements.smartMemoryEnabled.addEventListener('change', () => {
+  setSmartMemoryEnabled(elements.smartMemoryEnabled.checked);
+});
+elements.smartMemoryEnabledDashboard.addEventListener('change', () => {
+  setSmartMemoryEnabled(elements.smartMemoryEnabledDashboard.checked);
+});
 document.querySelector('#preview-voice').addEventListener('click', () => {
   if (!('speechSynthesis' in window)) {
     showFeedback('Speech output is not supported by this browser.');
@@ -3440,6 +4467,45 @@ document.querySelector('#preview-voice').addEventListener('click', () => {
 });
 window.addEventListener('online', checkServer);
 window.addEventListener('offline', checkServer);
+window.addEventListener('storage', (event) => {
+  if (event.key === TASKS_STORAGE_KEY) {
+    try {
+      state.tasks = loadTasks(localStorage);
+      state.tasksAvailable = true;
+      setPlannerFormAvailability(elements.taskForm, true);
+      renderTasks({ resetDismissed: true });
+      elements.taskStatus.textContent = 'Tasks updated from another tab on this device.';
+    } catch (error) {
+      state.tasksAvailable = false;
+      setPlannerFormAvailability(elements.taskForm, false);
+      elements.taskStatus.textContent = `Updated task data could not be loaded: ${error.message}`;
+    }
+    return;
+  }
+  if (event.key === MEMORIES_STORAGE_KEY) {
+    try {
+      state.memories = loadMemories(localStorage);
+      state.memoriesAvailable = true;
+      setSmartMemoryAvailability(true);
+      renderSmartMemories();
+      elements.smartMemoryStatus.textContent = 'Memories updated from another tab on this device.';
+    } catch (error) {
+      state.memoriesAvailable = false;
+      setSmartMemoryAvailability(false);
+      renderSmartMemories();
+      elements.smartMemoryStatus.textContent = `Updated memory data could not be loaded and will not be overwritten: ${error.message}`;
+    }
+    return;
+  }
+  if (event.key === PREFERENCES_KEY) {
+    state.preferences.smartMemoryEnabled = loadPreferences().smartMemoryEnabled;
+    elements.smartMemoryEnabled.checked = state.preferences.smartMemoryEnabled;
+    elements.smartMemoryEnabledDashboard.checked = state.preferences.smartMemoryEnabled;
+    elements.smartMemoryStatus.textContent = state.preferences.smartMemoryEnabled
+      ? 'Smart Memory is on.'
+      : 'Smart Memory is off.';
+  }
+});
 const resumeVoiceForPageLifecycle = () => {
   const focused = pageIsFocused();
   if (!isPageForeground(document.visibilityState, focused)) {
@@ -3455,7 +4521,10 @@ const resumeVoiceForPageLifecycle = () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     pauseVoiceForPageLifecycle();
-  } else resumeVoiceForPageLifecycle();
+  } else {
+    updateLocalDateTime();
+    resumeVoiceForPageLifecycle();
+  }
 });
 window.addEventListener('blur', pauseVoiceForPageLifecycle);
 window.addEventListener('focus', resumeVoiceForPageLifecycle);
@@ -3517,6 +4586,8 @@ elements.install.addEventListener('click', async () => {
 });
 
 state.messages = loadHistory();
+initializeLocalPlanner();
+initializeSmartMemories();
 applyLabPreferences(state.labPreferences, document);
 syncSettings();
 reportWakeWordStatus('startup');
@@ -3532,14 +4603,18 @@ initializeAppHubs({
 updateSearchMode();
 setWorkspaceView(state.workspaceView, { remember: false });
 initializeDeviceMonitor();
-window.setInterval(loadSystemMetrics, 30_000);
+updateLocalDateTime();
+window.setInterval(() => {
+  updateLocalDateTime();
+  loadSystemMetrics();
+}, 30_000);
 checkServer();
 logActivity('Interface initialized');
 updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=49', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=53', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

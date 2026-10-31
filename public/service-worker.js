@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jarvis-shell-v53';
-const APP_SHELL = ['/', '/styles.css?hud=43', '/diagnostics.js?hud=28', '/app.js?hud=48', '/lab-personalize.js', '/lab-ai-modify.js', '/lab-code-studio.js', '/lab-extensions.js', '/lab-safety.js', '/app-hub.js', '/search-summary.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
+const CACHE_NAME = 'jarvis-shell-v66';
+const APP_SHELL = ['/', '/styles.css?hud=53', '/diagnostics.js?hud=28', '/app.js?hud=56', '/jarvis-portrait.png', '/portrait-animation.js', '/local-planner.js', '/local-memory.js', '/smart-command-router.js', '/lab-personalize.js', '/lab-ai-modify.js', '/lab-code-studio.js', '/lab-extensions.js', '/lab-safety.js', '/app-hub.js', '/search-summary.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
 const NETWORK_TIMEOUT_MS = 4_000;
 
 self.addEventListener('message', (event) => {

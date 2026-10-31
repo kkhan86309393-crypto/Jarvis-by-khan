@@ -76,9 +76,14 @@ test('installs the lightweight app shell without avatar assets', async () => {
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=43'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=53'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-portrait.png'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/portrait-animation.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/diagnostics.js?hud=28'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=48'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=56'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/local-planner.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/local-memory.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/smart-command-router.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/lab-personalize.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/lab-ai-modify.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/lab-code-studio.js'));
@@ -91,6 +96,7 @@ test('installs the lightweight app shell without avatar assets', async () => {
   assert.equal(worker.storedResponses.has('https://jarvis.test/ai-avatar.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/reference-face.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js'), false);
+  assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js?earth=3'), false);
 });
 
 test('reports the active shell cache version only to an explicit diagnostics request', () => {
@@ -100,7 +106,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v53');
+  assert.equal(version, 'jarvis-shell-v66');
 
   let ignored = false;
   worker.listeners.get('message')({
