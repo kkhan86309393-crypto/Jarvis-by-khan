@@ -1,4 +1,4 @@
-import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './interface-switcher.js';
+import { switchWorkspaceView } from './interface-switcher.js';
 import { detectDeviceProfile } from './device-monitor.js';
 import { getPublicShareUrl } from './share-link.js';
 import { initializeAppHubs } from './app-hub.js';
@@ -36,7 +36,7 @@ import {
   shouldRunWakeWord,
   WAKE_WORD_MAX_RESTART_ATTEMPTS,
 } from './speech-input.js';
-import { applySpeechBoundaryCue } from './avatar-cues.js';
+import { applySpeechBoundaryCue, estimateAudioMouthOpening } from './avatar-cues.js';
 import {
   createPortraitAnimation,
   PORTRAIT_ANIMATION_EVENT,
@@ -161,6 +161,8 @@ const elements = {
   searchToggle: document.querySelector('#search-toggle'),
   mic: document.querySelector('#mic-button'),
   dashboardLayout: document.querySelector('#dashboard-layout'),
+  dashboardCommandbar: document.querySelector('.dashboard-commandbar'),
+  avatarHero: document.querySelector('.avatar-hero'),
   holoStage: document.querySelector('#holo-stage'),
   avatarFrame: document.querySelector('.avatar-frame'),
   avatarCanvas: document.querySelector('#avatar-canvas'),
@@ -168,8 +170,12 @@ const elements = {
   avatarActivateButton: document.querySelector('#activate-3d-avatar'),
   earthActivateButton: document.querySelector('#activate-holographic-earth'),
   customAvatarButton: document.querySelector('#load-custom-avatar'),
+  avatarAudioSyncButton: document.querySelector('#avatar-audio-sync-button'),
+  avatarAudioSyncStatus: document.querySelector('#avatar-audio-sync-status'),
+  avatarModelControls: document.querySelector('.avatar-model-controls'),
   customAvatarFile: document.querySelector('#avatar-model-file'),
   avatarStatus: document.querySelector('#avatar-model-status'),
+  holoStatePanel: document.querySelector('.state-panel'),
   labLayout: document.querySelector('#jarvis-lab'),
   labModules: document.querySelector('.lab-module-grid'),
   labSafetyPanel: document.querySelector('#lab-safety-panel'),
@@ -218,6 +224,7 @@ const elements = {
   holoStateAnnouncement: document.querySelector('#holo-state-announcement'),
   statePanelLive: document.querySelector('#state-panel-live'),
   holoStates: document.querySelectorAll('[data-holo-state]'),
+  holoOnlineStatus: document.querySelector('[data-holo-online-status]'),
   dashboardConnection: document.querySelector('#connection-status-dashboard'),
   providerNote: document.querySelector('#provider-note'),
   connection: document.querySelector('#connection-status'),
@@ -382,6 +389,20 @@ const elements = {
   smartMemoryList: document.querySelector('#smart-memory-list'),
 };
 
+const hologramStatusViewport = window.matchMedia('(max-width: 780px)');
+
+function syncHologramStatusPanelPosition() {
+  const isCompact = hologramStatusViewport.matches;
+  const parent = isCompact ? elements.avatarHero : elements.dashboardLayout;
+  const anchor = isCompact ? elements.avatarModelControls : elements.dashboardCommandbar;
+  if (elements.holoStatePanel.parentElement !== parent || elements.holoStatePanel.nextElementSibling !== anchor) {
+    parent.insertBefore(elements.holoStatePanel, anchor);
+  }
+}
+
+syncHologramStatusPanelPosition();
+hologramStatusViewport.addEventListener('change', syncHologramStatusPanelPosition);
+
 function reportSpeechDiagnostic(event, details = {}) {
   if (!speechDiagnosticsEnabled) return;
   window.dispatchEvent(new CustomEvent('jarvis:speech-diagnostic', {
@@ -450,15 +471,6 @@ function loadPreferences() {
   };
 }
 
-function loadWorkspaceView() {
-  try {
-    const defaultView = window.matchMedia?.('(max-width: 780px)').matches ? 'dashboard' : 'chat';
-    return readWorkspaceView(localStorage, defaultView);
-  } catch {
-    return 'chat';
-  }
-}
-
 const state = {
   preferences: loadPreferences(),
   messages: [],
@@ -488,8 +500,14 @@ const state = {
   accessToken: '',
   pendingAttachment: null,
   speechPlaybackId: 0,
-  workspaceView: loadWorkspaceView(),
+  workspaceView: 'dashboard',
   displayStream: null,
+  audioLipSyncStream: null,
+  audioLipSyncContext: null,
+  audioLipSyncAnalyser: null,
+  audioLipSyncBuffer: null,
+  audioLipSyncTimer: null,
+  audioLipSyncStarting: false,
   focusRemaining: 25 * 60,
   focusTimerState: createFocusTimerState(),
   focusTimerId: null,
@@ -826,6 +844,62 @@ function initializeLocalPlanner() {
   renderTasks({ resetDismissed: true });
 }
 
+function refreshNotesFromStorage() {
+  try {
+    state.notes = loadNotes(localStorage);
+    state.notesAvailable = true;
+    setPlannerFormAvailability(elements.noteForm, true);
+    elements.noteSearch.disabled = false;
+    if (state.editingNoteId && !state.notes.some((note) => note.id === state.editingNoteId)) resetNoteForm();
+    renderNotes();
+    elements.noteStatus.textContent = 'Notes updated from another tab on this device.';
+    return true;
+  } catch (error) {
+    state.notesAvailable = false;
+    setPlannerFormAvailability(elements.noteForm, false);
+    elements.noteSearch.disabled = true;
+    renderNotes();
+    elements.noteStatus.textContent = `Updated note data could not be loaded and will not be overwritten: ${error.message}`;
+    return false;
+  }
+}
+
+function refreshTasksFromStorage() {
+  try {
+    state.tasks = loadTasks(localStorage);
+    state.tasksAvailable = true;
+    setPlannerFormAvailability(elements.taskForm, true);
+    if (state.editingTaskId && !state.tasks.some((task) => task.id === state.editingTaskId)) resetTaskForm();
+    renderTasks({ resetDismissed: true });
+    elements.taskStatus.textContent = 'Tasks updated from another tab on this device.';
+    return true;
+  } catch (error) {
+    state.tasksAvailable = false;
+    setPlannerFormAvailability(elements.taskForm, false);
+    renderTasks({ resetDismissed: true });
+    elements.taskStatus.textContent = `Updated task data could not be loaded: ${error.message}`;
+    return false;
+  }
+}
+
+function refreshMemoriesFromStorage() {
+  try {
+    state.memories = loadMemories(localStorage);
+    state.memoriesAvailable = true;
+    setSmartMemoryAvailability(true);
+    if (state.editingMemoryId && !state.memories.some((memory) => memory.id === state.editingMemoryId)) resetSmartMemoryForm();
+    renderSmartMemories();
+    elements.smartMemoryStatus.textContent = 'Memories updated from another tab on this device.';
+    return true;
+  } catch (error) {
+    state.memoriesAvailable = false;
+    setSmartMemoryAvailability(false);
+    renderSmartMemories();
+    elements.smartMemoryStatus.textContent = `Updated memory data could not be loaded and will not be overwritten: ${error.message}`;
+    return false;
+  }
+}
+
 function resetSmartMemoryForm() {
   state.editingMemoryId = null;
   elements.smartMemoryForm.reset();
@@ -953,7 +1027,11 @@ function handleSmartMemoryAction(event) {
   const button = event.target.closest('[data-planner-action][data-item-id]');
   if (!button) return;
   const memory = state.memories.find((item) => item.id === button.dataset.itemId);
-  if (!memory) return;
+  if (!memory) {
+    refreshMemoriesFromStorage();
+    if (state.memoriesAvailable) elements.smartMemoryStatus.textContent = 'The memory list was refreshed. Choose an available memory to continue.';
+    return;
+  }
 
   if (button.dataset.plannerAction === 'edit-memory') {
     state.editingMemoryId = memory.id;
@@ -1042,9 +1120,117 @@ function syncFullAccess() {
 }
 
 function resetAvatarMouth() {
+  elements.avatarFrame.style.removeProperty('--audio-mouth-open');
   if (!avatar3dActivated) return;
   avatar3dInstance?.setMouth?.(0);
   avatar3dInstance?.setViseme?.('aa');
+}
+
+function setAudioMouthOpening(opening) {
+  const boundedOpening = Number.isFinite(opening) ? Math.max(0, Math.min(0.9, opening)) : 0;
+  elements.avatarFrame.style.setProperty('--audio-mouth-open', String(boundedOpening));
+  if (avatar3dActivated) avatar3dInstance?.setMouth?.(boundedOpening);
+}
+
+function stopAudioLipSync(message = 'Audio lip-sync is off. Browser word-boundary cues remain available when provided by the voice.') {
+  const stream = state.audioLipSyncStream;
+  const audioContext = state.audioLipSyncContext;
+  if (state.audioLipSyncTimer !== null) window.clearInterval(state.audioLipSyncTimer);
+  state.audioLipSyncTimer = null;
+  state.audioLipSyncStream = null;
+  state.audioLipSyncContext = null;
+  state.audioLipSyncAnalyser = null;
+  state.audioLipSyncBuffer = null;
+  stream?.getTracks().forEach((track) => track.stop());
+  elements.avatarFrame.removeAttribute('data-audio-sync');
+  setAudioMouthOpening(0);
+  elements.avatarAudioSyncButton.setAttribute('aria-pressed', 'false');
+  elements.avatarAudioSyncButton.textContent = 'Sync mouth to tab audio';
+  elements.avatarAudioSyncStatus.textContent = message;
+  if (audioContext && audioContext.state !== 'closed') {
+    audioContext.close().catch((error) => {
+      elements.avatarAudioSyncStatus.textContent = `Audio processing could not close cleanly: ${error.message}`;
+    });
+  }
+}
+
+async function toggleAudioLipSync() {
+  if (state.audioLipSyncStream) {
+    stopAudioLipSync();
+    return;
+  }
+  if (state.displayStream) {
+    elements.avatarAudioSyncStatus.textContent = 'Stop the current screen-capture session before enabling audio lip-sync.';
+    return;
+  }
+  if (state.audioLipSyncStarting) return;
+
+  const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+  if (!navigator.mediaDevices?.getDisplayMedia || !AudioContextConstructor) {
+    elements.avatarAudioSyncStatus.textContent = 'Tab-audio capture is unavailable in this browser. Word-boundary cues remain available when provided by the voice.';
+    return;
+  }
+
+  elements.avatarAudioSyncButton.disabled = true;
+  state.audioLipSyncStarting = true;
+  elements.avatarAudioSyncStatus.textContent = 'Choose this J.A.R.V.I.S. browser tab and enable its audio in the browser sharing prompt.';
+  let stream;
+  let audioContext;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      audio: true,
+      video: true,
+      preferCurrentTab: true,
+    });
+    const [audioTrack] = stream.getAudioTracks();
+    if (!audioTrack) {
+      throw new Error('No tab-audio track was shared. Choose this browser tab and enable Share tab audio.');
+    }
+
+    audioContext = new AudioContextConstructor();
+    await audioContext.resume();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.58;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    stream.getVideoTracks().forEach((track) => track.stop());
+
+    state.audioLipSyncStream = stream;
+    state.audioLipSyncContext = audioContext;
+    state.audioLipSyncAnalyser = analyser;
+    state.audioLipSyncBuffer = new Float32Array(analyser.fftSize);
+    elements.avatarFrame.dataset.audioSync = 'true';
+    state.audioLipSyncTimer = window.setInterval(() => {
+      if (!state.audioLipSyncAnalyser || state.assistantMode !== 'speaking') {
+        setAudioMouthOpening(0);
+        return;
+      }
+      state.audioLipSyncAnalyser.getFloatTimeDomainData(state.audioLipSyncBuffer);
+      setAudioMouthOpening(estimateAudioMouthOpening(state.audioLipSyncBuffer));
+    }, 30);
+    audioTrack.addEventListener('ended', () => {
+      if (state.audioLipSyncStream === stream) {
+        stopAudioLipSync('Shared-tab audio ended. Word-boundary cues are used again when available.');
+      }
+    }, { once: true });
+    elements.avatarAudioSyncButton.textContent = 'Stop audio lip-sync';
+    elements.avatarAudioSyncButton.setAttribute('aria-pressed', 'true');
+    elements.avatarAudioSyncStatus.textContent = 'Analyzing shared tab audio locally while J.A.R.V.I.S. speaks. This controls mouth opening, not phoneme timing.';
+  } catch (error) {
+    stream?.getTracks().forEach((track) => track.stop());
+    let closeError = '';
+    if (audioContext && audioContext.state !== 'closed') {
+      await audioContext.close().catch((failure) => {
+        closeError = `Audio processing could not close cleanly: ${failure.message}`;
+      });
+    }
+    elements.avatarAudioSyncStatus.textContent = closeError || (error.name === 'NotAllowedError'
+      ? 'Audio sharing was cancelled or denied. No audio was captured.'
+      : error.message || 'Tab audio could not be connected.');
+  } finally {
+    state.audioLipSyncStarting = false;
+    elements.avatarAudioSyncButton.disabled = false;
+  }
 }
 
 function syncAvatarAssistantState() {
@@ -1101,6 +1287,10 @@ function updateHologramState() {
     : announcement === 'offline' ? 'J.A.R.V.I.S. is offline.'
       : `J.A.R.V.I.S. is ${announcement}.`;
   elements.statePanelLive.textContent = announcement.toUpperCase();
+  elements.holoOnlineStatus.textContent = translateUiText(
+    state.holoOnline ? 'Ready' : 'Offline',
+    state.preferences.language,
+  );
 }
 
 function updateProjectionButtons() {
@@ -1779,7 +1969,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
     applySpeechBoundaryCue(speechText, event, (opening, viseme) => {
       portraitAnimation.setViseme(playbackId, viseme);
       if (avatar3dActivated && avatar3dInstance) {
-        avatar3dInstance.setMouth?.(opening);
+        if (!state.audioLipSyncAnalyser) avatar3dInstance.setMouth?.(opening);
         avatar3dInstance.setViseme?.(viseme);
       }
     });
@@ -3501,7 +3691,7 @@ function selectNavigation(destination) {
   document.querySelectorAll('[data-nav]').forEach((item) => item.classList.toggle('is-current', item.dataset.nav === destination));
 }
 
-function setWorkspaceView(view, { remember = true } = {}) {
+function setWorkspaceView(view) {
   state.workspaceView = view;
   switchWorkspaceView(view, {
     dashboard: elements.dashboardLayout,
@@ -3510,15 +3700,6 @@ function setWorkspaceView(view, { remember = true } = {}) {
     body: document.body,
     navigationItems: document.querySelectorAll('[data-nav]'),
   });
-  document.querySelector('#new-interface-button').setAttribute('aria-pressed', String(view === 'dashboard'));
-  document.querySelector('#old-interface-button').setAttribute('aria-pressed', String(view === 'chat'));
-  if (remember) {
-    try {
-      saveWorkspaceView(view, localStorage);
-    } catch {
-      showFeedback('Your interface choice could not be saved in this browser.');
-    }
-  }
 }
 
 function openJarvisLab() {
@@ -3529,13 +3710,11 @@ function openJarvisLab() {
     body: document.body,
     navigationItems: document.querySelectorAll('[data-nav]'),
   });
-  document.querySelector('#new-interface-button').setAttribute('aria-pressed', 'false');
-  document.querySelector('#old-interface-button').setAttribute('aria-pressed', 'false');
   document.querySelector('#jarvis-lab-title').focus();
 }
 
 function returnToJarvisWorkspace() {
-  setWorkspaceView(state.workspaceView, { remember: false });
+  setWorkspaceView(state.workspaceView);
   if (state.workspaceView === 'dashboard') elements.dashboardMessage.focus();
   else elements.message.focus();
 }
@@ -4151,8 +4330,6 @@ elements.shareLinkButton.addEventListener('click', async () => {
     elements.shareStatus.textContent = error.message;
   }
 });
-document.querySelector('#new-interface-button').addEventListener('click', () => setWorkspaceView('dashboard'));
-document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
 elements.avatarActivateButton.addEventListener('click', activate3DAvatar);
 elements.earthActivateButton.addEventListener('click', activateHolographicEarth);
 elements.customAvatarButton.addEventListener('click', () => elements.customAvatarFile.click());
@@ -4373,7 +4550,13 @@ elements.noteForm.addEventListener('submit', (event) => {
     const current = state.editingNoteId
       ? state.notes.find((note) => note.id === state.editingNoteId)
       : null;
-    if (state.editingNoteId && !current) throw new Error('This note is no longer available. Reload the dashboard and try again.');
+    if (state.editingNoteId && !current) {
+      if (refreshNotesFromStorage()) {
+        resetNoteForm();
+        elements.noteStatus.textContent = 'Saved notes were refreshed. Reopen this note before saving your changes.';
+      }
+      return;
+    }
     const note = current
       ? updateNote(current, { title: elements.noteTitle.value, content: elements.noteContent.value })
       : createNote({ title: elements.noteTitle.value, content: elements.noteContent.value });
@@ -4399,7 +4582,8 @@ elements.noteList.addEventListener('click', (event) => {
   if (!button) return;
   const note = state.notes.find((item) => item.id === button.dataset.itemId);
   if (!note) {
-    elements.noteStatus.textContent = 'This note is no longer available. Reload the dashboard and try again.';
+    refreshNotesFromStorage();
+    if (state.notesAvailable) elements.noteStatus.textContent = 'The notes list was refreshed. Choose an available note to continue.';
     return;
   }
   if (button.dataset.plannerAction === 'edit-note') {
@@ -4431,7 +4615,13 @@ elements.smartMemoryForm.addEventListener('submit', (event) => {
     const current = state.editingMemoryId
       ? state.memories.find((memory) => memory.id === state.editingMemoryId)
       : null;
-    if (state.editingMemoryId && !current) throw new Error('This memory is no longer available. Reload the dashboard and try again.');
+    if (state.editingMemoryId && !current) {
+      if (refreshMemoriesFromStorage()) {
+        resetSmartMemoryForm();
+        elements.smartMemoryStatus.textContent = 'Saved memories were refreshed. Reopen this memory before saving your changes.';
+      }
+      return;
+    }
     const fields = {
       type: elements.smartMemoryType.value,
       title: elements.smartMemoryTitle.value,
@@ -4459,7 +4649,11 @@ elements.smartMemoryList.addEventListener('change', (event) => {
   const checkbox = event.target.closest('input[data-memory-approval-id]');
   if (!checkbox) return;
   const memory = state.memories.find((item) => item.id === checkbox.dataset.memoryApprovalId);
-  if (!memory) return;
+  if (!memory) {
+    refreshMemoriesFromStorage();
+    if (state.memoriesAvailable) elements.smartMemoryStatus.textContent = 'The memory list was refreshed. Review the current item before changing its approval.';
+    return;
+  }
   try {
     const updated = setMemoryContextApproval(memory, checkbox.checked);
     persistSmartMemories(upsertMemory(state.memories, updated));
@@ -4492,7 +4686,13 @@ elements.taskForm.addEventListener('submit', (event) => {
     const current = state.editingTaskId
       ? state.tasks.find((task) => task.id === state.editingTaskId)
       : null;
-    if (state.editingTaskId && !current) throw new Error('This task is no longer available. Reload the dashboard and try again.');
+    if (state.editingTaskId && !current) {
+      if (refreshTasksFromStorage()) {
+        resetTaskForm();
+        elements.taskStatus.textContent = 'Saved tasks were refreshed. Reopen this task before saving your changes.';
+      }
+      return;
+    }
     const task = current
       ? updateTask(current, { title: elements.taskTitle.value, details: elements.taskDetails.value })
       : createTask({ title: elements.taskTitle.value, details: elements.taskDetails.value });
@@ -4517,7 +4717,8 @@ const handleTaskListClick = (event) => {
   if (!button) return;
   const task = state.tasks.find((item) => item.id === button.dataset.itemId);
   if (!task) {
-    elements.taskStatus.textContent = 'This task is no longer available. Reload the dashboard and try again.';
+    refreshTasksFromStorage();
+    if (state.tasksAvailable) elements.taskStatus.textContent = 'The task list was refreshed. Choose an available task to continue.';
     return;
   }
   if (button.dataset.plannerAction === 'edit-task') {
@@ -4549,7 +4750,8 @@ const handleTaskCompletionChange = (event) => {
   if (!checkbox || !state.tasksAvailable) return;
   const task = state.tasks.find((item) => item.id === checkbox.dataset.taskId);
   if (!task) {
-    elements.taskStatus.textContent = 'This task is no longer available. Reload the dashboard and try again.';
+    refreshTasksFromStorage();
+    if (state.tasksAvailable) elements.taskStatus.textContent = 'The task list was refreshed. Choose an available task to continue.';
     return;
   }
   try {
@@ -4748,6 +4950,10 @@ elements.smartMemoryEnabled.addEventListener('change', () => {
 elements.smartMemoryEnabledDashboard.addEventListener('change', () => {
   setSmartMemoryEnabled(elements.smartMemoryEnabledDashboard.checked);
 });
+elements.avatarAudioSyncButton.addEventListener('click', toggleAudioLipSync);
+window.addEventListener('pagehide', () => {
+  if (state.audioLipSyncStream) stopAudioLipSync('Audio lip-sync stopped when this page closed.');
+});
 document.querySelector('#preview-voice').addEventListener('click', () => {
   if (!('speechSynthesis' in window)) {
     showFeedback('Speech output is not supported by this browser.');
@@ -4758,33 +4964,16 @@ document.querySelector('#preview-voice').addEventListener('click', () => {
 window.addEventListener('online', checkServer);
 window.addEventListener('offline', checkServer);
 window.addEventListener('storage', (event) => {
+  if (event.key === NOTES_STORAGE_KEY) {
+    refreshNotesFromStorage();
+    return;
+  }
   if (event.key === TASKS_STORAGE_KEY) {
-    try {
-      state.tasks = loadTasks(localStorage);
-      state.tasksAvailable = true;
-      setPlannerFormAvailability(elements.taskForm, true);
-      renderTasks({ resetDismissed: true });
-      elements.taskStatus.textContent = 'Tasks updated from another tab on this device.';
-    } catch (error) {
-      state.tasksAvailable = false;
-      setPlannerFormAvailability(elements.taskForm, false);
-      elements.taskStatus.textContent = `Updated task data could not be loaded: ${error.message}`;
-    }
+    refreshTasksFromStorage();
     return;
   }
   if (event.key === MEMORIES_STORAGE_KEY) {
-    try {
-      state.memories = loadMemories(localStorage);
-      state.memoriesAvailable = true;
-      setSmartMemoryAvailability(true);
-      renderSmartMemories();
-      elements.smartMemoryStatus.textContent = 'Memories updated from another tab on this device.';
-    } catch (error) {
-      state.memoriesAvailable = false;
-      setSmartMemoryAvailability(false);
-      renderSmartMemories();
-      elements.smartMemoryStatus.textContent = `Updated memory data could not be loaded and will not be overwritten: ${error.message}`;
-    }
+    refreshMemoriesFromStorage();
     return;
   }
   if (event.key === PREFERENCES_KEY) {
@@ -4893,7 +5082,7 @@ initializeAppHubs({
   copyUserText: copyTextToClipboard,
 });
 updateSearchMode();
-setWorkspaceView(state.workspaceView, { remember: false });
+setWorkspaceView(state.workspaceView);
 initializeDeviceMonitor();
 updateLocalDateTime();
 window.setInterval(() => {
@@ -4906,7 +5095,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=55', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=58', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

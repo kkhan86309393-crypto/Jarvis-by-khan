@@ -4,11 +4,7 @@ import { request as httpRequest } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { createAppServer, getAssistantText } from '../server.js';
 import { getForwardedUrl, getServerEnvironment } from '../scripts/codespaces.js';
-import {
-  readWorkspaceView,
-  saveWorkspaceView,
-  switchWorkspaceView,
-} from '../public/interface-switcher.js';
+import { switchWorkspaceView } from '../public/interface-switcher.js';
 import { detectDeviceProfile } from '../public/device-monitor.js';
 
 function fetchViaLoopbackAddress(url, options = {}, localAddress = '127.0.0.2') {
@@ -78,7 +74,7 @@ test('serves the app shell with restrictive browser security headers', async () 
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/html/);
-  assert.match(response.headers.get('cache-control'), /no-cache/);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
   assert.match(response.headers.get('content-security-policy'), /img-src 'self' data: blob:/);
   assert.match(html, /J\.A\.R\.V\.I\.S\./);
@@ -142,7 +138,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const diagnostics = await (await fetch(`${baseUrl}/diagnostics.js`)).text();
   const workerResponse = await fetch(`${baseUrl}/service-worker.js`);
   const worker = await workerResponse.text();
-  assert.match(workerResponse.headers.get('cache-control'), /no-cache/);
+  assert.equal(workerResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
   const styles = await (await fetch(`${baseUrl}/styles.css`)).text();
   assert.match(client, /^import \{/);
   assert.match(client, /initializeAppHubs/);
@@ -163,7 +160,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /requestSequence !== healthRequestSequence/);
   assert.doesNotMatch(client, /from '\.\/avatar3d\.bundle\.js'/);
   assert.doesNotMatch(worker, /avatar3d\.bundle\.js/);
-  assert.doesNotMatch(worker, /avatar-cues\.js/);
+  assert.match(worker, /avatar-cues\.js/);
   const selectedIds = [...client.matchAll(/querySelector\('#([\w-]+)'\)/g)].map((match) => match[1]);
   const missingIds = [...new Set(selectedIds)].filter((id) => !html.includes(`id="${id}"`));
   assert.deepEqual(missingIds, []);
@@ -196,6 +193,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /\.avatar-frame\[data-blink="closed"\] \.portrait-upper-lid/);
   assert.match(styles, /\.avatar-frame\[data-viseme="aa"\] \.portrait-mouth/);
   assert.match(styles, /\.avatar-frame\[data-speaking="true"\]\[data-viseme="neutral"\] \.portrait-mouth/);
+  assert.match(styles, /\.avatar-frame\[data-audio-sync="true"\] \.portrait-mouth/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.portrait-mouth \{ animation: none !important/);
   assert.match(html, /News &amp; Briefing|news-button|briefing-panel|briefing-results/i);
   assert.match(html, /id="task-priority"/);
@@ -214,7 +212,9 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function activateHolographicEarth\(\) \{\s*return activate3DProjection\('earth'\)/);
   assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=4'\)/);
   assert.match(client, /if \(!avatar3dActivated\) return;/);
-  assert.doesNotMatch(client, /\bsetAvatarMouth\b|toggleAudioLipSync/);
+  assert.match(client, /function toggleAudioLipSync\(\)/);
+  assert.match(client, /state\.audioLipSyncAnalyser\.getFloatTimeDomainData/);
+  assert.match(client, /estimateAudioMouthOpening\(state\.audioLipSyncBuffer\)/);
   assert.match(client, /utterance\.onpause/);
   assert.match(client, /utterance\.onresume/);
   assert.match(html, /id="full-access-toggle"/);
@@ -222,11 +222,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="mobile-nav"/);
   assert.match(html, /id="file-input"/);
   assert.match(html, /id="dashboard-layout"/);
-  assert.match(html, /<div class="dashboard-layout" id="dashboard-layout" hidden>/);
+  assert.match(html, /<body class="new-interface">/);
+  assert.match(html, /<div class="dashboard-layout" id="dashboard-layout">/);
   assert.match(html, /id="conversation-view"/);
-  assert.match(html, /<section class="conversation" id="conversation-view"[^>]*>/);
-  assert.match(html, /id="new-interface-button"[^>]*>New Interface</);
-  assert.match(html, /id="old-interface-button"[^>]*>Old Interface</);
+  assert.match(html, /<section class="conversation" id="conversation-view"[^>]*hidden>/);
+  assert.doesNotMatch(html, /interface-switcher|New Interface|Old Interface/);
   assert.match(html, /id="dashboard-transcript"/);
   assert.match(html, /id="conversation-chat-state"[^>]*role="status"[^>]*aria-live="polite"[^>]*hidden/);
   assert.match(html, /id="conversation-chat-state-label"/);
@@ -336,7 +336,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?hud=58/);
+  assert.match(html, /styles\.css\?hud=60/);
+  assert.match(html, /app\.js\?hud=60/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -380,13 +381,24 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /showHistory/);
   assert.match(client, /searchAttachedFiles/);
   assert.match(client, /setWorkspaceView\('chat'\)/);
+  assert.match(client, /workspaceView: 'dashboard'/);
+  assert.doesNotMatch(client, /readWorkspaceView|saveWorkspaceView|jarvis\.interface\.mode/);
+  assert.match(client, /function refreshNotesFromStorage\(\)/);
+  assert.match(client, /if \(event\.key === NOTES_STORAGE_KEY\) \{\s*refreshNotesFromStorage\(\)/);
+  assert.match(client, /function refreshTasksFromStorage\(\)/);
+  assert.match(client, /Saved notes were refreshed\. Reopen this note before saving your changes\./);
+  assert.match(client, /Saved tasks were refreshed\. Reopen this task before saving your changes\./);
+  assert.doesNotMatch(client, /Reload the dashboard and try again/);
   assert.match(client, /toggleStudyMode/);
   assert.match(client, /loadSystemMetrics/);
-  assert.match(interfaceSwitcher, /LEGACY_PREFERENCE_KEYS = \['jarvis\.interface\.mode\.v6', 'jarvis\.interface\.mode\.v5', 'jarvis\.interface\.mode\.v4'\]/);
+  assert.doesNotMatch(interfaceSwitcher, /jarvis\.interface\.mode/);
   assert.match(html, /id="install-button"/);
-  assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
+  assert.match(client, /setWorkspaceView\(state\.workspaceView\);\s*initializeDeviceMonitor\(\)/);
   assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=4'\)/);
-  assert.doesNotMatch(client, /\bsetAvatarMouth\b|audioLipSync|avatarSpeechTimer/);
+  assert.match(html, /id="avatar-audio-sync-button"/);
+  assert.match(html, /id="avatar-audio-sync-status"/);
+  assert.match(client, /audioLipSyncStream: null/);
+  assert.doesNotMatch(client, /avatarSpeechTimer/);
   assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
   assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\('command', false, false, true\);\s*\}/);
   assert.match(client, /function startListening\(purpose = 'command', wakeHandoff = false, automaticWakeRestart = false, fromUserGesture = false\) \{[\s\S]*?if \(purpose === 'command' && 'speechSynthesis' in window\) stopSpeechOutput\(\);\s*if \(fromUserGesture\) primeVoiceOutput\(\);[\s\S]*?recognition\.start\(\)/);
@@ -516,7 +528,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /@media \(max-width: 780px\)[\s\S]*?body\.new-interface \.holo-stage\.is-globe-active \{[^}]*width: min\(calc\(100vw - 28px\), 440px\)/);
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: sticky/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?hud=55/);
+  assert.match(html, /styles\.css\?hud=60/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -533,13 +545,16 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v70/);
-  assert.match(worker, /styles\.css\?hud=55/);
+  assert.match(worker, /jarvis-shell-v72/);
+  assert.match(client, /register\('\/service-worker\.js\?hud=58'/);
+  assert.match(worker, /styles\.css\?hud=60/);
+  assert.match(worker, /app\.js\?hud=60/);
   assert.match(worker, /jarvis-portrait\.png/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=55/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?hud=58/);
+  for (const module of ['api-response.js', 'speech-input.js', 'avatar-cues.js', 'focus-timer.js']) {
+    assert.match(worker, new RegExp(module.replace('.', '\\.')));
+  }
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -548,7 +563,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /lab-extensions\.js/);
   assert.match(worker, /lab-safety\.js/);
   assert.match(worker, /JARVIS_DIAGNOSTICS/);
-  assert.doesNotMatch(worker, /avatar-cues\.js|ai-avatar\.jpg/);
+  assert.doesNotMatch(worker, /ai-avatar\.jpg/);
   assert.match(worker, /portrait-animation\.js/);
   assert.match(worker, /app-hub\.js/);
   assert.match(worker, /search-summary\.js/);
@@ -559,7 +574,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=55/);
+  assert.match(client, /service-worker\.js\?hud=58/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);
@@ -617,7 +632,7 @@ test('caps the holographic Earth stage on short mobile landscape screens', async
 test('keeps mobile globe orbital overlays centered and within the stage width', async () => {
   const styles = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.orbit-one,\s*body\.new-interface \.holo-stage\.is-globe-active \.orbit-two \{\s*width: min\(90%, calc\(100vw - 32px\)\);\s*top: 50%;\s*left: 50%;\s*translate: -50% -50%;\s*\}/);
+  assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.orbit-one,\s*body\.new-interface \.holo-stage\.is-globe-active \.orbit-two \{\s*width: min\(72%, calc\(100vw - 48px\)\);/);
 });
 
 test('prevents horizontal page overflow for the mobile holographic Earth', async () => {
@@ -627,7 +642,7 @@ test('prevents horizontal page overflow for the mobile holographic Earth', async
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \{\s*width: min\(calc\(100vw - 28px\), 440px\);\s*max-width: 100%;[\s\S]*?margin: 0 auto;/);
 });
 
-test('switches between the original chat and new dashboard in both directions', () => {
+test('preserves chat workspace routing while keeping the dashboard canonical', () => {
   const dashboard = { hidden: true };
   const conversation = { hidden: false };
   const bodyClasses = new Set(['mobile-system-open']);
@@ -673,42 +688,11 @@ test('switches between the original chat and new dashboard in both directions', 
   }
 });
 
-test('defaults to the original interface and remembers the selected interface', () => {
-  const values = new Map([['jarvis.interface.mode.v6', 'new']]);
-  const storage = {
-    getItem(key) { return values.get(key) ?? null; },
-    setItem(key, value) { values.set(key, value); },
-    removeItem(key) { values.delete(key); },
-  };
-
-  assert.equal(readWorkspaceView(storage), 'chat');
-  assert.equal(values.has('jarvis.interface.mode.v6'), false);
-  saveWorkspaceView('dashboard', storage);
-  assert.equal(readWorkspaceView(storage), 'dashboard');
-  saveWorkspaceView('chat', storage);
-  assert.equal(readWorkspaceView(storage), 'chat');
-  assert.equal(values.get('jarvis.interface.mode.v7'), 'old');
-});
-
-test('uses the dashboard as the first-time mobile view while preserving saved choices', () => {
-  const values = new Map();
-  const storage = {
-    getItem(key) { return values.get(key) ?? null; },
-    setItem(key, value) { values.set(key, value); },
-    removeItem(key) { values.delete(key); },
-  };
-
-  assert.equal(readWorkspaceView(storage, 'dashboard'), 'dashboard');
-  assert.equal(readWorkspaceView(storage, 'chat'), 'chat');
-  saveWorkspaceView('chat', storage);
-  assert.equal(readWorkspaceView(storage, 'dashboard'), 'chat');
-});
-
 test('serves PWA metadata with the current dashboard theme', async () => {
   const response = await fetch(`${baseUrl}/manifest.webmanifest`);
   const manifest = await response.json();
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('cache-control'), /no-cache/);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.theme_color, '#050a17');
   assert.ok(manifest.icons.some((icon) => icon.sizes === '192x192' && icon.type === 'image/png'));
@@ -716,6 +700,24 @@ test('serves PWA metadata with the current dashboard theme', async () => {
   assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512' && icon.purpose === 'maskable'));
   assert.equal(manifest.start_url, '/');
   assert.equal(manifest.scope, '/');
+});
+
+test('preserves production static caching while development assets remain uncached', async () => {
+  const developmentCss = await fetch(`${baseUrl}/styles.css?refresh-check=1`);
+  assert.equal(developmentCss.headers.get('cache-control'), 'no-store');
+
+  process.env.NODE_ENV = 'production';
+  try {
+    const html = await fetch(baseUrl);
+    const worker = await fetch(`${baseUrl}/service-worker.js`);
+    const css = await fetch(`${baseUrl}/styles.css`);
+    assert.equal(html.headers.get('cache-control'), 'no-cache');
+    assert.equal(worker.headers.get('cache-control'), 'no-cache');
+    assert.equal(worker.headers.get('service-worker-allowed'), '/');
+    assert.equal(css.headers.get('cache-control'), null);
+  } finally {
+    delete process.env.NODE_ENV;
+  }
 });
 
 test('serves valid 192px and 512px PNG installation icons', async () => {

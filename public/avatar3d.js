@@ -231,7 +231,7 @@ export function createHolographicGlobe() {
   const gridMaterial = new THREE.LineBasicMaterial({
     color: 0x66e8ff,
     transparent: true,
-    opacity: 0.38,
+    opacity: 0.46,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });

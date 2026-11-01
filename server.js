@@ -1120,8 +1120,10 @@ async function serveStatic(url, response) {
       'content-type': mimeTypes[extname(filePath)] || 'application/octet-stream',
       'x-content-type-options': 'nosniff',
     };
-    if (filePath.endsWith('service-worker.js')) {
-      headers['service-worker-allowed'] = '/';
+    if (filePath.endsWith('service-worker.js')) headers['service-worker-allowed'] = '/';
+    if (process.env.NODE_ENV !== 'production') {
+      headers['cache-control'] = 'no-store';
+    } else if (filePath.endsWith('service-worker.js')) {
       headers['cache-control'] = 'no-cache';
     } else if (filePath.endsWith('index.html') || filePath.endsWith('manifest.webmanifest')) {
       headers['cache-control'] = 'no-cache';

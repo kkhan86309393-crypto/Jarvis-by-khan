@@ -208,6 +208,11 @@ async function clickMoreNavigation(page) {
   await expect(page.locator('#more-navigation-dialog')).toBeVisible();
 }
 
+async function openChatView(page) {
+  await activate(page, page.locator('[data-quick-action="chat"]'));
+  await expect(page.locator('#conversation-view')).toBeVisible();
+}
+
 async function enableFullAccess(page) {
   const desktopToggle = page.locator('#full-access-toggle');
   if (await desktopToggle.isVisible()) {
@@ -231,7 +236,8 @@ async function expectNoBrowserOrNetworkErrors(state, { browserErrors = [] } = {}
 test('responsive layouts, dialogs, chat tools, and navigation fit desktop, tablet, and narrow mobile widths', async ({ page }, testInfo) => {
   const state = await installApiMocks(page);
   await page.goto('/');
-  await expect(page.locator('#conversation-view')).toBeVisible();
+  await expect(page.locator('#dashboard-layout')).toBeVisible();
+  await openChatView(page);
 
   const widths = testInfo.project.name === 'android-mobile'
     ? [412]
@@ -263,6 +269,177 @@ test('responsive layouts, dialogs, chat tools, and navigation fit desktop, table
     await expect(page.locator('.mobile-nav')).toBeVisible();
     await expect(page.locator('.mobile-nav [data-nav="more"]')).toBeVisible();
   }
+  await expectNoBrowserOrNetworkErrors(state);
+});
+
+test('holographic Earth keeps a large centered portrait and visible controls at required viewport widths', async ({ page }, testInfo) => {
+  const state = await installApiMocks(page);
+  await page.goto('/');
+
+  const mobileDashboard = page.locator('.mobile-nav [data-nav="dashboard"]');
+  await activate(
+    page,
+    await mobileDashboard.isVisible()
+      ? mobileDashboard
+      : page.locator('.primary-nav [data-nav="dashboard"]'),
+  );
+  await expect(page.locator('#holo-stage')).toBeVisible();
+  await activate(page, page.locator('.avatar-model-controls-summary'));
+  const earthButton = page.locator('#activate-holographic-earth');
+  await expect(earthButton).toBeVisible();
+  await activate(page, earthButton);
+  await expect(page.locator('#holo-stage')).toHaveClass(/is-globe-active/);
+  await expect(earthButton).toHaveAttribute('aria-pressed', 'true');
+
+  for (const width of [320, 390, 740, 1440]) {
+    const height = width <= 780 ? 844 : 960;
+    await page.setViewportSize({ width, height });
+    const projectionControls = page.locator('.avatar-model-controls');
+    if (!(await projectionControls.evaluate((element) => element.open))) {
+      await activate(page, page.locator('.avatar-model-controls-summary'));
+    }
+    await page.locator('#avatar-audio-sync-button').scrollIntoViewIfNeeded();
+    const overflow = await page.evaluate(() => ({
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+      offenders: [...document.querySelectorAll('body *')]
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            selector: element.id ? `#${element.id}` : element.className?.baseVal || element.className,
+            left: Number(rect.left.toFixed(2)),
+            right: Number(rect.right.toFixed(2)),
+            width: Number(rect.width.toFixed(2)),
+          };
+        })
+        .filter(({ left, right }) => left < -0.5 || right > window.innerWidth - 0.5)
+        .sort((left, right) => right.right - left.right)
+        .slice(0, 20),
+    }));
+    expect(overflow.documentWidth, JSON.stringify(overflow)).toBeLessThanOrEqual(width);
+
+    const projection = await page.evaluate(() => {
+      const bounds = (selector) => {
+        const element = document.querySelector(selector);
+        const rect = element.getBoundingClientRect();
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          centerX: rect.x + rect.width / 2,
+          centerY: rect.y + rect.height / 2,
+        };
+      };
+      const stage = bounds('#holo-stage');
+      const avatarHero = bounds('.avatar-hero');
+      const presence = bounds('.presence');
+      const portrait = bounds('.holo-stage.is-globe-active .avatar-frame');
+      const canvas = document.querySelector('#avatar-canvas');
+      const buttons = [...document.querySelectorAll('.avatar-model-options button:not([hidden])')];
+      const composer = document.querySelector('.dashboard-commandbar').getBoundingClientRect();
+      const nav = document.querySelector('.mobile-nav');
+      const navBounds = nav.getBoundingClientRect();
+      const obstructedControls = buttons.filter((button) => {
+        const rect = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return [
+          { element: document.querySelector('.dashboard-commandbar'), bounds: composer },
+          ...(getComputedStyle(nav).display === 'none' ? [] : [{ element: nav, bounds: navBounds }]),
+        ].some(({ element, bounds: cover }) => (
+          rect.bottom > cover.top && rect.top < cover.bottom
+          && rect.right > cover.left && rect.left < cover.right
+          && (hit === element || element.contains(hit))
+        ));
+      }).map((button) => button.id);
+
+      return {
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        stage,
+        avatarHero,
+        presence,
+        portrait,
+        portraitZ: Number.parseInt(getComputedStyle(document.querySelector('.avatar-frame')).zIndex, 10),
+        canvasZ: Number.parseInt(getComputedStyle(canvas).zIndex, 10),
+        imageLoaded: document.querySelector('#ai-avatar').naturalWidth > 0,
+        statuses: [...document.querySelectorAll('#holo-state-strip [data-holo-state]')]
+          .map((item) => ({
+            name: item.querySelector('.holo-state-copy > span').textContent.trim(),
+            visible: item.getBoundingClientRect().width > 0,
+          })),
+        obstructedControls,
+      };
+    });
+
+    expect(projection.documentWidth).toBeLessThanOrEqual(width);
+    expect(projection.stage.x).toBeGreaterThanOrEqual(0);
+    expect(projection.stage.x + projection.stage.width).toBeLessThanOrEqual(width + 1);
+    expect(
+      Math.abs(projection.stage.centerX - projection.presence.centerX),
+      JSON.stringify({ width, stage: projection.stage, avatarHero: projection.avatarHero, presence: projection.presence }),
+    ).toBeLessThanOrEqual(4);
+    expect(Math.abs(projection.portrait.centerX - projection.stage.centerX)).toBeLessThanOrEqual(2);
+    expect(projection.portrait.width / projection.stage.width).toBeGreaterThanOrEqual(0.67);
+    expect(projection.portrait.height / projection.stage.height).toBeGreaterThanOrEqual(0.9);
+    if (width === 1440) {
+      expect(projection.stage.width).toBeGreaterThanOrEqual(600);
+    }
+    expect(projection.portraitZ).toBeGreaterThan(projection.canvasZ);
+    expect(projection.imageLoaded).toBe(true);
+    expect(projection.statuses.map(({ name }) => name)).toEqual([
+      'Listening',
+      'Thinking',
+      'Speaking',
+      'Online',
+    ]);
+    expect(projection.statuses.every(({ visible }) => visible)).toBe(true);
+    expect(projection.obstructedControls).toEqual([]);
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = 'auto';
+      window.scrollTo(0, 0);
+    });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    if (testInfo.project.name !== 'android-mobile') {
+      await page.screenshot({
+        path: testInfo.outputPath(`hologram-${width}.png`),
+      });
+    }
+  }
+
+  await expectNoBrowserOrNetworkErrors(state);
+});
+
+test('projection controls activate the 3D avatar and open the local custom-model picker', async ({ page }, testInfo) => {
+  const state = await installApiMocks(page);
+  const widths = testInfo.project.name === 'android-mobile' ? [320, 390] : [320, 390, 1440];
+
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: width <= 780 ? 844 : 960 });
+    await page.goto('/');
+    const mobileDashboard = page.locator('.mobile-nav [data-nav="dashboard"]');
+    await activate(
+      page,
+      await mobileDashboard.isVisible()
+        ? mobileDashboard
+        : page.locator('.primary-nav [data-nav="dashboard"]'),
+    );
+    await activate(page, page.locator('.avatar-model-controls-summary'));
+    await activate(page, page.locator('#activate-3d-avatar'));
+
+    await expect(page.locator('#activate-3d-avatar')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.avatar-frame')).toHaveClass(/is-3d-active/);
+    await expect(page.locator('#avatar-canvas')).toBeVisible();
+    await expect(page.locator('#avatar-model-status')).toHaveAttribute('data-state', 'ready');
+
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await activate(page, page.locator('#load-custom-avatar'));
+    const fileChooser = await fileChooserPromise;
+    expect(await fileChooser.element().getAttribute('accept')).toBe('.vrm,.glb,model/gltf-binary');
+    expect(fileChooser.isMultiple()).toBe(false);
+  }
+
   await expectNoBrowserOrNetworkErrors(state);
 });
 
@@ -391,6 +568,7 @@ test('chat retry, Study Mode, and source-backed summaries use the active mocked 
   });
   await page.goto('/');
 
+  await openChatView(page);
   await submitChat(page, 'Test retry routing');
   const retryButton = page.locator('#conversation-retry-button');
   await expect(retryButton).toBeVisible();

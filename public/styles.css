@@ -51,10 +51,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .wordmark-mark { width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid rgba(114, 217, 255, .72); border-radius: 50%; box-shadow: 0 0 16px rgba(39, 139, 241, .2), inset 0 0 12px rgba(39, 139, 241, .14); }
 .wordmark-mark span { width: 9px; height: 9px; border: 1px solid var(--mint); border-radius: 50%; box-shadow: 0 0 8px var(--mint); }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
-.text-button { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
-.text-button:hover { border-color: var(--mint-strong); color: var(--mint); }
-.text-button[aria-pressed="true"] { border-color: var(--mint-strong); background: rgba(39, 139, 241, .16); color: var(--mint); }
-.interface-switcher { display: flex; align-items: center; gap: 6px; }
 .connection-indicator { display: inline-flex; align-items: center; gap: 8px; color: var(--mint); font-size: 9px; font-weight: 700; letter-spacing: 1.2px; }
 .connection-indicator i, .cap-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; background: var(--mint-strong); box-shadow: 0 0 8px rgba(39, 139, 241, .8); }
 .connection-indicator.is-warning { color: var(--amber); }
@@ -96,7 +92,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .holo-particles i:nth-child(6) { left: 73%; top: 84%; animation-delay: -2.7s; }
 .holo-particles i:nth-child(7) { left: 40%; top: 91%; animation-delay: -1.8s; }
 .holo-particles i:nth-child(8) { left: 91%; top: 59%; animation-delay: -.3s; }
-.ai-avatar { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center 36%; opacity: .96; filter: saturate(1.06) brightness(.88) contrast(1.08); mix-blend-mode: normal; }
+.ai-avatar { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center 36%; opacity: .4; filter: saturate(1.06) brightness(.88) contrast(1.08); mix-blend-mode: normal; }
 .ai-avatar.is-unavailable { display: none; }
 .portrait-artwork { width: 100%; height: 100%; position: absolute; inset: 0; }
 .portrait-artwork > .ai-avatar { width: 100%; height: 100%; }
@@ -162,26 +158,36 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .avatar-frame[data-viseme="ih"] .portrait-mouth { width: 11%; transform: translate(-50%, -50%) scaleY(.42); }
 .avatar-frame[data-viseme="oh"] .portrait-mouth { width: 9%; transform: translate(-50%, -50%) scaleY(.76); }
 .avatar-frame[data-viseme="ou"] .portrait-mouth { width: 8%; transform: translate(-50%, -50%) scaleY(.55); }
+.avatar-frame[data-audio-sync="true"] .portrait-mouth {
+  opacity: .9;
+  transform: translate(-50%, -50%) scaleY(var(--audio-mouth-open, 0));
+}
 @keyframes portrait-mouth-idle {
   from { transform: translate(-50%, -50%) scaleY(.08); }
   to { transform: translate(-50%, -50%) scaleY(.42); }
 }
 .avatar-fallback { position: absolute; z-index: 2; top: 48%; left: 50%; color: #b9f4ff; font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; text-shadow: 0 0 14px #278bf1; transform: translate(-50%, -50%); }
 .avatar-canvas { width: 100%; height: 100%; position: absolute; z-index: 2; inset: 0; display: block; }
-.holo-stage > .avatar-canvas { width: 84%; height: 92%; top: 47%; left: 50%; inset: auto; z-index: 4; transform: translate(-50%, -50%); }
-.holo-stage.is-globe-active > .avatar-canvas { width: 100%; height: 100%; top: 0; left: 0; inset: auto; z-index: 2; transform: none; }
+.holo-stage > .avatar-canvas { width: 84%; height: 92%; inset: auto; top: 47%; left: 50%; z-index: 4; transform: translate(-50%, -50%); }
+.holo-stage.is-globe-active > .avatar-canvas { width: 100%; height: 100%; inset: auto; top: 0; left: 0; z-index: 2; transform: none; }
 .holo-stage.is-avatar-active > .avatar-canvas { z-index: 6; }
 .avatar-canvas[hidden] { display: none; }
 .ai-avatar.is-3d-hidden { display: none; }
 .avatar-frame.is-3d-active:not(.is-globe-active) .portrait-animation { display: none; }
 .avatar-frame.is-globe-active .portrait-scanline { z-index: 3; opacity: .58; }
-.avatar-model-controls { width: min(100%, 520px); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px 9px; margin: 5px 0 8px; }
+.avatar-model-controls { width: min(100%, 520px); display: block; margin: 5px 0 8px; }
+.avatar-model-controls-summary { width: fit-content; min-height: 30px; display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0 auto; padding: 0 11px; border: 1px solid rgba(102, 178, 255, .34); border-radius: 999px; background: rgba(8, 28, 57, .58); color: #b9f4ff; font-size: 9px; cursor: pointer; list-style: none; }
+.avatar-model-controls-summary::-webkit-details-marker { display: none; }
+.avatar-model-controls-summary::after { width: 6px; height: 6px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; content: ""; transform: rotate(45deg) translateY(-2px); transition: transform .18s ease; }
+.avatar-model-controls[open] > .avatar-model-controls-summary::after { transform: rotate(225deg) translate(-1px, -1px); }
+.avatar-model-controls-summary small { color: var(--faint); font-size: 8px; }
+.avatar-model-options { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px 9px; margin-top: 8px; padding: 9px; border: 1px solid rgba(102, 178, 255, .24); border-radius: 9px; background: rgba(5, 17, 38, .78); }
 .avatar-model-button { min-height: 30px; padding: 0 11px; border: 1px solid rgba(102, 178, 255, .4); border-radius: 3px; background: rgba(8, 28, 57, .8); color: #b9f4ff; font-size: 10px; cursor: pointer; }
 .avatar-model-button:hover, .avatar-model-button:focus-visible { border-color: var(--mint); box-shadow: 0 0 12px rgba(39, 139, 241, .25); }
 .avatar-model-button:disabled { cursor: wait; }
-.avatar-model-controls > p { flex-basis: 100%; max-width: 100%; margin: 0; color: var(--faint); font-size: 9px; line-height: 1.45; }
+.avatar-model-options > p { flex-basis: 100%; max-width: 100%; margin: 0; color: var(--faint); font-size: 9px; line-height: 1.45; }
 .avatar-model-status[data-state="error"] { color: var(--danger); }
-.avatar-model-controls > p[data-state="loading"]::before { width: 9px; height: 9px; display: inline-block; margin-right: 7px; border: 1px solid rgba(131, 232, 255, .35); border-top-color: var(--mint); border-radius: 50%; content: ""; vertical-align: -1px; animation: avatar-spin .8s linear infinite; }
+.avatar-model-options > p[data-state="loading"]::before { width: 9px; height: 9px; display: inline-block; margin-right: 7px; border: 1px solid rgba(131, 232, 255, .35); border-top-color: var(--mint); border-radius: 50%; content: ""; vertical-align: -1px; animation: avatar-spin .8s linear infinite; }
 .avatar-model-guide { width: 100%; color: var(--faint); text-align: left; font-size: 9px; line-height: 1.5; }
 .avatar-model-guide summary { width: fit-content; margin: 0 auto; color: var(--mint); cursor: pointer; }
 .avatar-model-guide ol { max-width: 440px; display: grid; gap: 4px; margin: 7px auto 0; padding-left: 18px; text-align: left; }
@@ -463,7 +469,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .mobile-nav button:focus-visible { outline-offset: -2px; }
   .mobile-nav button span { white-space: nowrap; }
   .mobile-nav svg { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .text-button { min-height: 31px; padding: 0 7px; font-size: 9px; }
   .settings-head { padding: 18px 18px 14px; }
   .settings-content { padding: 0 18px 18px; }
   .setting-row { min-height: 63px; gap: 10px; }
@@ -486,9 +491,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .send-button { min-width: 67px; }
   .connection-indicator span { display: none; }
   .topbar-right { gap: 5px; }
-  .text-button { padding: 0 5px; font-size: 8px; }
-  .interface-switcher { gap: 3px; }
-  .interface-switcher .text-button { max-width: 67px; min-height: 29px; white-space: normal; line-height: 1.05; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -596,7 +598,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .orbit, .holo-particles i, .portrait-scanline, .avatar-model-controls > p[data-state="loading"]::before { animation: none !important; }
+  .orbit, .holo-particles i, .portrait-scanline, .avatar-model-options > p[data-state="loading"]::before { animation: none !important; }
   .portrait-upper-lid, .portrait-lower-lid, .portrait-mouth { transition: none !important; }
   .portrait-mouth { animation: none !important; opacity: 0 !important; transform: translate(-50%, -50%) scaleY(0) !important; }
 }
@@ -962,6 +964,7 @@ body.new-interface .holo-waveform {
   gap: 4px;
   margin: 2px auto 5px;
   color: #58e8ff;
+  pointer-events: none;
 }
 
 body.new-interface .holo-waveform i {
@@ -1614,8 +1617,6 @@ body.new-interface .new-feature-bar { display: none; }
   body.new-interface .wordmark { gap: 7px; font-size: 12px; }
   body.new-interface .wordmark small,
   body.new-interface .connection-indicator { display: none; }
-  body.new-interface .interface-switcher { gap: 3px; }
-  body.new-interface .interface-switcher .text-button { max-width: 59px; min-height: 29px; padding: 0 4px; font-size: 7px; line-height: 1.05; }
   body.new-interface .topbar-right > .icon-button { width: 28px; height: 29px; }
   body.new-interface .main-frame {
     display: flex;
@@ -2425,7 +2426,6 @@ body.new-interface .new-feature-bar { display: none; }
   body.new-interface .wordmark-mark { width: 32px; height: 32px; }
   body.new-interface .wordmark small { display: none; }
   body.new-interface .topbar-right { min-width: 0; gap: 11px; }
-  body.new-interface .interface-switcher { display: none; }
   body.new-interface .connection-indicator { display: inline-flex; gap: 6px; font-size: 8px; letter-spacing: .5px; }
   body.new-interface .connection-indicator span { max-width: 82px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   body.new-interface .topbar-right > #install-button { width: 34px; height: 34px; flex: 0 0 auto; }
@@ -3102,6 +3102,7 @@ body.new-interface .holo-state.is-current .state-icon {
   }
 }
 
+
 :root {
   --avatar-holo-primary: #54bfff;
   --avatar-holo-secondary: #83e8ff;
@@ -3264,9 +3265,7 @@ body.new-interface .holo-stage.is-globe-active .portrait-artwork {
   width: auto;
   height: 100%;
   aspect-ratio: 1199 / 1312;
-  top: 0;
-  left: 50%;
-  inset: auto;
+  inset: 0 auto auto 50%;
   transform: translateX(-50%);
 }
 
@@ -4060,7 +4059,7 @@ body.new-interface .right-rail .planner-panel { order: 10; }
 
   body.new-interface .holo-stage.is-globe-active .orbit-one,
   body.new-interface .holo-stage.is-globe-active .orbit-two {
-    width: min(90%, calc(100vw - 32px));
+    width: min(72%, calc(100vw - 48px));
     top: 50%;
     left: 50%;
     translate: -50% -50%;
@@ -4141,4 +4140,757 @@ body.new-interface .right-rail .planner-panel { order: 10; }
   .provider-field select { min-width: 0; min-height: 44px; }
   .setting-actions > button { min-height: 44px; }
   .conversation-chat-state { flex-wrap: wrap; }
+}
+
+body.new-interface .holo-stage.is-globe-active {
+  max-width: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--avatar-holo-primary) 16%, transparent));
+}
+
+@media (min-width: 781px) {
+  body.new-interface .holo-stage.is-globe-active {
+    width: min(100%, 640px, 68dvh);
+    top: auto;
+  }
+}
+
+body.new-interface .presence:has(.holo-stage.is-globe-active) > .assistant-greeting,
+body.new-interface .presence:has(.holo-stage.is-globe-active) > .assistant-identity,
+body.new-interface .presence:has(.holo-stage.is-globe-active) > .holo-waveform {
+  display: none;
+}
+
+body.new-interface .holo-stage.is-globe-active > .avatar-canvas {
+  filter: hue-rotate(var(--avatar-holo-hue)) saturate(1.28) contrast(1.15) drop-shadow(0 0 15px color-mix(in srgb, var(--avatar-holo-primary) 30%, transparent)) drop-shadow(0 0 30px color-mix(in srgb, var(--avatar-holo-tertiary) 16%, transparent));
+}
+
+body.new-interface .holo-stage.is-globe-active .avatar-frame {
+  width: 68%;
+  height: 94%;
+  top: 56%;
+  z-index: 6;
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(67, 206, 255, .48)) drop-shadow(0 0 24px rgba(34, 121, 255, .24));
+}
+
+body.new-interface .holo-stage.is-globe-active .portrait-cutout-image {
+  mix-blend-mode: screen;
+  filter: saturate(1.12) brightness(1.08) contrast(1.06);
+}
+
+body.new-interface .holo-stage.is-globe-active .portrait-scanline {
+  display: block;
+}
+
+body.new-interface .holo-stage.is-globe-active .orbit-one,
+body.new-interface .holo-stage.is-globe-active .holo-emitter {
+  z-index: 7;
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-platform {
+  z-index: 8;
+}
+
+body.new-interface .holo-stage.is-globe-active .orbit {
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+body.new-interface .holo-stage.is-globe-active .orbit-one { width: 92%; }
+body.new-interface .holo-stage.is-globe-active .orbit-two { width: 96%; }
+
+body.new-interface .holo-stage.is-globe-active .holo-sphere-shell {
+  border-color: color-mix(in srgb, var(--avatar-holo-secondary) 58%, transparent);
+  background:
+    radial-gradient(ellipse at 34% 27%, color-mix(in srgb, var(--avatar-holo-secondary) 15%, transparent), transparent 34%),
+    radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--avatar-holo-primary) 12%, transparent), color-mix(in srgb, var(--avatar-holo-tertiary) 5%, transparent) 55%, transparent 72%),
+    repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--avatar-holo-primary) 5%, transparent) 24px, transparent 25px),
+    repeating-linear-gradient(90deg, transparent 0 30px, color-mix(in srgb, var(--avatar-holo-secondary) 4%, transparent) 31px, transparent 32px);
+  box-shadow:
+    0 0 32px color-mix(in srgb, var(--avatar-holo-primary) 25%, transparent),
+    inset 0 0 42px color-mix(in srgb, var(--avatar-holo-tertiary) 14%, transparent);
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-sphere-shell i {
+  border-color: color-mix(in srgb, var(--avatar-holo-secondary) 32%, transparent);
+  box-shadow: inset 12px 0 20px color-mix(in srgb, var(--avatar-holo-primary) 8%, transparent);
+  animation: globe-meridian-drift 52s linear infinite;
+}
+
+body.new-interface .holo-stage.is-globe-active .orbit {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--avatar-holo-primary) 42%, transparent));
+}
+
+body.new-interface .holo-stage.is-globe-active .orbit-one {
+  border-top-color: color-mix(in srgb, var(--avatar-holo-secondary) 76%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--avatar-holo-primary) 48%, transparent);
+}
+
+body.new-interface .holo-stage.is-globe-active .orbit-two {
+  border-color: color-mix(in srgb, var(--avatar-holo-primary) 36%, transparent);
+  border-top-color: color-mix(in srgb, var(--avatar-holo-secondary) 64%, transparent);
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-platform {
+  width: 84%;
+  height: 28%;
+  bottom: -3%;
+  left: 50%;
+  translate: -50% 0;
+  transform: perspective(760px) rotateX(64deg);
+  transform-origin: center center;
+  border-color: color-mix(in srgb, var(--avatar-holo-secondary) 58%, transparent);
+  background:
+    radial-gradient(ellipse at center, transparent 0 5.2%, color-mix(in srgb, var(--avatar-holo-secondary) 96%, transparent) 5.6% 6.2%, color-mix(in srgb, var(--avatar-holo-primary) 38%, transparent) 6.4% 7%, transparent 7.5%),
+    radial-gradient(ellipse at center, transparent 0 10%, color-mix(in srgb, var(--avatar-holo-secondary) 90%, transparent) 10.3% 10.8%, transparent 11.2% 23%, color-mix(in srgb, var(--avatar-holo-primary) 78%, transparent) 23.3% 23.8%, transparent 24.2% 37%, color-mix(in srgb, var(--avatar-holo-secondary) 88%, transparent) 37.3% 37.8%, transparent 38.2% 54%, color-mix(in srgb, var(--avatar-holo-primary) 84%, transparent) 54.3% 54.8%, transparent 55.2% 68%, color-mix(in srgb, var(--avatar-holo-secondary) 82%, transparent) 68.3% 68.7%, transparent 69.1% 81%, color-mix(in srgb, var(--avatar-holo-primary) 74%, transparent) 81.3% 81.7%, transparent 82.1%),
+    repeating-radial-gradient(ellipse at center, transparent 0 12%, color-mix(in srgb, var(--avatar-holo-secondary) 80%, transparent) 12.3% 12.9%, transparent 13.3% 24%),
+    radial-gradient(ellipse at center, color-mix(in srgb, var(--avatar-holo-primary) 12%, transparent), transparent 70%);
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--avatar-holo-primary) 46%, transparent),
+    0 0 48px color-mix(in srgb, var(--avatar-holo-primary) 24%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--avatar-holo-secondary) 32%, transparent);
+  animation: projector-platform-breathe 7s ease-in-out infinite alternate;
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-platform::before,
+body.new-interface .holo-stage.is-globe-active .holo-platform::after {
+  border-color: color-mix(in srgb, var(--avatar-holo-secondary) 78%, transparent);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--avatar-holo-primary) 30%, transparent);
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-platform::before {
+  inset: 14% 9%;
+  animation: projector-ring-scan 8s ease-in-out infinite alternate;
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-platform::after {
+  inset: 42% 44%;
+  border-width: 1px;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--avatar-holo-secondary) 96%, transparent) 0 10%, color-mix(in srgb, var(--avatar-holo-primary) 52%, transparent) 14% 20%, transparent 24% 40%, color-mix(in srgb, var(--avatar-holo-secondary) 94%, transparent) 46% 54%, color-mix(in srgb, var(--avatar-holo-primary) 42%, transparent) 58% 64%, transparent 72%);
+  box-shadow: 0 0 19px color-mix(in srgb, var(--avatar-holo-secondary) 76%, transparent), inset 0 0 12px color-mix(in srgb, var(--avatar-holo-primary) 54%, transparent);
+  animation: projector-ring-scan 8s ease-in-out -4s infinite alternate;
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-emitter {
+  z-index: 7;
+  right: 7%;
+  bottom: 0;
+  left: 7%;
+  height: 32%;
+  background:
+    radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--avatar-holo-primary) 8%, transparent), transparent 64%);
+}
+
+body.new-interface .holo-stage.is-globe-active .projector-ray {
+  position: absolute;
+  display: block;
+  bottom: 29%;
+  left: 50%;
+  height: 238%;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+body.new-interface .holo-stage.is-globe-active .projector-ray-left,
+body.new-interface .holo-stage.is-globe-active .projector-ray-right {
+  width: 88%;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 17%, color-mix(in srgb, var(--avatar-holo-secondary) 58%, transparent) 17.15% 17.4%, transparent 17.8% 34%),
+    linear-gradient(0deg, color-mix(in srgb, var(--avatar-holo-secondary) 76%, transparent), color-mix(in srgb, var(--avatar-holo-primary) 42%, transparent) 24%, transparent 100%);
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--avatar-holo-secondary) 62%, transparent));
+  opacity: .62;
+  mix-blend-mode: screen;
+}
+
+body.new-interface .holo-stage.is-globe-active .projector-ray-left {
+  clip-path: polygon(0 0, 40% 0, 50% 100%, 40% 100%);
+}
+
+body.new-interface .holo-stage.is-globe-active .projector-ray-right {
+  clip-path: polygon(60% 0, 100% 0, 60% 100%, 50% 100%);
+}
+
+body.new-interface .holo-stage.is-globe-active .projector-ray-core {
+  width: 18%;
+  background:
+    radial-gradient(ellipse at 50% 100%, color-mix(in srgb, #fff 96%, transparent), color-mix(in srgb, var(--avatar-holo-secondary) 96%, transparent) 8%, transparent 34%),
+    repeating-linear-gradient(90deg, transparent 0 29%, color-mix(in srgb, #fff 48%, transparent) 29.2% 29.65%, transparent 30.1% 58%),
+    linear-gradient(0deg, color-mix(in srgb, #fff 92%, transparent), color-mix(in srgb, var(--avatar-holo-secondary) 78%, transparent) 18%, color-mix(in srgb, var(--avatar-holo-primary) 34%, transparent) 58%, transparent 100%);
+  clip-path: polygon(0 0, 100% 0, 57% 100%, 43% 100%);
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--avatar-holo-secondary) 90%, transparent));
+  opacity: .64;
+  mix-blend-mode: screen;
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-emitter::before {
+  width: 42%;
+  height: 238%;
+  bottom: 29%;
+  left: 50%;
+  background:
+    radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--avatar-holo-secondary) 72%, transparent), transparent 16%),
+    linear-gradient(90deg, transparent 0 38%, color-mix(in srgb, var(--avatar-holo-primary) 36%, transparent) 45% 55%, transparent 62%),
+    linear-gradient(0deg, color-mix(in srgb, var(--avatar-holo-secondary) 96%, transparent), color-mix(in srgb, var(--avatar-holo-primary) 68%, transparent) 10%, color-mix(in srgb, var(--avatar-holo-primary) 30%, transparent) 28%, color-mix(in srgb, var(--avatar-holo-primary) 12%, transparent) 56%, transparent 100%);
+  clip-path: polygon(0 0, 100% 0, 59% 100%, 41% 100%);
+  filter: blur(1.6px) drop-shadow(0 0 12px color-mix(in srgb, var(--avatar-holo-secondary) 72%, transparent));
+  opacity: .52;
+}
+
+body.new-interface .holo-stage.is-globe-active .holo-emitter::after {
+  width: 76%;
+  height: 238%;
+  bottom: 29%;
+  left: 50%;
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 12%, color-mix(in srgb, var(--avatar-holo-secondary) 38%, transparent) 12.15% 12.4%, transparent 12.8% 25%),
+    radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--avatar-holo-secondary) 72%, transparent), transparent 22%),
+    linear-gradient(0deg, color-mix(in srgb, var(--avatar-holo-secondary) 46%, transparent), color-mix(in srgb, var(--avatar-holo-primary) 18%, transparent) 38%, color-mix(in srgb, var(--avatar-holo-primary) 6%, transparent) 67%, transparent 100%);
+  clip-path: polygon(0 0, 100% 0, 54% 100%, 46% 100%);
+  filter: blur(5px) drop-shadow(0 0 14px color-mix(in srgb, var(--avatar-holo-primary) 48%, transparent));
+  opacity: .24;
+  transform: translateX(-50%);
+  animation: projector-ray-breathe 6s ease-in-out infinite alternate;
+}
+
+@keyframes globe-meridian-drift {
+  from { transform: perspective(580px) rotateY(57deg); }
+  to { transform: perspective(580px) rotateY(417deg); }
+}
+
+@keyframes projector-platform-breathe {
+  from { filter: brightness(.9); }
+  to { filter: brightness(1.08); }
+}
+
+@keyframes projector-ring-scan {
+  from { opacity: .36; transform: scale(.97); }
+  to { opacity: .72; transform: scale(1.015); }
+}
+
+@keyframes projector-ray-breathe {
+  from { opacity: .18; }
+  to { opacity: .34; }
+}
+
+@media (max-width: 780px) {
+  body.new-interface .holo-stage.is-globe-active {
+    width: min(100%, calc(100vw - 24px), 440px);
+    max-width: min(100%, calc(100vw - 24px), 440px);
+    margin-top: 0;
+    margin-right: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    position: relative;
+  }
+
+  body.new-interface .holo-stage.is-globe-active .orbit-one,
+  body.new-interface .holo-stage.is-globe-active .orbit-two {
+    width: min(72%, calc(100vw - 48px));
+  }
+
+  body.new-interface .holo-stage.is-globe-active .holo-platform {
+    width: min(84%, calc(100vw - 48px));
+    height: 28%;
+    bottom: -3%;
+    left: 50%;
+    translate: -50% 0;
+  }
+
+  body.new-interface .holo-stage.is-globe-active .avatar-frame {
+    width: 68%;
+    height: 94%;
+    top: 56%;
+    z-index: 6;
+    filter: drop-shadow(0 0 8px rgba(67, 206, 255, .44)) drop-shadow(0 0 18px rgba(34, 121, 255, .2));
+  }
+
+}
+
+body.new-interface .holo-stage.is-globe-active ~ .avatar-model-controls {
+  width: min(100%, 520px);
+  margin: clamp(4px, 1vw, 8px) auto 4px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--avatar-holo-primary) 24%, transparent);
+}
+
+@media (max-width: 780px) and (max-height: 520px) {
+  body.new-interface .holo-stage.is-globe-active {
+    width: min(70vw, 300px, calc(100vw - 72px));
+  }
+}
+
+body.new-interface .state-panel {
+  border-color: color-mix(in srgb, var(--avatar-holo-primary) 38%, rgba(75, 160, 247, .2));
+  background:
+    radial-gradient(ellipse at 50% 0, color-mix(in srgb, var(--avatar-holo-tertiary) 13%, transparent), transparent 76%),
+    linear-gradient(150deg, rgba(7, 24, 51, .97), rgba(3, 11, 27, .98));
+}
+
+body.new-interface .state-panel .holo-state-strip {
+  width: 100%;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--avatar-holo-primary) 24%, transparent);
+  border-radius: 11px;
+  background: linear-gradient(110deg, rgba(3, 13, 30, .88), rgba(7, 25, 50, .92), rgba(3, 13, 30, .88));
+}
+
+body.new-interface .state-panel .holo-state {
+  min-height: 58px;
+  gap: 7px;
+  padding: 8px 6px;
+  border-color: color-mix(in srgb, var(--holo-state-color, var(--avatar-holo-primary)) 26%, transparent);
+  border-radius: 8px;
+  background: linear-gradient(155deg, rgba(10, 28, 57, .9), rgba(4, 14, 33, .94));
+  color: color-mix(in srgb, var(--holo-state-color) 72%, #a9bfd9);
+  font-size: 10px;
+}
+
+body.new-interface .state-panel .holo-state[data-holo-state] {
+  --holo-state-color: var(--avatar-holo-primary);
+}
+
+body.new-interface .state-panel .holo-state[data-holo-state="listening"] { --holo-state-color: #52dfff; }
+body.new-interface .state-panel .holo-state[data-holo-state="thinking"] { --holo-state-color: #c58eff; }
+body.new-interface .state-panel .holo-state[data-holo-state="speaking"] { --holo-state-color: #5ce5cf; }
+body.new-interface .state-panel .holo-state[data-holo-state="online"] { --holo-state-color: #73e5aa; }
+
+body.new-interface .state-panel .holo-state.is-current {
+  border-color: color-mix(in srgb, var(--holo-state-color) 72%, transparent);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--holo-state-color) 17%, rgba(10, 28, 57, .92)), rgba(4, 14, 33, .96));
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--holo-state-color) 10%, transparent), 0 0 12px color-mix(in srgb, var(--holo-state-color) 18%, transparent);
+  color: var(--holo-state-color);
+}
+
+body.new-interface .state-panel .holo-state .state-icon {
+  width: 21px;
+  height: 21px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+body.new-interface .state-panel .holo-state[data-holo-state="listening"].is-current .state-icon {
+  animation: status-listening 1.7s ease-in-out infinite;
+}
+
+body.new-interface .state-panel .holo-state[data-holo-state="thinking"].is-current .state-icon {
+  animation: status-thinking 2.2s ease-in-out infinite;
+}
+
+body.new-interface .state-panel .holo-state[data-holo-state="speaking"].is-current .state-icon {
+  animation: status-speaking 1.1s ease-in-out infinite;
+}
+
+body.new-interface .state-panel .holo-state[data-holo-state="online"].is-current .state-icon circle {
+  animation: status-online 2s ease-in-out infinite;
+}
+
+@keyframes status-listening {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes status-thinking {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-7deg); }
+  65% { transform: rotate(7deg); }
+}
+
+@keyframes status-speaking {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(1.5px); }
+}
+
+@keyframes status-online {
+  0%, 100% { opacity: .65; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 780px) {
+  body.new-interface .state-panel {
+    padding: 8px;
+  }
+
+  body.new-interface .presence:has(.holo-stage.is-globe-active) .state-panel .panel-heading {
+    width: 1px;
+    height: 1px;
+    position: absolute;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
+  body.new-interface .state-panel .panel-heading h2 {
+    margin-top: 2px;
+    font-size: 11px;
+  }
+
+  body.new-interface .state-panel .holo-state-strip {
+    gap: 3px;
+    margin-top: 6px;
+    padding: 4px;
+  }
+
+  body.new-interface .state-panel .holo-state {
+    min-height: 66px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 5px 1px;
+    font-size: clamp(7px, 2.2vw, 9px);
+    text-align: center;
+  }
+
+  body.new-interface .state-panel .holo-state .state-icon {
+    width: 18px;
+    height: 18px;
+    padding: 2px;
+    border: 1px solid color-mix(in srgb, var(--holo-state-color) 54%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--holo-state-color) 9%, transparent);
+  }
+
+  body.new-interface .state-panel .holo-state-copy { text-align: center; }
+  body.new-interface .state-panel .holo-state > .holo-state-copy > span { white-space: nowrap; }
+}
+
+body.new-interface .state-panel .holo-state-copy {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+  text-align: left;
+  line-height: 1.15;
+}
+
+body.new-interface .state-panel .holo-state-subtitle {
+  display: block;
+  color: color-mix(in srgb, currentColor 76%, #a9bfd9);
+  font-size: 8px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body.new-interface .avatar-hero > .state-panel {
+  grid-area: auto;
+  width: 100%;
+  justify-self: stretch;
+}
+
+@media (max-width: 780px) {
+  body.new-interface .state-panel .holo-state-copy {
+    width: 100%;
+    text-align: center;
+  }
+
+  body.new-interface .state-panel .holo-state-subtitle {
+    font-size: clamp(6px, 1.8vw, 7px);
+  }
+
+}
+
+@media (max-width: 780px) {
+  body.new-interface .holo-stage .orbit-one { width: 76%; }
+  body.new-interface .holo-stage .orbit-two { width: 78%; }
+}
+
+@media (max-width: 360px) {
+  body.new-interface .state-panel .holo-state-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  body.new-interface .state-panel .holo-state {
+    min-height: 40px;
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    padding: 5px 7px;
+    font-size: 8px;
+    text-align: left;
+  }
+
+  body.new-interface .state-panel .holo-state .state-icon {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
+  }
+
+  body.new-interface .state-panel .holo-state-copy {
+    width: auto;
+    text-align: left;
+  }
+
+  body.new-interface .state-panel .holo-state-subtitle {
+    font-size: 7.5px;
+  }
+
+  body.new-interface .state-panel .holo-state > .holo-state-copy > span {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.new-interface .holo-stage.is-globe-active .holo-sphere-shell i,
+  body.new-interface .holo-stage.is-globe-active .holo-platform,
+  body.new-interface .holo-stage.is-globe-active .holo-platform::before,
+  body.new-interface .holo-stage.is-globe-active .holo-platform::after,
+  body.new-interface .holo-stage.is-globe-active .holo-emitter::before,
+  body.new-interface .holo-stage.is-globe-active .holo-emitter::after,
+  body.new-interface .holo-stage.is-globe-active .projector-ray {
+    animation: none !important;
+  }
+
+  body.new-interface .state-panel .holo-state .state-icon,
+  body.new-interface .state-panel .holo-state .state-icon circle {
+    animation: none !important;
+  }
+}
+
+body.new-interface .presence:has(.holo-stage.is-globe-active) {
+  border-color: color-mix(in srgb, var(--avatar-holo-primary) 38%, transparent);
+  background:
+    radial-gradient(ellipse at 50% 48%, color-mix(in srgb, var(--avatar-holo-primary) 18%, transparent), transparent 58%),
+    linear-gradient(180deg, rgba(5, 19, 42, .97), rgba(2, 9, 23, .98));
+  box-shadow: inset 0 0 56px color-mix(in srgb, var(--avatar-holo-primary) 9%, transparent), 0 0 28px rgba(0, 25, 68, .25);
+}
+
+body.new-interface .presence:has(.holo-stage.is-globe-active) > .presence-copy,
+body.new-interface .presence:has(.holo-stage.is-globe-active) > .capability-strip {
+  display: none;
+}
+
+body.new-interface .avatar-hero:has(.holo-stage.is-globe-active) > .state-panel,
+body.new-interface .dashboard-layout:has(.holo-stage.is-globe-active) > .state-panel {
+  padding: 8px;
+  border-color: color-mix(in srgb, var(--avatar-holo-primary) 34%, transparent);
+  background:
+    radial-gradient(ellipse at 50% 0, color-mix(in srgb, var(--avatar-holo-tertiary) 12%, transparent), transparent 78%),
+    linear-gradient(155deg, rgba(5, 20, 44, .96), rgba(2, 10, 25, .98));
+  box-shadow: inset 0 0 24px rgba(23, 104, 189, .08), 0 0 22px rgba(23, 104, 189, .12);
+}
+
+body.new-interface .avatar-hero:has(.holo-stage.is-globe-active) > .state-panel .panel-heading,
+body.new-interface .dashboard-layout:has(.holo-stage.is-globe-active) > .state-panel .panel-heading {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+body.new-interface .state-panel .holo-state-strip {
+  width: 100%;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.new-interface .state-panel .holo-state {
+  min-width: 0;
+  min-height: 82px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 1px;
+  color: var(--holo-state-color);
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
+}
+
+body.new-interface .state-panel .holo-state.is-current {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.new-interface .state-panel .holo-state .state-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--holo-state-color) 76%, transparent);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--holo-state-color) 18%, transparent), rgba(4, 16, 35, .9) 72%);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--holo-state-color) 34%, transparent), inset 0 0 9px color-mix(in srgb, var(--holo-state-color) 18%, transparent);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--holo-state-color) 34%, transparent));
+  stroke-width: 1.8;
+}
+
+body.new-interface .state-panel .holo-state.is-current .state-icon {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--holo-state-color) 56%, transparent), inset 0 0 12px color-mix(in srgb, var(--holo-state-color) 24%, transparent);
+}
+
+body.new-interface .state-panel .holo-state-copy {
+  width: 100%;
+  flex: 0 1 auto;
+  gap: 2px;
+  text-align: center;
+}
+
+body.new-interface .state-panel .holo-state > .holo-state-copy > span {
+  color: var(--holo-state-color);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+body.new-interface .state-panel .holo-state-subtitle {
+  color: color-mix(in srgb, var(--holo-state-color) 78%, #c8d8ec);
+  font-size: 7px;
+  line-height: 1.2;
+}
+
+body.new-interface .holo-stage.is-globe-active > .avatar-canvas {
+  transform: scale(1);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+body.new-interface .holo-stage.is-globe-active ~ .avatar-model-controls {
+  margin: 2px auto 4px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+body.new-interface .avatar-model-controls-summary {
+  min-height: 34px;
+  border-color: color-mix(in srgb, var(--avatar-holo-primary) 48%, transparent);
+  background: rgba(3, 17, 38, .82);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--avatar-holo-primary) 12%, transparent);
+}
+
+body.new-interface .avatar-model-controls[open] > .avatar-model-controls-summary {
+  margin-bottom: 5px;
+}
+
+body.new-interface .avatar-model-controls-summary:focus-visible {
+  outline: 2px solid var(--avatar-holo-secondary);
+  outline-offset: 3px;
+}
+
+body.new-interface .avatar-model-options {
+  margin-top: 5px;
+  border-color: color-mix(in srgb, var(--avatar-holo-primary) 28%, transparent);
+}
+
+@media (min-width: 781px) {
+  body.new-interface .state-panel .holo-state-strip {
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  body.new-interface .holo-stage.is-globe-active > .avatar-canvas {
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 780px) {
+  body.new-interface .avatar-model-controls-summary {
+    min-height: 38px;
+  }
+
+  body.new-interface .avatar-model-options {
+    padding: 7px;
+  }
+
+  body.new-interface .state-panel .holo-state {
+    min-height: 82px;
+  }
+
+  body.new-interface .state-panel .holo-state .state-icon {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+}
+
+@media (max-width: 360px) {
+  body.new-interface .state-panel .holo-state-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 8px;
+  }
+
+  body.new-interface .state-panel .holo-state {
+    min-height: 48px;
+    display: grid;
+    flex-direction: initial;
+    grid-template-columns: 34px minmax(0, 1fr);
+    justify-items: start;
+    gap: 0 7px;
+    padding: 3px 5px;
+    text-align: left;
+  }
+
+  body.new-interface .state-panel .holo-state .state-icon {
+    width: 32px;
+    height: 32px;
+    grid-row: 1 / span 2;
+    padding: 6px;
+  }
+
+  body.new-interface .state-panel .holo-state-copy {
+    width: 100%;
+    text-align: left;
+  }
+
+  body.new-interface .state-panel .holo-state > .holo-state-copy > span {
+    font-size: 9px;
+    white-space: normal;
+  }
+
+  body.new-interface .state-panel .holo-state-subtitle {
+    font-size: 7.5px;
+  }
+}
+
+@media (max-width: 780px) {
+  body.new-interface .presence:has(.avatar-model-controls[open]) {
+    z-index: 10;
+  }
+
+  body.new-interface .avatar-model-controls[open] {
+    position: relative;
+    z-index: 2;
+  }
+
+  body.new-interface .avatar-hero:has(.avatar-model-controls[open]) > .state-panel {
+    z-index: 1;
+  }
+
+  body.new-interface .avatar-model-controls[open] .avatar-model-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: min(116px, calc(100dvh - 300px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  body.new-interface .avatar-model-controls[open] #load-custom-avatar,
+  body.new-interface .avatar-model-controls[open] #avatar-audio-sync-button,
+  body.new-interface .avatar-model-controls[open] .avatar-model-options > p {
+    grid-column: 1 / -1;
+  }
+
+  body.new-interface .avatar-model-controls[open] .avatar-model-button {
+    width: 100%;
+    min-width: 0;
+    padding-right: 5px;
+    padding-left: 5px;
+  }
 }

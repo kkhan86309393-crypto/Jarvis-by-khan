@@ -5,8 +5,13 @@ import test from 'node:test';
 
 const workerSource = await readFile(new URL('../public/service-worker.js', import.meta.url), 'utf8');
 
-function createWorker({ fetchImpl = async () => { throw new TypeError('offline'); }, cacheNames = [], timeout = setTimeout } = {}) {
-  const origin = 'https://jarvis.test';
+function createWorker({
+  fetchImpl = async () => { throw new TypeError('offline'); },
+  cacheNames = [],
+  hostname = 'jarvis.test',
+  timeout = setTimeout,
+} = {}) {
+  const origin = `https://${hostname}`;
   const listeners = new Map();
   const storedResponses = new Map();
   const deletedCaches = [];
@@ -40,7 +45,7 @@ function createWorker({ fetchImpl = async () => { throw new TypeError('offline')
     },
   };
   const self = {
-    location: { origin },
+    location: { origin, hostname },
     clients: { claim: async () => { clientsClaimed = true; } },
     addEventListener: (type, listener) => listeners.set(type, listener),
     skipWaiting: async () => { skipWaitingCalled = true; },
@@ -76,11 +81,14 @@ test('installs the lightweight app shell without avatar assets', async () => {
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=55'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=60'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-portrait.png'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/portrait-animation.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/diagnostics.js?hud=28'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=58'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=60'));
+  for (const module of ['api-response.js', 'speech-input.js', 'avatar-cues.js', 'focus-timer.js']) {
+    assert.ok(worker.storedResponses.has(`https://jarvis.test/${module}`));
+  }
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-planner.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-memory.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/smart-command-router.js'));
@@ -95,11 +103,27 @@ test('installs the lightweight app shell without avatar assets', async () => {
   assert.ok(worker.storedResponses.has('https://jarvis.test/gemini-key-settings.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/ui-localization.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/manifest.webmanifest'));
-  assert.equal(worker.storedResponses.has('https://jarvis.test/avatar-cues.js'), false);
+  assert.equal(worker.storedResponses.has('https://jarvis.test/avatar-cues.js'), true);
   assert.equal(worker.storedResponses.has('https://jarvis.test/ai-avatar.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/reference-face.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js?earth=4'), false);
+});
+
+test('serves every app entry dependency from the cached shell when offline', async () => {
+  const worker = createWorker();
+  let installation;
+  worker.listeners.get('install')({ waitUntil: (promise) => { installation = promise; } });
+  await installation;
+
+  for (const module of ['app.js?hud=60', 'api-response.js', 'speech-input.js', 'avatar-cues.js', 'focus-timer.js']) {
+    const response = await dispatchFetch(worker, {
+      url: `https://jarvis.test/${module}`,
+      mode: 'cors',
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), new RegExp(module.split('?')[0].replace('.', '\\.')));
+  }
 });
 
 test('reports the active shell cache version only to an explicit diagnostics request', () => {
@@ -109,7 +133,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v70');
+  assert.equal(version, 'jarvis-shell-v72');
 
   let ignored = false;
   worker.listeners.get('message')({
@@ -117,6 +141,32 @@ test('reports the active shell cache version only to an explicit diagnostics req
     ports: [{ postMessage: () => { ignored = true; } }],
   });
   assert.equal(ignored, false);
+});
+
+test('uses network-only assets without app-shell caching on localhost and Codespaces', async () => {
+  for (const hostname of ['localhost', 'didactic-engine-4173.app.github.dev']) {
+    let fetchCacheMode;
+    const worker = createWorker({
+      hostname,
+      fetchImpl: async (_request, options) => {
+        fetchCacheMode = options?.cache;
+        return new Response('latest workspace module');
+      },
+    });
+    let installation;
+    worker.listeners.get('install')({ waitUntil: (promise) => { installation = promise; } });
+    await installation;
+    assert.equal(worker.storedResponses.size, 0, `${hostname} must not precache app assets`);
+
+    worker.storedResponses.set(`https://${hostname}/app.js`, new Response('stale module'));
+    const response = await dispatchFetch(worker, {
+      url: `https://${hostname}/app.js`,
+      mode: 'cors',
+    });
+    assert.equal(await response.text(), 'latest workspace module');
+    assert.equal(fetchCacheMode, 'no-store');
+    assert.equal(await worker.storedResponses.get(`https://${hostname}/app.js`).text(), 'stale module');
+  }
 });
 
 test('removes only obsolete JARVIS shell caches when activating', async () => {

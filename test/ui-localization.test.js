@@ -267,6 +267,11 @@ test('dynamic messages round-trip exactly between English and Hindi', () => {
     'The request timed out. Check your connection or AI provider, then try again.',
     '3 pending · 4 completed today',
     'Preference · Created Jan 1 · Updated Jan 2',
+    'Waiting for your voice...',
+    'Analyzing...',
+    'Generating response...',
+    'Ready',
+    'Offline',
   ];
 
   for (const english of messages) {

@@ -1,6 +1,9 @@
-const CACHE_NAME = 'jarvis-shell-v70';
-const APP_SHELL = ['/', '/styles.css?hud=55', '/diagnostics.js?hud=28', '/app.js?hud=58', '/jarvis-portrait.png', '/portrait-animation.js', '/local-planner.js', '/local-memory.js', '/smart-command-router.js', '/lab-personalize.js', '/lab-ai-modify.js', '/lab-code-studio.js', '/lab-extensions.js', '/lab-safety.js', '/app-hub.js', '/search-summary.js', '/news-briefing.js', '/gemini-key-settings.js', '/ui-localization.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
+const CACHE_NAME = 'jarvis-shell-v72';
+const APP_SHELL = ['/', '/styles.css?hud=60', '/diagnostics.js?hud=28', '/app.js?hud=60', '/api-response.js', '/speech-input.js', '/avatar-cues.js', '/focus-timer.js', '/jarvis-portrait.png', '/portrait-animation.js', '/local-planner.js', '/local-memory.js', '/smart-command-router.js', '/lab-personalize.js', '/lab-ai-modify.js', '/lab-code-studio.js', '/lab-extensions.js', '/lab-safety.js', '/app-hub.js', '/search-summary.js', '/news-briefing.js', '/gemini-key-settings.js', '/ui-localization.js', '/interface-switcher.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
 const NETWORK_TIMEOUT_MS = 4_000;
+const DEVELOPMENT_HOST = self.location.hostname === 'localhost'
+  || self.location.hostname === '127.0.0.1'
+  || self.location.hostname.endsWith('.app.github.dev');
 
 self.addEventListener('message', (event) => {
   if (event.data?.type !== 'JARVIS_DIAGNOSTICS') return;
@@ -9,8 +12,9 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+    (DEVELOPMENT_HOST
+      ? Promise.resolve()
+      : caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)))
       .then(() => self.skipWaiting()),
   );
 });
@@ -28,6 +32,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
   if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin || requestUrl.pathname.startsWith('/api/')) return;
+
+  if (DEVELOPMENT_HOST) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
 
   event.respondWith((async () => {
     const cached = await caches.match(event.request);

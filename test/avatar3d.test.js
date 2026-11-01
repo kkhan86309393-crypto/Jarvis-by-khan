@@ -324,6 +324,7 @@ test('creates a procedural Earth with continent texture, grid, orbit rings, part
 
   const globeGrid = globe.children.filter((object) => /^earth-(latitude|longitude)-/.test(object.name));
   assert.equal(globeGrid.length, 53, 'the globe should use a denser ten-degree latitude/longitude grid');
+  assert.equal(globeGrid[0].material.opacity, 0.46, 'the cyan wireframe should remain clearly visible');
   assert.ok(root.getObjectByName('earth-latitude--80'));
   assert.ok(root.getObjectByName('earth-longitude-350'));
   assert.equal(root.getObjectByName('earth-latitude-0').geometry.attributes.position.count, 181);
