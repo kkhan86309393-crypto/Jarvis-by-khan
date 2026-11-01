@@ -188,12 +188,26 @@ export function createHolographicGlobe() {
   atmosphere.name = 'earth-atmosphere';
   globe.add(atmosphere);
 
+  const atmosphereHalo = new THREE.Mesh(
+    new THREE.SphereGeometry(1.13, 56, 40),
+    new THREE.MeshBasicMaterial({
+      color: 0x28aaff,
+      side: THREE.BackSide,
+      transparent: true,
+      opacity: 0.12,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  atmosphereHalo.name = 'earth-atmosphere-halo';
+  globe.add(atmosphereHalo);
+
   const ocean = new THREE.Mesh(
     new THREE.SphereGeometry(1, 64, 48),
     new THREE.MeshBasicMaterial({
       color: 0x063d86,
       transparent: true,
-      opacity: 0.16,
+      opacity: 0.19,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }),
@@ -206,7 +220,7 @@ export function createHolographicGlobe() {
     new THREE.MeshBasicMaterial({
       map: createEarthSurfaceTexture(),
       transparent: true,
-      opacity: 0.86,
+      opacity: 0.9,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }),
@@ -217,7 +231,7 @@ export function createHolographicGlobe() {
   const gridMaterial = new THREE.LineBasicMaterial({
     color: 0x66e8ff,
     transparent: true,
-    opacity: 0.46,
+    opacity: 0.38,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
@@ -266,7 +280,7 @@ export function createHolographicGlobe() {
       color: 0x77ddff,
       size: 0.018,
       transparent: true,
-      opacity: 0.58,
+      opacity: 0.68,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       sizeAttenuation: true,
@@ -298,12 +312,14 @@ export function createHolographicGlobe() {
   }
   initialScanPositions.needsUpdate = true;
 
-  return { root, globe, orbitRig, orbitRings, particles, scanline };
+  return { root, globe, atmosphere, atmosphereHalo, orbitRig, orbitRings, particles, scanline };
 }
 
 export function animateHolographicGlobe(rig, seconds, { reducedMotion = false } = {}) {
   if (!rig || reducedMotion) return;
   rig.globe.rotation.y = seconds * 0.12;
+  rig.atmosphere.material.opacity = 0.2 + Math.sin(seconds * 0.52) * 0.035;
+  rig.atmosphereHalo.material.opacity = 0.12 + Math.sin(seconds * 0.52 + 0.8) * 0.025;
   rig.orbitRig.rotation.y = seconds * 0.045;
   rig.particles.rotation.y = -seconds * 0.035;
   const latitude = Math.sin(seconds * 0.24) * 68;
@@ -1052,7 +1068,7 @@ export function initializeAvatar3d({
     animationScheduled = false;
     animationFrame = 0;
     if (!canRender()) return;
-    if (lastFrameTime && now - lastFrameTime < 30) {
+    if (lastFrameTime && now - lastFrameTime < (globeRig ? 1000 / 60 : 30)) {
       scheduleAnimation();
       return;
     }
@@ -1156,13 +1172,14 @@ export function initializeAvatar3d({
   }
 
   async function loadModel(file) {
-    if (!file) return;
+    if (!file) return false;
     const requestId = ++loadRequestId;
+    let projectionReplaced = false;
     try {
       validateAvatarFile(file);
     } catch (error) {
       report(error.message, 'error');
-      return;
+      return false;
     }
 
     report('Reading the local avatar file...', 'loading');
@@ -1175,7 +1192,7 @@ export function initializeAvatar3d({
       const gltf = await parseModel(arrayBuffer);
       if (requestId !== loadRequestId) {
         disposeParsedAvatar(gltf);
-        return;
+        return false;
       }
       const root = gltf.scene;
       const vrm = gltf.userData?.vrm || null;
@@ -1185,8 +1202,11 @@ export function initializeAvatar3d({
       const hasVrmMouth = ['aa', 'ee', 'ih', 'oh', 'ou'].some((name) => expressionManager?.getExpression(name));
       if (!newMouthTargets.length && !hasVrmMouth) {
         disposeParsedAvatar(gltf);
-        report('This model has no recognized mouth-open or speech viseme morph. The portrait remains active.', 'error');
-        return;
+        report(
+          `This model has no recognized mouth-open or speech viseme morph. ${modelRoot ? 'The current projection remains active.' : 'The portrait remains active.'}`,
+          'error',
+        );
+        return false;
       }
 
       const bounds = new THREE.Box3().setFromObject(root);
@@ -1194,11 +1214,15 @@ export function initializeAvatar3d({
       const center = bounds.getCenter(new THREE.Vector3());
       if (!Number.isFinite(size.y) || size.y <= 0) {
         disposeParsedAvatar(gltf);
-        report('This model has invalid dimensions. The portrait remains active.', 'error');
-        return;
+        report(
+          `This model has invalid dimensions. ${modelRoot ? 'The current projection remains active.' : 'The portrait remains active.'}`,
+          'error',
+        );
+        return false;
       }
 
       disposeModel();
+      projectionReplaced = true;
       modelRoot = root;
       activeVrm = vrm;
       configureRenderer();
@@ -1246,10 +1270,13 @@ export function initializeAvatar3d({
       const identity = vrm?.meta?.name ? ` ${vrm.meta.name}.` : '';
       report(`3D avatar ready.${identity} Mouth: ${mouthDescription}. Face controls: ${expressions.join(', ') || (hasVrmMouth ? 'VRM expressions' : 'mouth only')}.`, 'ready');
       scheduleAnimation();
+      return true;
     } catch (error) {
-      if (requestId !== loadRequestId) return;
-      disposeModel();
-      report(`Could not load this model: ${error.message || 'unsupported or invalid model'}. The portrait remains active.`, 'error');
+      if (requestId !== loadRequestId) return false;
+      if (projectionReplaced) disposeModel();
+      const fallback = modelRoot ? 'The current projection remains active.' : 'The portrait remains active.';
+      report(`Could not load this model: ${error.message || 'unsupported or invalid model'}. ${fallback}`, 'error');
+      return false;
     }
   }
 
@@ -1355,5 +1382,14 @@ export function initializeAvatar3d({
     reducedMotionQuery?.removeEventListener?.('change', onReducedMotionChange);
   }
 
-  return { loadModel, loadBuiltInAvatar, loadBuiltInGlobe, setState, setMouth, setViseme, unload: unloadModel };
+  return {
+    loadModel,
+    loadBuiltInAvatar,
+    loadBuiltInGlobe,
+    getActiveMode: () => (globeRig ? 'earth' : modelRoot ? 'avatar' : ''),
+    setState,
+    setMouth,
+    setViseme,
+    unload: unloadModel,
+  };
 }

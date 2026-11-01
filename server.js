@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, statfs } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { cpus, freemem, platform, totalmem } from 'node:os';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,7 @@ const requestLimit = 30;
 const visionRequestLimit = 5;
 const aiRequestTimeoutMs = 45_000;
 const maxTransientRetries = 2;
+const geminiApiBaseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 const clientRequests = new Map();
 const visionClientRequests = new Map();
 let runtimeAIConfig = null;
@@ -177,25 +179,170 @@ function validateVisionRequest(body) {
   return { question, image, imageDataUrl: body.image };
 }
 
+function isValidGeminiModelName(value) {
+  return /^gemini-[A-Za-z0-9][A-Za-z0-9._-]{0,112}$/.test(value);
+}
+
+export function setRuntimeGeminiApiKey(value, selectedModel = process.env.AI_MODEL || 'gemini-3.5-flash-lite') {
+  if (typeof value !== 'string' || !value.trim() || value.length > 1_024 || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new TypeError('Enter a valid Google Gemini API key.');
+  }
+  const model = selectedModel;
+  if (!isValidGeminiModelName(model)) {
+    throw new Error('Enter a valid Gemini model name beginning with gemini-.');
+  }
+  runtimeAIConfig = {
+    provider: 'gemini',
+    model,
+    apiKey: value.trim(),
+  };
+  return publicAIConfig(runtimeAIConfig);
+}
+
+export function lockRuntimeGeminiApiKey() {
+  if (runtimeAIConfig?.provider === 'gemini') runtimeAIConfig = null;
+}
+
+function isLocalOllamaHostname(hostname) {
+  const normalized = hostname.toLowerCase().replace(/\.$/, '');
+  if (normalized === 'localhost' || normalized.endsWith('.localhost')) return true;
+
+  const address = normalized.replace(/^\[|\]$/g, '');
+  if (isIP(address) === 4) {
+    const octets = address.split('.').map(Number);
+    return octets[0] === 127
+      || octets[0] === 10
+      || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+      || (octets[0] === 192 && octets[1] === 168)
+      || (octets[0] === 169 && octets[1] === 254);
+  }
+  if (isIP(address) === 6) {
+    const normalizedAddress = address.toLowerCase();
+    return normalizedAddress === '::1'
+      || normalizedAddress.startsWith('fc')
+      || normalizedAddress.startsWith('fd')
+      || /^fe[89ab]/.test(normalizedAddress);
+  }
+  return false;
+}
+
+function parseOllamaBaseUrl(value, status = 400) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(value);
+  } catch {
+    throw Object.assign(new Error('Enter a valid local Ollama base URL.'), { status });
+  }
+  if (
+    typeof value !== 'string'
+    || value.length > 2_048
+    || !['http:', 'https:'].includes(parsedUrl.protocol)
+    || parsedUrl.username
+    || parsedUrl.password
+    || parsedUrl.search
+    || parsedUrl.hash
+    || !isLocalOllamaHostname(parsedUrl.hostname)
+  ) {
+    throw Object.assign(new Error('Ollama base URL must use HTTP or HTTPS and point to localhost or a private-network address, without credentials, query parameters, or a fragment.'), { status });
+  }
+  return parsedUrl.href.replace(/\/+$/, '');
+}
+
+function isValidOllamaModelName(value) {
+  return typeof value === 'string'
+    && value.length <= 120
+    && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(value);
+}
+
+function validateEnvironmentApiKey(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 1_024 || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw Object.assign(new Error('The AI API key configured in the server environment is invalid.'), {
+      status: 500,
+      code: 'INVALID_AI_PROVIDER_CONFIG',
+    });
+  }
+  return value.trim();
+}
+
+function validateEnvironmentOpenAIConfig() {
+  const model = process.env.AI_MODEL || 'gemini-3.5-flash-lite';
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(model)) {
+    throw Object.assign(new Error('The OpenAI-compatible model configured in the server environment is invalid.'), {
+      status: 500,
+      code: 'INVALID_AI_PROVIDER_CONFIG',
+    });
+  }
+  const baseUrl = process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  let parsedBaseUrl;
+  try {
+    parsedBaseUrl = new URL(baseUrl);
+  } catch {
+    throw Object.assign(new Error('The OpenAI-compatible base URL configured in the server environment is invalid.'), {
+      status: 500,
+      code: 'INVALID_AI_PROVIDER_CONFIG',
+    });
+  }
+  if (typeof baseUrl !== 'string'
+    || baseUrl.length > 2_048
+    || !['http:', 'https:'].includes(parsedBaseUrl.protocol)
+    || parsedBaseUrl.username
+    || parsedBaseUrl.password
+    || parsedBaseUrl.search
+    || parsedBaseUrl.hash) {
+    throw Object.assign(new Error('The OpenAI-compatible base URL configured in the server environment is invalid.'), {
+      status: 500,
+      code: 'INVALID_AI_PROVIDER_CONFIG',
+    });
+  }
+  return { model, baseUrl: parsedBaseUrl.href };
+}
+
 function getAIConfig() {
   if (runtimeAIConfig) return runtimeAIConfig;
+
+  const environmentProvider = process.env.AI_PROVIDER;
+  if (environmentProvider
+    && !['gemini', 'ollama', 'openai-compatible'].includes(environmentProvider)) {
+    throw Object.assign(new Error('AI_PROVIDER must be gemini, ollama, or openai-compatible.'), {
+      status: 500,
+      code: 'INVALID_AI_PROVIDER_CONFIG',
+    });
+  }
+
+  if (process.env.AI_PROVIDER === 'gemini') {
+    if (!process.env.AI_API_KEY) return null;
+    const model = process.env.AI_MODEL || 'gemini-3.5-flash-lite';
+    if (!isValidGeminiModelName(model)) {
+      throw Object.assign(new Error('The Gemini model configured in the server environment is invalid.'), { status: 500 });
+    }
+    return {
+      provider: 'gemini',
+      model,
+      apiKey: validateEnvironmentApiKey(process.env.AI_API_KEY),
+    };
+  }
 
   if (
     process.env.AI_PROVIDER === 'ollama'
     || (process.env.AI_PROVIDER !== 'openai-compatible' && !process.env.AI_API_KEY && process.env.OLLAMA_BASE_URL)
   ) {
+    const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b';
+    if (!isValidOllamaModelName(model)) {
+      throw Object.assign(new Error('The Ollama model configured in the server environment is invalid.'), { status: 500 });
+    }
     return {
       provider: 'ollama',
-      model: process.env.OLLAMA_MODEL || 'qwen2.5:3b',
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+      model,
+      baseUrl: parseOllamaBaseUrl(process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434', 500),
     };
   }
   if (process.env.AI_API_KEY) {
+    const { model, baseUrl } = validateEnvironmentOpenAIConfig();
     return {
       provider: 'openai-compatible',
-      model: process.env.AI_MODEL || 'gemini-3.5-flash-lite',
-      apiKey: process.env.AI_API_KEY,
-      baseUrl: process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      model,
+      apiKey: validateEnvironmentApiKey(process.env.AI_API_KEY),
+      baseUrl,
     };
   }
   return null;
@@ -210,7 +357,7 @@ function publicAIConfig(config = getAIConfig()) {
   return config ? {
     provider: config.provider,
     model: config.model,
-    ...(config.provider === 'openai-compatible' ? { baseUrl: config.baseUrl } : {}),
+    ...(config.provider === 'openai-compatible' || config.provider === 'ollama' ? { baseUrl: config.baseUrl } : {}),
   } : null;
 }
 
@@ -219,6 +366,20 @@ function getOpenAIChatCompletionsUrl(baseUrl) {
   return normalizedBaseUrl.endsWith('/chat/completions')
     ? normalizedBaseUrl
     : `${normalizedBaseUrl}/chat/completions`;
+}
+
+function getGeminiGenerateContentUrl(model) {
+  return new URL(`${geminiApiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`);
+}
+
+function getGeminiAssistantText(data) {
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts
+    .filter((part) => part && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
 }
 
 function getRetryDelayMs(upstream, retryIndex) {
@@ -379,18 +540,43 @@ async function configureAI(body) {
     runtimeAIConfig = null;
     return publicAIConfig();
   }
-  if (!['openai-compatible', 'ollama'].includes(body.provider)) {
-    throw Object.assign(new Error('Choose OpenAI-compatible or Ollama as the AI provider.'), { status: 400 });
+  if (!['gemini', 'openai-compatible', 'ollama'].includes(body.provider)) {
+    throw Object.assign(new Error('Choose Gemini, OpenAI-compatible, or Ollama as the AI provider.'), { status: 400 });
   }
-  if (typeof body.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(body.model.trim())) {
+  if (typeof body.model !== 'string') {
+    throw Object.assign(new Error('Enter a valid model name using letters, numbers, dots, underscores, colons, slashes, or hyphens.'), { status: 400 });
+  }
+  const model = body.model.trim();
+  if (body.provider === 'ollama' && !isValidOllamaModelName(model)) {
+    throw Object.assign(new Error('Enter a valid Ollama model name of up to 120 characters.'), { status: 400 });
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(model)) {
     throw Object.assign(new Error('Enter a valid model name using letters, numbers, dots, underscores, colons, slashes, or hyphens.'), { status: 400 });
   }
 
   if (body.provider === 'ollama') {
+    const baseUrl = parseOllamaBaseUrl(
+      body.baseUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
+    );
     runtimeAIConfig = {
       provider: 'ollama',
-      model: body.model.trim(),
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+      model,
+      baseUrl,
+    };
+  } else if (body.provider === 'gemini') {
+    if (!isValidGeminiModelName(model)) {
+      throw Object.assign(new Error('Enter a valid Gemini model name beginning with gemini-.'), { status: 400 });
+    }
+    if (Object.hasOwn(body, 'baseUrl') || Object.hasOwn(body, 'endpoint')) {
+      throw Object.assign(new Error('Gemini uses the official Google API endpoint, which cannot be overridden.'), { status: 400 });
+    }
+    if (typeof body.apiKey !== 'string' || !body.apiKey.trim() || body.apiKey.length > 1_024) {
+      throw Object.assign(new Error('Enter a Google Gemini API key, or configure AI_API_KEY on the server. The key must be no longer than 1,024 characters.'), { status: 400 });
+    }
+    runtimeAIConfig = {
+      provider: 'gemini',
+      model,
+      apiKey: body.apiKey.trim(),
     };
   } else {
     if (typeof body.apiKey !== 'string' || !body.apiKey.trim() || body.apiKey.length > 1_024) {
@@ -416,7 +602,7 @@ async function configureAI(body) {
     }
     runtimeAIConfig = {
       provider: 'openai-compatible',
-      model: body.model.trim(),
+      model,
       apiKey: body.apiKey.trim(),
       baseUrl: parsedBaseUrl.href,
     };
@@ -432,6 +618,33 @@ export function getAssistantText(content) {
     .map((part) => part.text)
     .join('')
     .trim();
+}
+
+function validateRequestedAIProvider(config, provider) {
+  if (provider === undefined) return;
+  if (!['gemini', 'ollama', 'openai-compatible'].includes(provider)) {
+    throw Object.assign(new Error('Choose Gemini, Ollama, or OpenAI-compatible as the selected AI provider.'), {
+      status: 400,
+      code: 'INVALID_AI_PROVIDER',
+    });
+  }
+  if (!config) {
+    const guidance = provider === 'gemini'
+      ? 'Unlock the saved Gemini key or enter a Gemini API key in Settings.'
+      : provider === 'ollama'
+        ? 'Configure the local Ollama endpoint and model in Settings.'
+        : 'Configure an OpenAI-compatible provider and API key in Settings.';
+    throw Object.assign(new Error(`The selected ${provider === 'gemini' ? 'Google Gemini' : provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} provider is not configured. ${guidance}`), {
+      status: 503,
+      code: 'AI_PROVIDER_NOT_CONFIGURED',
+    });
+  }
+  if (config.provider !== provider) {
+    throw Object.assign(new Error(`The selected provider is ${provider}, but the server is configured for ${config.provider}. Save that provider in Settings before retrying.`), {
+      status: 409,
+      code: 'AI_PROVIDER_MISMATCH',
+    });
+  }
 }
 
 async function handleChat(request, response) {
@@ -456,6 +669,7 @@ async function handleChat(request, response) {
   };
 
   const config = getAIConfig();
+  validateRequestedAIProvider(config, body.provider);
   if (config?.provider === 'ollama') {
     const baseUrl = config.baseUrl.replace(/\/+$/, '');
     const model = config.model;
@@ -463,6 +677,7 @@ async function handleChat(request, response) {
     try {
       upstream = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
+        redirect: 'error',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model,
@@ -474,19 +689,28 @@ async function handleChat(request, response) {
       });
     } catch (error) {
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-        throw Object.assign(new Error('Local Ollama timed out. Check that the model is loaded and the server has enough resources, then retry.'), {
+        throw Object.assign(new Error(`Local Ollama at ${config.baseUrl} timed out. Check that the model is loaded and the server has enough resources, then retry.`), {
           status: 504,
           code: 'UPSTREAM_TIMEOUT',
         });
       }
-      throw Object.assign(new Error('Local Ollama is unavailable. Start Ollama on the server host and confirm it listens on port 11434.'), {
+      throw Object.assign(new Error(`Local Ollama is unavailable at ${config.baseUrl}. Start Ollama at the configured local endpoint and retry.`), {
         status: 503,
         code: 'UPSTREAM_UNAVAILABLE',
       });
     }
 
     if (!upstream.ok) {
-      throw Object.assign(new Error(`Local Ollama returned HTTP ${upstream.status}. Check that the model is installed and running.`), { status: 502 });
+      if (upstream.status === 404) {
+        throw Object.assign(new Error(`Ollama model "${model}" is not installed or the local endpoint is unavailable. Install the selected model and retry.`), {
+          status: 503,
+          code: 'MODEL_NOT_FOUND',
+        });
+      }
+      throw Object.assign(new Error(`Local Ollama at ${config.baseUrl} returned HTTP ${upstream.status}. Check its connection and selected model.`), {
+        status: 502,
+        code: `HTTP_${upstream.status}`,
+      });
     }
     const data = await readUpstreamJson(upstream, 'Local Ollama');
     const content = data.message?.content;
@@ -494,6 +718,56 @@ async function handleChat(request, response) {
       throw Object.assign(new Error('Local model returned an empty response.'), { status: 502 });
     }
     sendJson(response, 200, { reply: content.trim(), provider: `Ollama / ${model}` });
+    return;
+  }
+
+  if (config?.provider === 'gemini') {
+    let upstream;
+    try {
+      upstream = await fetchOpenAICompatibleWithRetry(getGeminiGenerateContentUrl(config.model), {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'x-goog-api-key': config.apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemMessage.content }] },
+          contents: messages.map((message) => ({
+            role: message.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: message.content }],
+          })),
+          ...(body.max_tokens ? { generationConfig: { maxOutputTokens: body.max_tokens } } : {}),
+        }),
+      }, body.singleAttempt ? 0 : maxTransientRetries);
+    } catch (error) {
+      throw getUpstreamRequestError(error);
+    }
+
+    if (!upstream.ok) {
+      const providerError = await getSafeProviderError(upstream, config.apiKey);
+      const guidance = upstream.status === 401 || upstream.status === 403
+        ? ' Check that the Google Gemini API key is valid and has permission to use this model.'
+        : upstream.status === 429
+          ? ' Check the Gemini quota or rate limit, then retry.'
+          : upstream.status === 404
+            ? ' Check that the Gemini model exists, is enabled for this key, and supports the requested capability.'
+            : '';
+      throw Object.assign(new Error(`${providerError.message}${guidance}`), {
+        status: upstream.status === 503 ? 503 : 502,
+        code: providerError.code,
+        ...(providerError.diagnostics ? { diagnostics: providerError.diagnostics } : {}),
+      });
+    }
+    const data = await readUpstreamJson(upstream, 'Google Gemini');
+    const content = getGeminiAssistantText(data);
+    if (!content) {
+      throw Object.assign(new Error('Google Gemini returned no usable text. Check the selected model response and safety settings.'), {
+        status: 502,
+        code: 'EMPTY_AI_RESPONSE',
+      });
+    }
+    sendJson(response, 200, { reply: content, provider: `Gemini / ${config.model}` });
     return;
   }
 
@@ -553,8 +827,10 @@ async function handleChat(request, response) {
 }
 
 async function handleVision(request, response) {
-  const { question, image, imageDataUrl } = validateVisionRequest(await readJson(request, maxVisionRequestBytes));
+  const body = await readJson(request, maxVisionRequestBytes);
+  const { question, image, imageDataUrl } = validateVisionRequest(body);
   const config = getAIConfig();
+  validateRequestedAIProvider(config, body.provider);
   if (!config) {
     throw Object.assign(new Error('No AI provider is configured. Configure an image-capable provider before using Vision.'), { status: 503 });
   }
@@ -570,12 +846,35 @@ async function handleVision(request, response) {
       providerName = `Ollama / ${config.model}`;
       upstream = await fetch(`${config.baseUrl.replace(/\/+$/, '')}/api/chat`, {
         method: 'POST',
+        redirect: 'error',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: config.model,
           messages: [systemMessage, { role: 'user', content: question, images: [image.toString('base64')] }],
           stream: false,
           options: { num_predict: 256 },
+        }),
+        signal: AbortSignal.timeout(aiRequestTimeoutMs),
+      });
+    } else if (config.provider === 'gemini') {
+      providerName = `Gemini / ${config.model}`;
+      upstream = await fetch(getGeminiGenerateContentUrl(config.model), {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'x-goog-api-key': config.apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemMessage.content }] },
+          contents: [{
+            role: 'user',
+            parts: [
+              { text: question },
+              { inlineData: { mimeType: 'image/jpeg', data: image.toString('base64') } },
+            ],
+          }],
+          generationConfig: { maxOutputTokens: 256 },
         }),
         signal: AbortSignal.timeout(aiRequestTimeoutMs),
       });
@@ -606,21 +905,33 @@ async function handleVision(request, response) {
       });
     }
   } catch (error) {
+    if (config.provider === 'ollama') {
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      throw Object.assign(new Error(timedOut
+        ? `Local Ollama at ${config.baseUrl} timed out. Check that the selected model is loaded and retry.`
+        : `Local Ollama is unavailable at ${config.baseUrl}. Start Ollama at the configured local endpoint and retry.`), {
+        status: timedOut ? 504 : 503,
+        code: timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE',
+      });
+    }
     throw getUpstreamRequestError(error);
   }
 
   if (!upstream.ok) {
     if (config.provider === 'ollama') {
-      throw Object.assign(new Error(`Local Ollama returned HTTP ${upstream.status}. Check that the selected model supports images.`), {
-        status: 502,
-        code: `HTTP_${upstream.status}`,
+      const missingModel = upstream.status === 404;
+      throw Object.assign(new Error(missingModel
+        ? `Ollama model "${config.model}" is not installed or does not support Vision. Install an image-capable model and retry.`
+        : `Local Ollama at ${config.baseUrl} returned HTTP ${upstream.status}. Check its connection and confirm the model supports images.`), {
+        status: missingModel ? 503 : 502,
+        code: missingModel ? 'MODEL_NOT_FOUND' : `HTTP_${upstream.status}`,
       });
     }
     const providerError = await getSafeProviderError(upstream, config.apiKey);
     const guidance = upstream.status === 429
       ? ' Check the provider quota or rate limit, then retry manually.'
       : upstream.status === 404
-        ? ' Check that the configured Gemini model is enabled and supports image input.'
+        ? ` Check that the configured ${config.provider === 'gemini' ? 'Gemini' : 'provider'} model is enabled and supports image input.`
         : '';
     throw Object.assign(new Error(`${providerError.message}${guidance}`), {
       status: 502,
@@ -630,9 +941,11 @@ async function handleVision(request, response) {
   }
 
   const data = await readUpstreamJson(upstream, providerName);
-  const content = getAssistantText(config.provider === 'ollama'
-    ? data.message?.content
-    : data.choices?.[0]?.message?.content);
+  const content = config.provider === 'ollama'
+    ? getAssistantText(data.message?.content)
+    : config.provider === 'gemini'
+      ? getGeminiAssistantText(data)
+      : getAssistantText(data.choices?.[0]?.message?.content);
   if (!content) {
     throw Object.assign(new Error('The selected AI model returned no Vision response. Confirm that it supports image input.'), {
       status: 502,
@@ -647,7 +960,10 @@ async function inspectOllama(config) {
   const baseUrl = config.baseUrl.replace(/\/$/, '');
   const model = config.model;
   try {
-    const response = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(2_000) });
+    const response = await fetch(`${baseUrl}/api/tags`, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(2_000),
+    });
     if (!response.ok) return { available: false, modelInstalled: false, model };
     const data = await response.json();
     const modelInstalled = Array.isArray(data.models) && data.models.some((item) => item.name === model);
@@ -822,7 +1138,7 @@ export function createAppServer() {
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
     response.setHeader('x-frame-options', 'DENY');
-    response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+    response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
 
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/')) response.setHeader('cache-control', 'no-store');
@@ -839,7 +1155,7 @@ export function createAppServer() {
           modelInstalled: ollama?.modelInstalled ?? null,
           provider: config?.provider ?? null,
           model: config?.model ?? null,
-          baseUrl: config?.provider === 'openai-compatible' ? config.baseUrl : null,
+          baseUrl: config?.provider === 'openai-compatible' || config?.provider === 'ollama' ? config.baseUrl : null,
           accessRequired: Boolean(process.env.APP_ACCESS_TOKEN) || process.env.NODE_ENV === 'production',
           accessConfigured: Boolean(process.env.APP_ACCESS_TOKEN),
           search: 'DuckDuckGo Instant Answers with Wikipedia search fallback',
@@ -919,9 +1235,13 @@ export function createAppServer() {
         return;
       }
       const status = error.status || (error.name === 'TimeoutError' || error.name === 'AbortError' ? 504 : 502);
+      const message = sanitizeProviderErrorMessage(
+        error.message,
+        runtimeAIConfig?.apiKey || process.env.AI_API_KEY || '',
+        status,
+      );
       if (url.pathname.startsWith('/api/')) {
         const code = typeof error.code === 'string' ? error.code : `HTTP_${status}`;
-        const message = sanitizeProviderErrorMessage(error.message, getAIConfig()?.apiKey || '', status);
         console.error('[J.A.R.V.I.S.] API request failed', JSON.stringify({
           method: request.method,
           path: url.pathname,
@@ -931,7 +1251,7 @@ export function createAppServer() {
         }));
       }
       sendJson(response, status, {
-        error: error.message || 'The request could not be completed.',
+        error: message || 'The request could not be completed.',
         ...(typeof error.code === 'string' ? { code: error.code } : {}),
         ...(error.diagnostics && typeof error.diagnostics === 'object' ? { diagnostics: error.diagnostics } : {}),
       });

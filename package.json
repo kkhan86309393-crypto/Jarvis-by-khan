@@ -21,6 +21,9 @@
     "build:avatar": "esbuild public/avatar3d.js --bundle --format=esm --minify --legal-comments=inline --outfile=public/avatar3d.bundle.js",
     "pretest": "npm run build:avatar",
     "test": "node --test",
+    "test:browser": "playwright test",
+    "test:browser:desktop": "playwright test --project=desktop-chromium",
+    "test:browser:mobile": "playwright test --project=android-mobile",
     "check": "npm run build:avatar && node --check server.js && node --check scripts/codespaces.js && node --check scripts/generate-pwa-icons.js && node --check desktop/main.js && node --check desktop/external-links.js && node --check desktop/ipc-validation.js && node --check desktop/preload.cjs && node --check public/app.js && node --check public/api-response.js && node --check public/app-hub.js && node --check public/search-summary.js && node --check public/speech-input.js && node --check public/chat-context.js && node --check public/local-memory.js && node --check public/smart-command-router.js && node --check public/portrait-animation.js && node --check public/avatar-cues.js && node --check public/avatar3d.js && node --check public/interface-switcher.js && node --check public/device-monitor.js && node --check public/diagnostics.js && node --check public/service-worker.js"
   },
   "engines": {
@@ -31,6 +34,7 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "electron": "^45.0.0",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2"
@@ -46,6 +50,7 @@
       "desktop/main.js",
       "desktop/external-links.js",
       "desktop/ipc-validation.js",
+      "desktop/gemini-key-storage.js",
       "desktop/preload.cjs",
       "server.js",
       "public/**/*",

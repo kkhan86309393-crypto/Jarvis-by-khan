@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?hud=53">
+    <link rel="stylesheet" href="/styles.css?hud=55">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body>
@@ -75,8 +75,15 @@
                 <div class="holo-particles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
                 <span class="holo-hud holo-hud-left" aria-hidden="true"><i></i><span>LIVE PROJECTION</span><small>01 / 03</small></span>
                 <span class="holo-hud holo-hud-right" aria-hidden="true"><i></i><span>NEURAL LINK</span><small>ONLINE</small></span>
-                <div class="avatar-frame portrait-cutout-frame">
-                  <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/jarvis-portrait.png" alt="J.A.R.V.I.S. female assistant portrait" width="1199" height="1312" fetchpriority="high" decoding="async" draggable="false">
+                <div class="avatar-frame portrait-cutout-frame" data-blink="open" data-viseme="neutral" data-speaking="false">
+                  <div class="portrait-artwork">
+                    <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/jarvis-portrait.png" alt="J.A.R.V.I.S. female assistant portrait" width="1199" height="1312" fetchpriority="high" decoding="async" draggable="false">
+                    <span class="portrait-animation" aria-hidden="true">
+                      <i class="portrait-eye-lid portrait-eye-lid-left"><i class="portrait-upper-lid"></i><i class="portrait-lower-lid"></i></i>
+                      <i class="portrait-eye-lid portrait-eye-lid-right"><i class="portrait-upper-lid"></i><i class="portrait-lower-lid"></i></i>
+                      <i class="portrait-mouth"></i>
+                    </span>
+                  </div>
                   <span class="portrait-scanline" aria-hidden="true"></span>
                 </div>
                 <span class="playback-indicator" aria-hidden="true"></span>
@@ -84,6 +91,9 @@
               <div class="avatar-model-controls">
                 <button class="avatar-model-button" id="activate-3d-avatar" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate 3D Avatar</button>
                 <button class="avatar-model-button" id="activate-holographic-earth" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate Holographic Earth</button>
+                <button class="avatar-model-button" id="load-custom-avatar" type="button" aria-describedby="avatar-model-help avatar-model-status">Load Custom Avatar</button>
+                <input id="avatar-model-file" type="file" accept=".vrm,.glb,model/gltf-binary" hidden>
+                <p class="avatar-model-help" id="avatar-model-help">Choose a self-contained VRM or GLB up to 20 MB with a supported mouth or speech-expression rig. The model stays on this device.</p>
                 <p class="avatar-model-status" id="avatar-model-status" role="status" aria-live="polite"></p>
               </div>
             </div>
@@ -195,7 +205,7 @@
           </section>
           <details class="dashboard-panel dashboard-accordion briefing-panel" aria-labelledby="briefing-title">
             <summary class="panel-heading"><div><span class="eyebrow">RETRIEVED SOURCES</span><h2 id="briefing-title">News &amp; Briefing</h2></div><span class="disclosure-mark" aria-hidden="true"></span></summary>
-            <p class="briefing-note">Source-linked web results with a Wikipedia fallback; coverage may be limited.</p>
+            <p class="briefing-note">Source-backed headlines and article links appear when available; dates are shown only when provided by a source.</p>
             <button class="briefing-button" id="news-button" type="button" data-requires-full-access>Fetch a news briefing <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
             <div class="briefing-results" id="briefing-results" aria-live="polite"></div>
           </details>
@@ -341,6 +351,10 @@
             </button>
           </div>
           <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
+          <div class="conversation-chat-state" id="conversation-chat-state" role="status" aria-live="polite" hidden>
+            <span id="conversation-chat-state-label"></span>
+            <button class="conversation-retry-button" id="conversation-retry-button" type="button" hidden>Retry request</button>
+          </div>
           <div class="assistant-feedback" id="assistant-feedback" role="status" aria-live="polite"></div>
 
           <form class="composer" id="chat-form">
@@ -703,11 +717,17 @@
         <section class="ai-provider-settings" aria-labelledby="ai-provider-title">
           <div class="provider-settings-heading"><span class="eyebrow">SERVER-SIDE AI</span><h3 id="ai-provider-title">AI provider</h3><p id="ai-setup-status" class="settings-disclaimer" role="status" aria-live="polite">Checking current provider…</p></div>
           <form id="ai-settings-form">
-            <label class="provider-field" for="ai-provider-select"><span>Provider</span><select id="ai-provider-select"><option value="openai-compatible">OpenAI-compatible API</option><option value="ollama">Ollama (local)</option></select></label>
+            <label class="provider-field" for="ai-provider-select"><span>Provider</span><select id="ai-provider-select"><option value="openai-compatible">OpenAI-compatible API</option><option value="gemini">Google Gemini API</option><option value="ollama">Ollama (local)</option></select></label>
             <label class="provider-field" for="ai-model-input"><span>Model name</span><input id="ai-model-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" value="gemini-3.5-flash-lite" required></label>
             <label class="provider-field" id="ai-base-url-field" for="ai-base-url"><span>Provider base URL</span><input id="ai-base-url" type="url" maxlength="2048" autocomplete="url" spellcheck="false" value="https://generativelanguage.googleapis.com/v1beta/openai/" required></label>
-            <label class="provider-field" id="ai-key-field" for="ai-api-key"><span>Provider API key</span><input id="ai-api-key" type="password" maxlength="1024" autocomplete="new-password" spellcheck="false" placeholder="Not saved in this browser"></label>
+            <label class="provider-field" id="ai-key-field" for="ai-api-key"><span id="ai-key-label">Provider API key</span><input id="ai-api-key" type="password" maxlength="1024" autocomplete="off" spellcheck="false" placeholder="Not saved in this browser"></label>
             <p class="provider-help" id="ai-provider-help">Saving here sends the key to this server and keeps it in memory only until the server restarts. It is not saved in this browser and is never returned by the server. For persistence, set AI_API_KEY in your hosting provider’s environment/secrets dashboard; this form cannot change deployment secrets. Use a trusted server over HTTPS.</p>
+            <div class="setting-actions" id="gemini-key-actions" hidden>
+              <button class="secondary-button" id="gemini-key-save" type="button">Use for this session</button>
+              <button class="secondary-button" id="gemini-key-unlock" type="button" hidden>Unlock</button>
+              <button class="secondary-button" id="gemini-key-change" type="button" hidden>Change Key</button>
+            </div>
+            <p class="provider-help" id="gemini-key-status" role="status" aria-live="polite" hidden></p>
             <div class="setting-actions"><button class="secondary-button" id="ai-settings-save" type="submit">Use temporarily</button><button class="secondary-button" id="ai-settings-environment" type="button">Use deployment environment</button></div>
           </form>
         </section>
@@ -809,6 +829,6 @@
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
     <script src="/diagnostics.js?hud=28"></script>
-    <script src="/app.js?hud=56" type="module"></script>
+    <script src="/app.js?hud=58" type="module"></script>
   </body>
 </html>

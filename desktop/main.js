@@ -1,8 +1,10 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, session, shell } from 'electron';
-import { createAppServer } from '../server.js';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { createAppServer, lockRuntimeGeminiApiKey, setRuntimeGeminiApiKey } from '../server.js';
 import { getAllowedExternalUrl } from './external-links.js';
 import { isTrustedDesktopIpcEvent, getApprovedClipboardText, getApprovedDesktopExternalUrl } from './ipc-validation.js';
 import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import { createGeminiKeyStore, registerGeminiKeyIpcHandlers } from './gemini-key-storage.js';
 
 let server;
 let desktopOrigin;
@@ -30,6 +32,17 @@ if (!gotSingleInstanceLock) {
       const { port } = server.address();
       const appUrl = `http://127.0.0.1:${port}/?desktop-app=1`;
       desktopOrigin = new URL(appUrl).origin;
+      const geminiKeyStore = createGeminiKeyStore({
+        safeStorage,
+        filePath: resolve(app.getPath('userData'), 'gemini-api-key.enc'),
+      });
+      registerGeminiKeyIpcHandlers({
+        ipcMain,
+        expectedOrigin: desktopOrigin,
+        keyStore: geminiKeyStore,
+        setGeminiApiKey: setRuntimeGeminiApiKey,
+        lockGeminiApiKey: lockRuntimeGeminiApiKey,
+      });
       ipcMain.on('jarvis:open-external-url', (event, value) => {
         if (!isTrustedDesktopIpcEvent(event, desktopOrigin)) return;
         const externalUrl = getApprovedDesktopExternalUrl(event, desktopOrigin, value);

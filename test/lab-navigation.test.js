@@ -112,7 +112,7 @@ test('provides bottom navigation launchers, a return control, and four interface
   assert.match(appSource, /destination === 'lab'[\s\S]*?openJarvisLab\(\)/);
   assert.match(appSource, /lab-return-button'\)\.addEventListener\('click', returnToJarvisWorkspace\)/);
   assert.match(appSource, /savedPreferences = saveLabPreferences\(personalizeDraft, localStorage\)/);
-  assert.match(appSource, /labPreferences: loadLabPreferences\(localStorage\)/);
+  assert.match(appSource, /labPreferences: loadLabPreferences\(getLocalStorageSafely\(\)\)/);
   assert.match(appSource, /applyLabPreferences\(state\.labPreferences, document\)/);
   assert.match(appSource, /Applied LAB voice overrides output while selected/);
   assert.match(appSource, /state\.labPreferences\.voiceURI \|\| state\.preferences\.voiceURI/);

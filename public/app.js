@@ -5,6 +5,12 @@ import { initializeAppHubs } from './app-hub.js';
 import { createSearchSummaryPrompt } from './search-summary.js';
 import { readApiResponse, readChatReply } from './api-response.js';
 import {
+  normalizeSourceResults,
+  renderBriefingResults,
+  renderBriefingState,
+  renderSearchResults,
+} from './news-briefing.js';
+import {
   createMicrophonePermissionGuard,
   createRecognitionLifecycle,
   createSpeechReplayController,
@@ -62,6 +68,23 @@ import {
   updateNote,
   updateTask,
 } from './local-planner.js';
+import {
+  completeFocusTimer,
+  createFocusTimerState,
+  FOCUS_TIMER_STORAGE_KEY,
+  getFocusTimerRemaining,
+  loadFocusTimer,
+  pauseFocusTimer,
+  saveFocusTimer,
+  startFocusTimer,
+} from './focus-timer.js';
+import { createGeminiKeySettingsController } from './gemini-key-settings.js';
+import {
+  applyUiLanguage,
+  getUiLanguagePreference,
+  observeUiLanguage,
+  translateUiText,
+} from './ui-localization.js';
 import {
   DEFAULT_LAB_PREFERENCES,
   LAB_PREFERENCES_KEY,
@@ -144,6 +167,8 @@ const elements = {
   avatarImage: document.querySelector('#ai-avatar'),
   avatarActivateButton: document.querySelector('#activate-3d-avatar'),
   earthActivateButton: document.querySelector('#activate-holographic-earth'),
+  customAvatarButton: document.querySelector('#load-custom-avatar'),
+  customAvatarFile: document.querySelector('#avatar-model-file'),
   avatarStatus: document.querySelector('#avatar-model-status'),
   labLayout: document.querySelector('#jarvis-lab'),
   labModules: document.querySelector('.lab-module-grid'),
@@ -185,6 +210,9 @@ const elements = {
   conversationView: document.querySelector('#conversation-view'),
   dashboardTranscript: document.querySelector('#dashboard-transcript'),
   dashboardFeedback: document.querySelector('#dashboard-feedback'),
+  conversationChatState: document.querySelector('#conversation-chat-state'),
+  conversationChatStateLabel: document.querySelector('#conversation-chat-state-label'),
+  conversationRetryButton: document.querySelector('#conversation-retry-button'),
   assistantState: document.querySelector('#assistant-state'),
   holoWaveform: document.querySelector('#holo-waveform'),
   holoStateAnnouncement: document.querySelector('#holo-state-announcement'),
@@ -203,11 +231,17 @@ const elements = {
   aiBaseUrl: document.querySelector('#ai-base-url'),
   aiBaseUrlField: document.querySelector('#ai-base-url-field'),
   aiApiKey: document.querySelector('#ai-api-key'),
+  aiKeyLabel: document.querySelector('#ai-key-label'),
   aiKeyField: document.querySelector('#ai-key-field'),
   aiProviderHelp: document.querySelector('#ai-provider-help'),
   aiSetupStatus: document.querySelector('#ai-setup-status'),
   aiSettingsSave: document.querySelector('#ai-settings-save'),
   aiSettingsEnvironment: document.querySelector('#ai-settings-environment'),
+  geminiKeyActions: document.querySelector('#gemini-key-actions'),
+  geminiKeySave: document.querySelector('#gemini-key-save'),
+  geminiKeyUnlock: document.querySelector('#gemini-key-unlock'),
+  geminiKeyChange: document.querySelector('#gemini-key-change'),
+  geminiKeyStatus: document.querySelector('#gemini-key-status'),
   language: document.querySelector('#language-select'),
   voice: document.querySelector('#voice-select'),
   voiceSupport: document.querySelector('#voice-support'),
@@ -390,12 +424,20 @@ function readStoredJson(key, fallback) {
   }
 }
 
+function getLocalStorageSafely() {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
 function loadPreferences() {
   const stored = readStoredJson(PREFERENCES_KEY, {});
   return {
     ...defaults,
     ...stored,
-    language: stored.language === 'hi' ? 'hi' : 'en',
+    language: getUiLanguagePreference(stored),
     speechRate: Number.isFinite(Number(stored.speechRate)) ? Math.min(1.3, Math.max(.7, Number(stored.speechRate))) : 1,
     voiceURI: typeof stored.voiceURI === 'string' ? stored.voiceURI : '',
     voiceEnabled: resolveVoiceOutputEnabled(stored.voiceEnabled, 'speechSynthesis' in window),
@@ -449,6 +491,7 @@ const state = {
   workspaceView: loadWorkspaceView(),
   displayStream: null,
   focusRemaining: 25 * 60,
+  focusTimerState: createFocusTimerState(),
   focusTimerId: null,
   notes: [],
   tasks: [],
@@ -462,6 +505,7 @@ const state = {
   dismissedTaskSuggestions: new Set(),
   suggestedTaskId: null,
   focusTaskId: null,
+  focusTaskTitle: null,
   captureObjectUrl: null,
   visionFrame: null,
   visionSending: false,
@@ -473,7 +517,7 @@ const state = {
   lastChatFailure: null,
   aiSettingsLoaded: false,
   aiConfigured: false,
-  labPreferences: loadLabPreferences(localStorage),
+  labPreferences: loadLabPreferences(getLocalStorageSafely()),
 };
 
 let personalizeDraft = null;
@@ -483,6 +527,7 @@ let avatar3dModulePromise = null;
 let avatar3dActivationPending = false;
 let avatar3dActivated = false;
 let avatar3dActiveMode = '';
+let geminiKeyController = null;
 
 let healthRequestSequence = 0;
 const recognitionLifecycle = createRecognitionLifecycle();
@@ -493,6 +538,37 @@ const portraitAnimation = createPortraitAnimation({
   onChange: (detail) => {
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
+});
+elements.avatarImage.addEventListener(PORTRAIT_ANIMATION_EVENT, ({ detail }) => {
+  elements.avatarFrame.dataset.blink = detail.blink;
+  elements.avatarFrame.dataset.viseme = detail.viseme;
+  elements.avatarFrame.dataset.speaking = String(detail.speaking);
+});
+geminiKeyController = createGeminiKeySettingsController({
+  bridge: window.jarvisDesktop || null,
+  elements: {
+    actions: elements.geminiKeyActions,
+    label: elements.aiKeyLabel,
+    input: elements.aiApiKey,
+    model: elements.aiModel,
+    saveButton: elements.geminiKeySave,
+    unlockButton: elements.geminiKeyUnlock,
+    changeButton: elements.geminiKeyChange,
+    status: elements.geminiKeyStatus,
+  },
+  onBrowserSave: saveBrowserGeminiKey,
+  getModel: () => elements.aiModel.value.trim(),
+  onStatus: (result) => {
+    if (!result.hasSavedKey || !result.model) return;
+    elements.aiProvider.value = 'gemini';
+    elements.aiModel.value = result.model;
+    state.aiSettingsLoaded = true;
+    updateAIProviderFields();
+  },
+  onUnlock: checkServer,
+  onLock: checkServer,
+  onSessionOnlySave: checkServer,
+  translate: (text) => translateUiText(text, state.preferences.language),
 });
 
 function loadHistory() {
@@ -621,6 +697,12 @@ function renderTaskPriority({ resetDismissed = false } = {}) {
       return;
     }
     state.focusTaskId = null;
+    state.focusTaskTitle = null;
+    state.focusTimerState = {
+      ...state.focusTimerState,
+      taskId: null,
+      taskTitle: null,
+    };
   }
 
   elements.priorityAccept.disabled = false;
@@ -907,6 +989,19 @@ function openSmartMemoryPanel() {
 function showFeedback(message = '') {
   elements.feedback.textContent = message;
   elements.dashboardFeedback.textContent = message;
+  applyUiLanguage(elements.feedback, state.preferences.language);
+  applyUiLanguage(elements.dashboardFeedback, state.preferences.language);
+}
+
+function localizeActivityLog() {
+  for (const label of elements.activityLog.querySelectorAll('li > span')) {
+    if (!label.dataset.uiSource && label.textContent === 'Interface initialized') {
+      label.dataset.uiSource = label.textContent;
+    }
+    if (label.dataset.uiSource) {
+      label.textContent = translateUiText(label.dataset.uiSource, state.preferences.language);
+    }
+  }
 }
 
 function logActivity(message) {
@@ -915,9 +1010,13 @@ function logActivity(message) {
   const marker = document.createElement('i');
   const label = document.createElement('span');
   const time = document.createElement('time');
-  label.textContent = message;
+  label.dataset.uiSource = message;
+  label.textContent = translateUiText(message, state.preferences.language);
   time.dateTime = occurredAt.toISOString();
-  time.textContent = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(occurredAt);
+  time.textContent = new Intl.DateTimeFormat(
+    state.preferences.language === 'hi' ? 'hi-IN' : 'en-US',
+    { hour: '2-digit', minute: '2-digit' },
+  ).format(occurredAt);
   item.append(marker, label, time);
   elements.activityLog.prepend(item);
   while (elements.activityLog.children.length > 6) elements.activityLog.lastElementChild.remove();
@@ -1007,6 +1106,7 @@ function updateHologramState() {
 function updateProjectionButtons() {
   elements.avatarActivateButton.disabled = avatar3dActivationPending || avatar3dActiveMode === 'avatar';
   elements.earthActivateButton.disabled = avatar3dActivationPending || avatar3dActiveMode === 'earth';
+  elements.customAvatarButton.disabled = avatar3dActivationPending;
   elements.avatarActivateButton.textContent = avatar3dActivationPending && avatar3dActiveMode === 'loading-avatar'
     ? 'Loading 3D Avatar...'
     : avatar3dActiveMode === 'avatar' ? '3D Avatar Active' : 'Activate 3D Avatar';
@@ -1015,6 +1115,25 @@ function updateProjectionButtons() {
     : avatar3dActiveMode === 'earth' ? 'Holographic Earth Active' : 'Activate Holographic Earth';
   elements.avatarActivateButton.setAttribute('aria-pressed', String(avatar3dActiveMode === 'avatar'));
   elements.earthActivateButton.setAttribute('aria-pressed', String(avatar3dActiveMode === 'earth'));
+}
+
+async function getAvatar3dInstance() {
+  let avatarModule;
+  try {
+    avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?earth=4'));
+  } catch (error) {
+    avatar3dModulePromise = null;
+    throw error;
+  }
+
+  avatar3dInstance ||= avatarModule.initializeAvatar3d({
+    frame: elements.avatarFrame,
+    stage: elements.holoStage,
+    canvas: elements.avatarCanvas,
+    image: elements.avatarImage,
+    status: elements.avatarStatus,
+  });
+  return avatar3dInstance;
 }
 
 async function activate3DProjection(mode) {
@@ -1030,22 +1149,7 @@ async function activate3DProjection(mode) {
   elements.avatarFrame.setAttribute('aria-busy', 'true');
 
   try {
-    let avatarModule;
-    try {
-      avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?earth=3'));
-    } catch (error) {
-      avatar3dModulePromise = null;
-      throw error;
-    }
-
-    avatar3dInstance ||= avatarModule.initializeAvatar3d({
-      frame: elements.avatarFrame,
-      stage: elements.holoStage,
-      canvas: elements.avatarCanvas,
-      image: elements.avatarImage,
-      status: elements.avatarStatus,
-    });
-
+    await getAvatar3dInstance();
     const projectionReady = activeMode === 'avatar'
       ? avatar3dInstance.loadBuiltInAvatar()
       : avatar3dInstance.loadBuiltInGlobe();
@@ -1071,6 +1175,41 @@ async function activate3DProjection(mode) {
   }
 }
 
+async function loadCustomAvatar(file) {
+  if (avatar3dActivationPending) {
+    elements.customAvatarFile.value = '';
+    elements.avatarStatus.textContent = 'Wait for the current 3D projection to finish before loading a custom avatar.';
+    elements.avatarStatus.dataset.state = 'error';
+    return;
+  }
+  const previousMode = avatar3dActiveMode;
+  avatar3dActivationPending = true;
+  avatar3dActiveMode = 'loading-avatar';
+  updateProjectionButtons();
+  elements.customAvatarButton.disabled = true;
+  elements.avatarStatus.textContent = `Loading ${file.name} locally...`;
+  elements.avatarStatus.dataset.state = 'loading';
+  elements.avatarFrame.setAttribute('aria-busy', 'true');
+
+  try {
+    const avatar = await getAvatar3dInstance();
+    const loaded = await avatar.loadModel(file);
+    avatar3dActiveMode = loaded ? 'avatar' : avatar.getActiveMode();
+    avatar3dActivated = avatar3dActiveMode === 'avatar';
+    if (loaded) syncAvatarAssistantState();
+  } catch (error) {
+    avatar3dActiveMode = avatar3dInstance?.getActiveMode() || previousMode;
+    avatar3dActivated = avatar3dActiveMode === 'avatar';
+    elements.avatarFrame.setAttribute('aria-busy', 'false');
+    elements.avatarStatus.textContent = `Could not load this model: ${error.message || 'unsupported or invalid model'}. The portrait remains available.`;
+    elements.avatarStatus.dataset.state = 'error';
+  } finally {
+    avatar3dActivationPending = false;
+    updateProjectionButtons();
+    elements.customAvatarFile.value = '';
+  }
+}
+
 function activate3DAvatar() {
   return activate3DProjection('avatar');
 }
@@ -1080,11 +1219,16 @@ function activateHolographicEarth() {
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
-  elements.dashboardChatState.hidden = !message;
-  elements.dashboardChatState.dataset.state = mode;
-  elements.dashboardChatStateLabel.textContent = message;
-  elements.dashboardRetryButton.hidden = !canRetry;
-  elements.dashboardRetryButton.disabled = state.pending;
+  for (const [container, label, retryButton] of [
+    [elements.dashboardChatState, elements.dashboardChatStateLabel, elements.dashboardRetryButton],
+    [elements.conversationChatState, elements.conversationChatStateLabel, elements.conversationRetryButton],
+  ]) {
+    container.hidden = !message;
+    container.dataset.state = mode;
+    label.textContent = translateUiText(message, state.preferences.language);
+    retryButton.hidden = !canRetry;
+    retryButton.disabled = state.pending;
+  }
 }
 
 function messageElement(message) {
@@ -1097,35 +1241,7 @@ function messageElement(message) {
   wrapper.append(meta);
 
   if (message.kind === 'search') {
-    const source = document.createElement('span');
-    source.className = 'message-source';
-    source.textContent = message.data?.source || 'WEB RESULTS';
-    wrapper.append(source);
-    const results = Array.isArray(message.data?.results) ? message.data.results : [];
-    for (const result of results) {
-      if (typeof result.url !== 'string') continue;
-      let safeUrl;
-      try {
-        safeUrl = new URL(result.url);
-      } catch {
-        continue;
-      }
-      if (!['http:', 'https:'].includes(safeUrl.protocol)) continue;
-      const item = document.createElement('div');
-      item.className = 'search-result';
-      const link = document.createElement('a');
-      link.href = safeUrl.href;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = result.title || safeUrl.hostname;
-      item.append(link);
-      if (result.snippet) {
-        const snippet = document.createElement('p');
-        snippet.textContent = result.snippet;
-        item.append(snippet);
-      }
-      wrapper.append(item);
-    }
+    const results = renderSearchResults(wrapper, message.data, state.preferences.language);
     const summaryPrompt = createSearchSummaryPrompt(message.data);
     if (summaryPrompt) {
       const summarize = document.createElement('button');
@@ -1140,7 +1256,10 @@ function messageElement(message) {
     if (!results.length) {
       const notice = document.createElement('p');
       notice.className = 'search-notice';
-      notice.textContent = message.data?.notice || 'No search results were returned.';
+      notice.textContent = translateUiText(
+        message.data?.notice || 'No source-backed search results were returned.',
+        state.preferences.language,
+      );
       wrapper.append(notice);
     }
     return wrapper;
@@ -1215,7 +1334,13 @@ function apiHeaders(json = false) {
   return headers;
 }
 
-async function sendChat(text, { retry = false, contextOverride = null, maxTokens = null, singleAttempt = false } = {}) {
+async function sendChat(text, {
+  retry = false,
+  contextOverride = null,
+  maxTokens = null,
+  singleAttempt = false,
+  provider = elements.aiProvider.value,
+} = {}) {
   const context = contextOverride || selectMemoryAwareChatContext(
     state.messages,
     state.memories,
@@ -1230,6 +1355,7 @@ async function sendChat(text, { retry = false, contextOverride = null, maxTokens
       method: 'POST',
       headers: apiHeaders(true),
       body: JSON.stringify({
+        provider,
         messages: context,
         language: state.preferences.language,
         mode: state.preferences.studyMode ? 'study' : 'standard',
@@ -1264,7 +1390,7 @@ async function sendChat(text, { retry = false, contextOverride = null, maxTokens
     }
   } catch (error) {
     const message = getRequestErrorMessage(error, 'AI request');
-    showFeedback(document.body.classList.contains('new-interface') ? '' : message);
+    showFeedback('');
     state.lastChatFailure = { text, message, contextOverride, maxTokens, singleAttempt };
     setDashboardChatState('error', message, true);
     elements.leftAiStatus.textContent = 'REQUEST FAILED';
@@ -1276,6 +1402,7 @@ async function sendChat(text, { retry = false, contextOverride = null, maxTokens
     elements.send.disabled = false;
     elements.dashboardSend.disabled = false;
     elements.dashboardRetryButton.disabled = false;
+    elements.conversationRetryButton.disabled = false;
     document.querySelectorAll('.search-summary-button').forEach((button) => { button.disabled = false; });
     if (state.assistantMode === 'thinking' && (!state.preferences.voiceEnabled || !('speechSynthesis' in window))) {
       setAssistantState('', 'SYSTEM STANDBY');
@@ -1288,12 +1415,6 @@ function retryLastChat() {
   if (state.pending || !state.lastChatFailure) return;
   primeVoiceOutput();
   const failure = state.lastChatFailure;
-  const lastMessage = state.messages.at(-1);
-  if (lastMessage?.role === 'assistant' && lastMessage.content === failure.message) {
-    state.messages.pop();
-    renderMessages();
-    saveHistory();
-  }
   state.pending = true;
   elements.send.disabled = true;
   elements.dashboardSend.disabled = true;
@@ -1402,11 +1523,17 @@ async function searchWeb(query) {
     const data = await readApiResponse(response);
     setDashboardChatState('', '');
     state.accessRequired = data.accessRequired === true;
-    addMessage({ role: 'assistant', content: '', kind: 'search', data });
-    elements.providerNote.textContent = `Retrieved results from ${data.source}. Results are shown as retrieved; no AI summary is implied.`;
-    logActivity(`Web lookup: ${data.results.length} result${data.results.length === 1 ? '' : 's'}`);
+    const normalizedData = { ...data, results: normalizeSourceResults(data, 8) };
+    addMessage({ role: 'assistant', content: '', kind: 'search', data: normalizedData });
+    if (typeof data.source === 'string' && data.source.trim()) {
+      elements.providerNote.textContent = `Retrieved results from ${data.source}. Results are shown as retrieved; no AI summary is implied.`;
+    }
+    logActivity(`Web lookup: ${normalizedData.results.length} result${normalizedData.results.length === 1 ? '' : 's'}`);
   } catch (error) {
-    const message = getRequestErrorMessage(error, 'web search');
+    const message = translateUiText(
+      getRequestErrorMessage(error, 'web search'),
+      state.preferences.language,
+    );
     showFeedback(message);
     addMessage({ role: 'assistant', content: message });
     setDashboardChatState('error', message);
@@ -1520,8 +1647,7 @@ function primeVoiceOutput() {
 }
 
 function startListeningFromUserGesture() {
-  startListening();
-  primeVoiceOutput();
+  startListening('command', false, false, true);
 }
 
 function pageIsFocused() {
@@ -1858,7 +1984,7 @@ function renderLabSafetyStatus() {
 
 function openPersonalizePanel() {
   renderLabSafetyStatus();
-  personalizeDraft = loadLabPreferences(localStorage);
+  personalizeDraft = loadLabPreferences(getLocalStorageSafely());
   syncPersonalizeForm(personalizeDraft);
   elements.aiModifyPanel.hidden = true;
   elements.codeStudioPanel.hidden = true;
@@ -2573,7 +2699,7 @@ function isSpeechOutputBusy() {
     || Boolean(window.speechSynthesis?.pending);
 }
 
-function startListening(purpose = 'command', wakeHandoff = false, automaticWakeRestart = false) {
+function startListening(purpose = 'command', wakeHandoff = false, automaticWakeRestart = false, fromUserGesture = false) {
   const Recognition = getSpeechRecognitionConstructor(window);
   if (purpose === 'wake') reportWakeWordStatus('start-attempt');
   if (purpose === 'wake' && automaticWakeRestart && wakeWordRecoveryPolicy.circuitOpen) {
@@ -2644,6 +2770,7 @@ function startListening(purpose = 'command', wakeHandoff = false, automaticWakeR
     return;
   }
   if (purpose === 'command' && 'speechSynthesis' in window) stopSpeechOutput();
+  if (fromUserGesture) primeVoiceOutput();
   let recognition;
   try {
     recognition = new Recognition();
@@ -2991,6 +3118,8 @@ function syncSettings() {
   elements.dashboardVoiceToggle.disabled = !('speechSynthesis' in window);
   syncFullAccess();
   updateVoiceList();
+  applyUiLanguage(document.body, state.preferences.language);
+  localizeActivityLog();
 }
 
 async function checkServer() {
@@ -3023,6 +3152,7 @@ async function checkServer() {
     state.aiConfigured = data.aiConfigured === true;
     state.accessRequired = data.accessRequired === true;
     const ollamaSelected = data.provider === 'ollama';
+    const providerLabel = getAIProviderLabel(data.provider);
     const aiReady = data.aiConfigured && (!ollamaSelected || data.aiAvailable);
     if (!state.aiSettingsLoaded) {
       state.aiSettingsLoaded = true;
@@ -3032,7 +3162,7 @@ async function checkServer() {
       updateAIProviderFields();
     }
     elements.aiSetupStatus.textContent = data.aiConfigured
-      ? `Current: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model} · ${data.providerSource === 'environment' ? 'deployment environment secret' : data.providerSource === 'session' ? 'temporary server-session setting' : 'server configuration'}`
+      ? `Current: ${providerLabel} · ${data.model} · ${data.providerSource === 'environment' ? 'deployment environment secret' : data.providerSource === 'session' ? 'temporary server-session setting' : 'server configuration'}`
       : 'No AI provider is configured. Choose a provider and model here, then save.';
     elements.connection.className = aiReady ? 'connection-indicator' : 'connection-indicator is-warning';
     elements.connection.lastElementChild.textContent = aiReady
@@ -3041,15 +3171,15 @@ async function checkServer() {
         : ollamaSelected ? 'MODEL MISSING' : 'NO AI MODEL';
     elements.dashboardConnection.textContent = aiReady ? 'CONNECTED' : 'SETUP REQUIRED';
     elements.providerNote.textContent = !data.aiConfigured
-      ? 'No AI provider is configured. Open Settings → AI provider to select a model and configure Ollama or an OpenAI-compatible provider.'
+      ? 'No AI provider is configured. Open Settings → AI provider to select Google Gemini, Ollama, or an OpenAI-compatible provider.'
       : ollamaSelected && !data.ollamaAvailable
-        ? 'Ollama is selected but unreachable from this server. Start the Ollama daemon on the server host.'
+        ? `Ollama is selected but unreachable at ${data.baseUrl || 'the configured local endpoint'}. Start Ollama there and retry.`
         : ollamaSelected && !data.modelInstalled
           ? `Ollama is running, but ${data.model} is not installed there.`
           : ollamaSelected
             ? `Ollama and ${data.model} are available on the server.`
             : data.providerSource === 'session'
-              ? 'A temporary provider key is active in server memory only. Set AI_API_KEY in the hosting provider’s environment secrets to keep it across restarts. Live availability is confirmed when you send a message.'
+              ? `A temporary ${providerLabel} key is active in server memory only. Set AI_API_KEY in the hosting provider’s environment secrets to keep it across restarts. Live availability is confirmed when you send a message.`
               : 'AI provider is configured through the server environment. Live availability is confirmed when you send a message.';
     if (state.accessRequired) {
       elements.providerNote.textContent += data.accessConfigured
@@ -3275,19 +3405,35 @@ function openSettings() {
   if (!elements.settings.open) elements.settings.showModal();
 }
 
+function getAIProviderLabel(provider) {
+  if (provider === 'gemini') return 'Google Gemini';
+  if (provider === 'ollama') return 'Ollama';
+  return 'OpenAI-compatible';
+}
+
 function updateAIProviderFields() {
-  const usesApiKey = elements.aiProvider.value === 'openai-compatible';
+  const provider = elements.aiProvider.value;
+  const usesApiKey = provider === 'openai-compatible' || provider === 'gemini';
+  const usesCustomBaseUrl = provider === 'openai-compatible' || provider === 'ollama';
   elements.aiKeyField.hidden = !usesApiKey;
-  elements.aiBaseUrlField.hidden = !usesApiKey;
-  elements.aiBaseUrl.required = usesApiKey;
-  elements.aiApiKey.required = usesApiKey;
-  elements.aiProviderHelp.textContent = usesApiKey
-    ? 'Use Google Gemini’s OpenAI-compatible chat completions API or another compatible provider. Saving here stores the key only in server memory until restart. This form cannot change deployment secrets; set AI_API_KEY in your hosting provider’s environment/secrets dashboard for persistence. The key is never saved in this browser or returned by the server. Use a trusted server over HTTPS.'
-    : 'Ollama must be running on the Node server host. J.A.R.V.I.S. uses OLLAMA_BASE_URL or http://127.0.0.1:11434; the selected model must already be installed.';
+  elements.aiBaseUrlField.hidden = !usesCustomBaseUrl;
+  elements.aiBaseUrl.required = usesCustomBaseUrl;
+  elements.aiSettingsSave.hidden = provider === 'gemini';
+  elements.aiApiKey.required = provider === 'openai-compatible';
+  geminiKeyController?.setProvider(provider);
+  elements.aiProviderHelp.textContent = provider === 'gemini'
+    ? translateUiText(
+      'Google Gemini uses its official API. In Electron, Save & Lock stores the key with operating-system encryption; unlock it explicitly to use it. In browser mode, the key is held only in server memory and is never saved in browser storage.',
+      state.preferences.language,
+    )
+    : provider === 'openai-compatible'
+      ? 'Use Google Gemini’s OpenAI-compatible chat completions API or another compatible provider. Saving here stores the key only in server memory until restart. This form cannot change deployment secrets; set AI_API_KEY in your hosting provider’s environment/secrets dashboard for persistence. The key is never saved in this browser or returned by the server. Use a trusted server over HTTPS.'
+      : 'Enter a localhost or private-network Ollama URL reachable from the Node server, such as http://127.0.0.1:11434. Public URLs are rejected, and the selected model must already be installed.';
 }
 
 async function saveAISettings(provider = elements.aiProvider.value) {
-  const apiKey = provider === 'openai-compatible' ? elements.aiApiKey.value : '';
+  const usesApiKey = provider === 'openai-compatible' || provider === 'gemini';
+  const apiKey = usesApiKey ? elements.aiApiKey.value : '';
   elements.aiApiKey.value = '';
   elements.aiSettingsSave.disabled = true;
   elements.aiSettingsEnvironment.disabled = true;
@@ -3301,8 +3447,10 @@ async function saveAISettings(provider = elements.aiProvider.value) {
         : {
           provider,
           model: elements.aiModel.value.trim(),
-          baseUrl: provider === 'openai-compatible' ? elements.aiBaseUrl.value.trim() : undefined,
-          apiKey,
+          ...(provider === 'openai-compatible' || provider === 'ollama'
+            ? { baseUrl: elements.aiBaseUrl.value.trim() }
+            : {}),
+          ...(usesApiKey ? { apiKey } : {}),
         }),
       signal: AbortSignal.timeout(8_000),
     });
@@ -3314,18 +3462,39 @@ async function saveAISettings(provider = elements.aiProvider.value) {
       if (data.baseUrl) elements.aiBaseUrl.value = data.baseUrl;
       updateAIProviderFields();
       elements.aiSetupStatus.textContent = data.providerSource === 'environment'
-        ? `Using deployment environment configuration: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}.`
-        : `Saved temporarily in this server session: ${data.provider === 'ollama' ? 'Ollama' : 'OpenAI-compatible'} · ${data.model}. Configure AI_API_KEY as a hosting environment secret to keep the key across restarts.`;
+        ? `Using deployment environment configuration: ${getAIProviderLabel(data.provider)} · ${data.model}.`
+        : `Saved temporarily in this server session: ${getAIProviderLabel(data.provider)} · ${data.model}. Configure AI_API_KEY as a hosting environment secret to keep the key across restarts.`;
     } else {
       elements.aiSetupStatus.textContent = 'No server-side AI provider is configured. Enter a provider key here or set AI_API_KEY on the server.';
     }
     await checkServer();
+    if (provider === 'environment') await geminiKeyController.initialize();
   } catch (error) {
     elements.aiSetupStatus.textContent = getRequestErrorMessage(error, 'provider settings request');
   } finally {
     elements.aiSettingsSave.disabled = false;
     elements.aiSettingsEnvironment.disabled = false;
   }
+}
+
+async function saveBrowserGeminiKey(apiKey) {
+  const response = await fetch('/api/settings/ai', {
+    method: 'POST',
+    headers: apiHeaders(true),
+    body: JSON.stringify({
+      provider: 'gemini',
+      model: elements.aiModel.value.trim(),
+      apiKey,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  const data = await readApiResponse(response);
+  if (!data.configured || data.provider !== 'gemini') {
+    throw new Error('Gemini was not configured for this session.');
+  }
+  state.aiSettingsLoaded = true;
+  elements.aiSetupStatus.textContent = `Saved temporarily in this server session: ${getAIProviderLabel(data.provider)} · ${data.model}. The key is not stored in this browser.`;
+  await checkServer();
 }
 
 function selectNavigation(destination) {
@@ -3451,37 +3620,141 @@ function updateFocusTimerDisplay() {
   elements.focusTimerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function toggleFocusTimer() {
-  if (state.focusTimerId) {
-    window.clearInterval(state.focusTimerId);
-    state.focusTimerId = null;
-    elements.focusTimerButton.textContent = 'Resume';
-    elements.focusTimerButton.setAttribute('aria-pressed', 'false');
-    logActivity('Focus timer paused');
+function persistFocusTimer() {
+  try {
+    saveFocusTimer(localStorage, state.focusTimerState);
+    return true;
+  } catch (error) {
+    showFeedback(`Focus timer state could not be saved in this browser: ${error.message}`);
+    return false;
+  }
+}
+
+function finishFocusSession({ completedWhileClosed = false, completedTaskTitle = null } = {}) {
+  if (state.focusTimerId) window.clearInterval(state.focusTimerId);
+  state.focusTimerId = null;
+  const task = state.tasks.find((item) => item.id === state.focusTaskId);
+  const title = task?.title || completedTaskTitle || state.focusTaskTitle;
+  let persistenceError = null;
+  const completedTimer = {
+    ...state.focusTimerState,
+    taskId: state.focusTaskId,
+    taskTitle: title || null,
+  };
+  try {
+    state.focusTimerState = completeFocusTimer(localStorage, completedTimer);
+  } catch (error) {
+    state.focusTimerState = createFocusTimerState();
+    persistenceError = error;
+  }
+  state.focusTaskId = null;
+  state.focusTaskTitle = null;
+  state.focusRemaining = state.focusTimerState.remainingSeconds;
+  updateFocusTimerDisplay();
+  elements.focusTimerButton.textContent = 'Start';
+  elements.focusTimerButton.setAttribute('aria-pressed', 'false');
+  if (persistenceError) {
+    showFeedback(`Focus session complete, but its final state could not be saved: ${persistenceError.message}`);
+  } else if (completedWhileClosed) {
+    showFeedback('Focus session completed while J.A.R.V.I.S. was closed.');
+  } else {
+    showFeedback('Focus session complete.');
+  }
+  logActivity(title
+    ? `Focus session complete: ${title}`
+    : 'Focus session complete');
+  renderTaskPriority();
+}
+
+function initializeFocusTimer() {
+  let restored;
+  try {
+    restored = loadFocusTimer(localStorage);
+  } catch (error) {
+    restored = {
+      timer: createFocusTimerState(),
+      storageAvailable: false,
+      issue: error,
+      completedWhileClosed: false,
+    };
+  }
+  state.focusTimerState = restored.timer;
+  state.focusRemaining = restored.timer.remainingSeconds;
+  state.focusTaskId = restored.timer.taskId;
+  state.focusTaskTitle = restored.timer.taskTitle;
+  updateFocusTimerDisplay();
+
+  if (restored.issue) {
+    showFeedback(restored.storageAvailable
+      ? `${restored.issue.message} Starting with a fresh focus timer.`
+      : `Focus timer storage is unavailable. The timer will work for this session only: ${restored.issue.message}`);
+  }
+  if (restored.completedWhileClosed) {
+    finishFocusSession({
+      completedWhileClosed: true,
+      completedTaskTitle: restored.completedTaskTitle,
+    });
     return;
   }
+
+  if (restored.timer.running) {
+    elements.focusTimerButton.textContent = 'Pause';
+    elements.focusTimerButton.setAttribute('aria-pressed', 'true');
+    state.focusTimerId = window.setInterval(() => {
+      state.focusRemaining = getFocusTimerRemaining(state.focusTimerState);
+      updateFocusTimerDisplay();
+      if (state.focusRemaining <= 0) finishFocusSession();
+    }, 1000);
+  } else {
+    elements.focusTimerButton.textContent = restored.timer.resumable ? 'Resume' : 'Start';
+    elements.focusTimerButton.setAttribute('aria-pressed', 'false');
+  }
+  renderTaskPriority();
+}
+
+function toggleFocusTimer() {
+  if (state.focusTimerId) {
+    state.focusTimerState = pauseFocusTimer(state.focusTimerState);
+    state.focusRemaining = state.focusTimerState.remainingSeconds;
+    state.focusTimerId = null;
+    if (state.focusRemaining <= 0) {
+      finishFocusSession();
+      return;
+    }
+    updateFocusTimerDisplay();
+    elements.focusTimerButton.textContent = 'Resume';
+    elements.focusTimerButton.setAttribute('aria-pressed', 'false');
+    persistFocusTimer();
+    logActivity('Focus timer paused');
+    renderTaskPriority();
+    return;
+  }
+
+  if (state.focusRemaining <= 0) {
+    finishFocusSession();
+    return;
+  }
+  const task = state.tasks.find((item) => item.id === state.focusTaskId);
+  state.focusTaskTitle = task?.title || state.focusTaskTitle;
+  state.focusTimerState = startFocusTimer({
+    ...state.focusTimerState,
+    remainingSeconds: state.focusRemaining,
+    taskId: state.focusTaskId,
+    taskTitle: state.focusTaskTitle,
+  });
+  state.focusRemaining = getFocusTimerRemaining(state.focusTimerState);
   elements.focusTimerButton.textContent = 'Pause';
   elements.focusTimerButton.setAttribute('aria-pressed', 'true');
+  persistFocusTimer();
   state.focusTimerId = window.setInterval(() => {
-    state.focusRemaining -= 1;
+    state.focusRemaining = getFocusTimerRemaining(state.focusTimerState);
     updateFocusTimerDisplay();
     if (state.focusRemaining <= 0) {
-      window.clearInterval(state.focusTimerId);
-      state.focusTimerId = null;
-      const completedTask = state.tasks.find((task) => task.id === state.focusTaskId);
-      state.focusTaskId = null;
-      state.focusRemaining = 25 * 60;
-      updateFocusTimerDisplay();
-      elements.focusTimerButton.textContent = 'Start';
-      elements.focusTimerButton.setAttribute('aria-pressed', 'false');
-      showFeedback('Focus session complete.');
-      logActivity(completedTask
-        ? `Focus session complete: ${completedTask.title}`
-        : 'Focus session complete');
+      finishFocusSession();
     }
   }, 1000);
-  const task = state.tasks.find((item) => item.id === state.focusTaskId);
   logActivity(task ? `Focus timer started: ${task.title}` : 'Focus timer started');
+  renderTaskPriority();
 }
 
 async function startScreenCapture(captureSequence) {
@@ -3663,7 +3936,7 @@ async function sendVisionFrame() {
     const response = await fetch('/api/vision', {
       method: 'POST',
       headers: apiHeaders(true),
-      body: JSON.stringify({ question, image }),
+      body: JSON.stringify({ provider: elements.aiProvider.value, question, image }),
       signal: controller.signal,
     });
     const data = await readApiResponse(response);
@@ -3776,10 +4049,11 @@ function handleDashboardFeature(event) {
 
 async function loadBriefing() {
   elements.briefingButton.disabled = true;
-  elements.briefingResults.replaceChildren();
-  const status = document.createElement('p');
-  status.textContent = 'Searching available web sources...';
-  elements.briefingResults.append(status);
+  renderBriefingState(
+    elements.briefingResults,
+    'Searching available web sources...',
+    state.preferences.language,
+  );
   try {
     const query = state.preferences.language === 'hi' ? 'प्रौद्योगिकी समाचार' : 'latest technology news';
     const params = new URLSearchParams({ q: query, lang: state.preferences.language });
@@ -3788,30 +4062,17 @@ async function loadBriefing() {
       signal: AbortSignal.timeout(18_000),
     });
     const data = await readApiResponse(response);
-    const results = Array.isArray(data.results) ? data.results.slice(0, 3) : [];
-    elements.briefingResults.replaceChildren();
-    if (!results.length) {
-      const notice = document.createElement('p');
-      notice.textContent = data.notice || 'No source-backed headlines were returned.';
-      elements.briefingResults.append(notice);
-    }
-    for (const result of results) {
-      const link = document.createElement('a');
-      link.href = result.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = result.title;
-      elements.briefingResults.append(link);
-      const snippet = document.createElement('p');
-      snippet.textContent = result.snippet;
-      elements.briefingResults.append(snippet);
-    }
-    logActivity(`Briefing retrieved: ${results.length} source${results.length === 1 ? '' : 's'}`);
+    const count = renderBriefingResults(elements.briefingResults, data, state.preferences.language);
+    logActivity(count
+      ? `Briefing retrieved: ${count} source${count === 1 ? '' : 's'}`
+      : 'Briefing returned no source-backed results');
   } catch (error) {
-    elements.briefingResults.replaceChildren();
-    const notice = document.createElement('p');
-    notice.textContent = getRequestErrorMessage(error, 'news briefing');
-    elements.briefingResults.append(notice);
+    renderBriefingState(
+      elements.briefingResults,
+      getRequestErrorMessage(error, 'news briefing'),
+      state.preferences.language,
+      'error',
+    );
     logActivity('Briefing unavailable');
   } finally {
     elements.briefingButton.disabled = false;
@@ -3894,6 +4155,11 @@ document.querySelector('#new-interface-button').addEventListener('click', () => 
 document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
 elements.avatarActivateButton.addEventListener('click', activate3DAvatar);
 elements.earthActivateButton.addEventListener('click', activateHolographicEarth);
+elements.customAvatarButton.addEventListener('click', () => elements.customAvatarFile.click());
+elements.customAvatarFile.addEventListener('change', () => {
+  const [file] = elements.customAvatarFile.files || [];
+  if (file) void loadCustomAvatar(file);
+});
 document.querySelector('#lab-return-button').addEventListener('click', returnToJarvisWorkspace);
 document.querySelector('[data-lab-module="personalize"]').addEventListener('click', openPersonalizePanel);
 document.querySelector('[data-lab-module="personalize"]').addEventListener('keydown', (event) => {
@@ -3963,12 +4229,21 @@ document.querySelector('#clear-button').addEventListener('click', () => {
   try { localStorage.removeItem(HISTORY_KEY); } catch { showFeedback('Saved history could not be cleared in this browser.'); }
 });
 document.querySelector('#settings-clear').addEventListener('click', () => {
-  if (!window.confirm('Clear saved conversation history, notes, tasks, Smart Memories, and preferences from this browser?')) return;
+  if (!window.confirm('Clear saved conversation history, notes, tasks, Smart Memories, focus timer, and preferences from this browser?')) return;
   state.messages = [];
   state.accessToken = '';
   elements.accessToken.value = '';
   renderMessages();
   let storageCleared = true;
+  if (state.focusTimerId) window.clearInterval(state.focusTimerId);
+  state.focusTimerId = null;
+  state.focusTimerState = createFocusTimerState();
+  state.focusRemaining = state.focusTimerState.remainingSeconds;
+  state.focusTaskId = null;
+  state.focusTaskTitle = null;
+  elements.focusTimerButton.textContent = 'Start';
+  elements.focusTimerButton.setAttribute('aria-pressed', 'false');
+  updateFocusTimerDisplay();
   try {
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem(PREFERENCES_KEY);
@@ -3977,6 +4252,7 @@ document.querySelector('#settings-clear').addEventListener('click', () => {
     localStorage.removeItem(MEMORIES_STORAGE_KEY);
     localStorage.removeItem(LAB_PREFERENCES_KEY);
     localStorage.removeItem(LAB_AI_MODIFY_HISTORY_KEY);
+    localStorage.removeItem(FOCUS_TIMER_STORAGE_KEY);
   } catch {
     storageCleared = false;
   }
@@ -4021,6 +4297,7 @@ elements.dashboardCommandForm.addEventListener('submit', (event) => {
   elements.form.requestSubmit();
 });
 elements.dashboardRetryButton.addEventListener('click', retryLastChat);
+elements.conversationRetryButton.addEventListener('click', retryLastChat);
 elements.dashboardMessage.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
@@ -4066,9 +4343,16 @@ elements.priorityAccept.addEventListener('click', () => {
     return;
   }
   state.focusTaskId = task.id;
+  state.focusTaskTitle = task.title;
   if (!state.focusTimerId) {
     toggleFocusTimer();
   } else {
+    state.focusTimerState = {
+      ...state.focusTimerState,
+      taskId: task.id,
+      taskTitle: task.title,
+    };
+    persistFocusTimer();
     logActivity(`Focus task selected for active session: ${task.title}`);
   }
   elements.taskStatus.textContent = `Focus session selected for "${task.title}".`;
@@ -4367,9 +4651,12 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => button.addE
 }));
 elements.language.addEventListener('change', () => {
   state.preferences.language = elements.language.value;
-  elements.leftLanguageStatus.textContent = state.preferences.language === 'hi' ? 'HINDI' : 'ENGLISH';
   updateVoiceList();
   savePreferences();
+  applyUiLanguage(document.body, state.preferences.language);
+  updateAIProviderFields();
+  localizeActivityLog();
+  geminiKeyController.refreshLanguage();
   if (state.recognitionWakeSession) requestStopListening(state.recognition, 'language-changed');
 });
 elements.avatarTheme.addEventListener('change', () => {
@@ -4384,12 +4671,16 @@ elements.accessToken.addEventListener('input', () => {
 });
 elements.aiProvider.addEventListener('change', () => {
   elements.aiModel.value = elements.aiProvider.value === 'ollama' ? 'qwen2.5:3b' : 'gemini-3.5-flash-lite';
+  elements.aiBaseUrl.value = elements.aiProvider.value === 'ollama'
+    ? 'http://127.0.0.1:11434'
+    : 'https://generativelanguage.googleapis.com/v1beta/openai/';
   elements.aiApiKey.value = '';
   updateAIProviderFields();
 });
 elements.aiSettingsForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  saveAISettings();
+  if (elements.aiProvider.value === 'gemini') geminiKeyController.save();
+  else saveAISettings();
 });
 elements.aiSettingsEnvironment.addEventListener('click', () => saveAISettings('environment'));
 elements.voice.addEventListener('change', () => {
@@ -4425,8 +4716,7 @@ elements.wakeWordEnabled.addEventListener('change', () => {
   reportWakeWordStatus('permission-updated');
   if (state.preferences.wakeWordEnabled) {
     state.wakeWordManualTakeoverPending = false;
-    startListening('wake');
-    primeVoiceOutput();
+    startListening('wake', false, false, true);
   } else {
     if (state.recognitionWakeSession) requestStopListening(state.recognition, 'wake-word-disabled');
     showFeedback('Wake-word detection is off.');
@@ -4587,9 +4877,11 @@ elements.install.addEventListener('click', async () => {
 
 state.messages = loadHistory();
 initializeLocalPlanner();
+initializeFocusTimer();
 initializeSmartMemories();
 applyLabPreferences(state.labPreferences, document);
 syncSettings();
+observeUiLanguage(document, () => state.preferences.language);
 reportWakeWordStatus('startup');
 if (state.preferences.wakeWordEnabled && !elements.wakeWordEnabled.disabled) startListening('wake');
 renderMessages();
@@ -4608,13 +4900,13 @@ window.setInterval(() => {
   updateLocalDateTime();
   loadSystemMetrics();
 }, 30_000);
-checkServer();
+geminiKeyController.initialize().then(checkServer);
 logActivity('Interface initialized');
 updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=53', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=55', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

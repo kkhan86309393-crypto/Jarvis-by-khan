@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const desktopMain = await readFile(new URL('../desktop/main.js', import.meta.url), 'utf8');
 const preload = await readFile(new URL('../desktop/preload.cjs', import.meta.url), 'utf8');
+const geminiKeyStorage = await readFile(new URL('../desktop/gemini-key-storage.js', import.meta.url), 'utf8');
 
 test('configures a Windows NSIS installer without changing the web entry point', () => {
   assert.equal(packageJson.scripts.start, 'node server.js');
@@ -16,6 +17,7 @@ test('configures a Windows NSIS installer without changing the web entry point',
   assert.equal(packageJson.build.nsis.createDesktopShortcut, true);
   assert.ok(packageJson.build.files.includes('desktop/external-links.js'));
   assert.ok(packageJson.build.files.includes('desktop/ipc-validation.js'));
+  assert.ok(packageJson.build.files.includes('desktop/gemini-key-storage.js'));
   assert.ok(packageJson.build.files.includes('desktop/preload.cjs'));
 });
 
@@ -41,8 +43,19 @@ test('starts the existing server on loopback with isolated Electron web contents
   assert.match(desktopMain, /Choose a screen or window to share/);
   assert.match(desktopMain, /ipcMain\.on\('jarvis:open-external-url'/);
   assert.match(desktopMain, /ipcMain\.handle\('jarvis:copy-text'/);
+  assert.match(desktopMain, /safeStorage/);
+  assert.match(desktopMain, /gemini-api-key\.enc/);
+  assert.match(geminiKeyStorage, /ipcMain\.handle\('jarvis:gemini-key-save'/);
+  assert.match(geminiKeyStorage, /ipcMain\.handle\('jarvis:gemini-key-status'/);
+  assert.match(geminiKeyStorage, /ipcMain\.handle\('jarvis:gemini-key-unlock'/);
+  assert.match(geminiKeyStorage, /ipcMain\.handle\('jarvis:gemini-key-lock'/);
   assert.match(preload, /contextBridge\.exposeInMainWorld\('jarvisDesktop'/);
   assert.match(preload, /openExternalUrl\(url\)[\s\S]*copyText\(text\)/);
+  assert.match(preload, /saveGeminiApiKey\(key, model\)[\s\S]*hasSavedGeminiApiKey\(\)[\s\S]*unlockSavedGeminiApiKey\(\)/);
+  assert.match(preload, /lockGeminiApiKey\(\)[\s\S]*jarvis:gemini-key-lock/);
+  assert.equal((preload.match(/lockGeminiApiKey\(\)/g) || []).length, 1);
+  assert.doesNotMatch(desktopMain, /geminiKeyStore\.unlock\(/);
+  assert.doesNotMatch(preload, /decryptString|safeStorage/);
   assert.match(preload, /navigator\.userActivation\?\.isActive/);
   assert.doesNotMatch(preload, /exposeInMainWorld\('jarvisDesktop',\s*ipcRenderer/);
 });

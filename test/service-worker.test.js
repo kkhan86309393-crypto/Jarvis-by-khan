@@ -76,11 +76,11 @@ test('installs the lightweight app shell without avatar assets', async () => {
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=53'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?hud=55'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-portrait.png'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/portrait-animation.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/diagnostics.js?hud=28'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=56'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=58'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-planner.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-memory.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/smart-command-router.js'));
@@ -91,12 +91,15 @@ test('installs the lightweight app shell without avatar assets', async () => {
   assert.ok(worker.storedResponses.has('https://jarvis.test/lab-safety.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/app-hub.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/search-summary.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/news-briefing.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/gemini-key-settings.js'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/ui-localization.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/manifest.webmanifest'));
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar-cues.js'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/ai-avatar.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/reference-face.jpg'), false);
   assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js'), false);
-  assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js?earth=3'), false);
+  assert.equal(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js?earth=4'), false);
 });
 
 test('reports the active shell cache version only to an explicit diagnostics request', () => {
@@ -106,7 +109,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v66');
+  assert.equal(version, 'jarvis-shell-v70');
 
   let ignored = false;
   worker.listeners.get('message')({

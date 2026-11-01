@@ -3,6 +3,8 @@ node_modules/
 dist-desktop/
 public/avatar3d.bundle.js
 coverage/
+playwright-report/
+test-results/
 
 # Local environment and credentials
 .env
@@ -12,6 +14,19 @@ coverage/
 *.key
 *.p12
 *.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+credentials.json
+*-credentials.json
+service-account*.json
+.aws/
+.ssh/
+.config/gcloud/
 
 # Local logs and operating-system files
 *.log

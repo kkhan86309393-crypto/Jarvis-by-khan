@@ -27,3 +27,23 @@ export function getApprovedClipboardText(event, expectedOrigin, value) {
   }
   return value;
 }
+
+export function getApprovedGeminiApiKey(event, expectedOrigin, value) {
+  if (!isTrustedDesktopIpcEvent(event, expectedOrigin)
+    || typeof value !== 'string'
+    || !value.trim()
+    || value.length > 1_024
+    || /[\u0000-\u001f\u007f]/.test(value)) {
+    return null;
+  }
+  return value.trim();
+}
+
+export function getApprovedGeminiModel(event, expectedOrigin, value) {
+  if (!isTrustedDesktopIpcEvent(event, expectedOrigin)
+    || typeof value !== 'string'
+    || !/^gemini-[A-Za-z0-9][A-Za-z0-9._-]{0,112}$/.test(value)) {
+    return null;
+  }
+  return value;
+}

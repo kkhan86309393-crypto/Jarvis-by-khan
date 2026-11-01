@@ -1,5 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { createAppServer, getAssistantText } from '../server.js';
 import { getForwardedUrl, getServerEnvironment } from '../scripts/codespaces.js';
@@ -9,6 +10,32 @@ import {
   switchWorkspaceView,
 } from '../public/interface-switcher.js';
 import { detectDeviceProfile } from '../public/device-monitor.js';
+
+function fetchViaLoopbackAddress(url, options = {}, localAddress = '127.0.0.2') {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url, {
+      method: options.method || 'GET',
+      headers: options.headers,
+      localAddress,
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const headers = Object.fromEntries(
+          Object.entries(response.headers)
+            .filter(([, value]) => typeof value === 'string'),
+        );
+        resolve(new Response(Buffer.concat(chunks), {
+          status: response.statusCode,
+          headers,
+        }));
+      });
+    });
+    request.on('error', reject);
+    if (options.body !== undefined) request.write(options.body);
+    request.end();
+  });
+}
 
 const previousEnvironment = new Map();
 for (const key of ['AI_API_KEY', 'AI_BASE_URL', 'AI_MODEL', 'AI_PROVIDER', 'OLLAMA_BASE_URL', 'OLLAMA_MODEL', 'APP_ACCESS_TOKEN', 'NODE_ENV']) {
@@ -53,6 +80,7 @@ test('serves the app shell with restrictive browser security headers', async () 
   assert.match(response.headers.get('content-type'), /text\/html/);
   assert.match(response.headers.get('cache-control'), /no-cache/);
   assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
+  assert.match(response.headers.get('content-security-policy'), /img-src 'self' data: blob:/);
   assert.match(html, /J\.A\.R\.V\.I\.S\./);
   assert.match(html, /apple-mobile-web-app-capable/);
   assert.match(html, /apple-touch-icon/);
@@ -155,8 +183,20 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="avatar-model-controls"/);
   assert.match(html, /id="activate-3d-avatar"[^>]*>Activate 3D Avatar</);
   assert.match(html, /id="activate-holographic-earth"[^>]*>Activate Holographic Earth</);
+  assert.match(html, /id="load-custom-avatar"[^>]*>Load Custom Avatar</);
+  assert.match(html, /id="avatar-model-file"[^>]*accept="\.vrm,\.glb/);
+  assert.match(client, /customAvatarButton\.addEventListener\('click', \(\) => elements\.customAvatarFile\.click\(\)\)/);
+  assert.match(client, /async function loadCustomAvatar\(file\)/);
+  assert.match(client, /const loaded = await avatar\.loadModel\(file\)/);
   assert.match(html, /id="avatar-canvas"[^>]*aria-hidden="true" hidden/);
-  assert.doesNotMatch(html, /Load local 3D model/i);
+  assert.match(html, /data-blink="open" data-viseme="neutral" data-speaking="false"/);
+  assert.match(html, /class="portrait-animation" aria-hidden="true"/);
+  assert.match(html, /class="portrait-eye-lid portrait-eye-lid-left"/);
+  assert.match(html, /class="portrait-mouth"/);
+  assert.match(styles, /\.avatar-frame\[data-blink="closed"\] \.portrait-upper-lid/);
+  assert.match(styles, /\.avatar-frame\[data-viseme="aa"\] \.portrait-mouth/);
+  assert.match(styles, /\.avatar-frame\[data-speaking="true"\]\[data-viseme="neutral"\] \.portrait-mouth/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.portrait-mouth \{ animation: none !important/);
   assert.match(html, /News &amp; Briefing|news-button|briefing-panel|briefing-results/i);
   assert.match(html, /id="task-priority"/);
   assert.match(html, /id="insight-total-tasks"/);
@@ -172,7 +212,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function executeSmartCommand/);
   assert.match(client, /function activate3DAvatar\(\) \{\s*return activate3DProjection\('avatar'\)/);
   assert.match(client, /function activateHolographicEarth\(\) \{\s*return activate3DProjection\('earth'\)/);
-  assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=3'\)/);
+  assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=4'\)/);
   assert.match(client, /if \(!avatar3dActivated\) return;/);
   assert.doesNotMatch(client, /\bsetAvatarMouth\b|toggleAudioLipSync/);
   assert.match(client, /utterance\.onpause/);
@@ -188,6 +228,18 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="new-interface-button"[^>]*>New Interface</);
   assert.match(html, /id="old-interface-button"[^>]*>Old Interface</);
   assert.match(html, /id="dashboard-transcript"/);
+  assert.match(html, /id="conversation-chat-state"[^>]*role="status"[^>]*aria-live="polite"[^>]*hidden/);
+  assert.match(html, /id="conversation-chat-state-label"/);
+  assert.match(html, /id="conversation-retry-button"[^>]*>Retry request</);
+  assert.match(client, /conversationChatState: document\.querySelector\('#conversation-chat-state'\)/);
+  assert.match(client, /container\.hidden = !message;[\s\S]*?label\.textContent = translateUiText\(message, state\.preferences\.language\);[\s\S]*?retryButton\.hidden = !canRetry;/);
+  assert.match(client, /elements\.conversationRetryButton\.addEventListener\('click', retryLastChat\)/);
+  const retryHandler = client.match(/function retryLastChat\(\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  assert.match(retryHandler, /if \(state\.pending \|\| !state\.lastChatFailure\) return/);
+  assert.match(retryHandler, /sendChat\(failure\.text/);
+  assert.doesNotMatch(retryHandler, /addMessage|state\.messages\.push/);
+  assert.match(styles, /\.conversation-chat-state\[data-state="thinking"\]::before/);
+  assert.match(styles, /\.conversation-chat-state\[data-state="error"\]/);
   assert.match(html, /class="right-rail"/);
   assert.match(html, /class="assistant-greeting"/);
   assert.match(html, /class="assistant-identity"/);
@@ -284,7 +336,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?hud=56/);
+  assert.match(html, /app\.js\?hud=58/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -333,10 +385,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(interfaceSwitcher, /LEGACY_PREFERENCE_KEYS = \['jarvis\.interface\.mode\.v6', 'jarvis\.interface\.mode\.v5', 'jarvis\.interface\.mode\.v4'\]/);
   assert.match(html, /id="install-button"/);
   assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
-  assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=3'\)/);
+  assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=4'\)/);
   assert.doesNotMatch(client, /\bsetAvatarMouth\b|audioLipSync|avatarSpeechTimer/);
   assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
-  assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\(\);\s*primeVoiceOutput\(\);\s*\}/);
+  assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\('command', false, false, true\);\s*\}/);
+  assert.match(client, /function startListening\(purpose = 'command', wakeHandoff = false, automaticWakeRestart = false, fromUserGesture = false\) \{[\s\S]*?if \(purpose === 'command' && 'speechSynthesis' in window\) stopSpeechOutput\(\);\s*if \(fromUserGesture\) primeVoiceOutput\(\);[\s\S]*?recognition\.start\(\)/);
   assert.match(client, /monitorSpeechSynthesisStart\(window\.speechSynthesis/);
   assert.match(client, /speechOutputTexts\.has\(speechText\)/);
   const speakImplementation = client.match(/function speak\(text[^)]*\) \{([\s\S]*?)\n\}/)?.[1] || '';
@@ -384,6 +437,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="avatar-model-controls"/);
   assert.match(html, /id="avatar-canvas"/);
   assert.doesNotMatch(html, /lip-sync/i);
+  assert.match(html, /class="portrait-animation" aria-hidden="true"/);
+  assert.match(client, /avatarFrame\.dataset\.speaking = String\(detail\.speaking\)/);
   assert.match(styles, /button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible \{ outline: 2px solid/);
   assert.match(client, /updateMetricGauge\(elements\.cpuMeterTrack, elements\.cpuMeter, metrics\.cpuUsagePercent\)/);
   assert.match(client, /updateMetricGauge\(elements\.ramMeterTrack, elements\.ramMeter, metrics\.memoryPercent\)/);
@@ -408,10 +463,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.right-rail[\s\S]*overflow-y: auto/);
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /<canvas class="avatar-canvas" id="avatar-canvas"[^>]*><\/canvas>\s*<div class="holo-emitter"/);
-  assert.match(html, /<div class="avatar-frame portrait-cutout-frame">\s*<img class="ai-avatar/);
+  assert.match(html, /<div class="avatar-frame portrait-cutout-frame"[^>]*>\s*<div class="portrait-artwork">\s*<img class="ai-avatar/);
   assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.png"/);
   assert.doesNotMatch(html, /ai-avatar\.jpg/);
-  assert.doesNotMatch(html, /avatar3d|lip-sync/i);
+  assert.match(html, /id="load-custom-avatar"/);
+  assert.match(html, /id="avatar-model-file"[^>]*accept="\.vrm,\.glb/);
   assert.match(html, /id="activate-3d-avatar"/);
   assert.match(html, /id="avatar-canvas"[^>]*hidden/);
   assert.match(html, /News &amp; Briefing/);
@@ -460,7 +516,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /@media \(max-width: 780px\)[\s\S]*?body\.new-interface \.holo-stage\.is-globe-active \{[^}]*width: min\(calc\(100vw - 28px\), 440px\)/);
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: sticky/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?hud=53/);
+  assert.match(html, /styles\.css\?hud=55/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -477,13 +533,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v66/);
-  assert.match(worker, /styles\.css\?hud=53/);
+  assert.match(worker, /jarvis-shell-v70/);
+  assert.match(worker, /styles\.css\?hud=55/);
   assert.match(worker, /jarvis-portrait\.png/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=53/);
+  assert.match(worker, /styles\.css\?hud=55/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?hud=56/);
+  assert.match(worker, /app\.js\?hud=58/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -503,7 +559,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=53/);
+  assert.match(client, /service-worker\.js\?hud=55/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);
@@ -511,6 +567,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /TTS utterance onend/);
   assert.match(client, /createPortraitAnimation/);
   assert.match(client, /PORTRAIT_ANIMATION_EVENT/);
+  assert.match(client, /avatarFrame\.dataset\.blink = detail\.blink/);
+  assert.match(client, /avatarFrame\.dataset\.viseme = detail\.viseme/);
   assert.match(client, /portraitAnimation\.startSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.pauseSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.resumeSpeech\(playbackId\)/);
@@ -792,7 +850,9 @@ test('rejects invalid chat payloads and reports a missing provider honestly', as
     body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
   });
   assert.equal(unavailable.status, 503);
-  assert.match((await unavailable.json()).error, /No AI provider is configured/);
+  assert.deepEqual(await unavailable.json(), {
+    error: 'No AI provider is configured. Enter a provider API key in Settings or configure AI_API_KEY on the server.',
+  });
 
 });
 
@@ -861,10 +921,10 @@ test('sends one explicitly requested Vision image to the configured provider wit
 
   try {
     const image = `data:image/jpeg;base64,${makeVisionJpeg().toString('base64')}`;
-    const response = await originalFetch(`${baseUrl}/api/vision`, {
+    const response = await fetchViaLoopbackAddress(`${baseUrl}/api/vision`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: 'What is visible?', image }),
+      body: JSON.stringify({ provider: 'openai-compatible', question: 'What is visible?', image }),
     });
     const result = await response.json();
     assert.equal(response.status, 200);
@@ -878,10 +938,20 @@ test('sends one explicitly requested Vision image to the configured provider wit
     assert.equal(upstreamRequest.messages.at(-1).content[1].image_url.url, image);
     assert.doesNotMatch(JSON.stringify(result), new RegExp(apiKey));
 
-    const limited = await originalFetch(`${baseUrl}/api/vision`, {
+    for (let requestCount = 1; requestCount < 5; requestCount += 1) {
+      const allowed = await fetchViaLoopbackAddress(`${baseUrl}/api/vision`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'openai-compatible', question: 'What is visible?', image }),
+      });
+      assert.equal(allowed.status, 200);
+      assert.equal((await allowed.json()).reply, 'A settings window is open.');
+    }
+
+    const limited = await fetchViaLoopbackAddress(`${baseUrl}/api/vision`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: 'What is visible?', image }),
+      body: JSON.stringify({ provider: 'openai-compatible', question: 'What is visible?', image }),
     });
     assert.equal(limited.status, 429);
     assert.match((await limited.json()).error, /five requests per minute/);
@@ -996,7 +1066,7 @@ test('reports a useful error when the configured local Ollama daemon is unreacha
       body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
     });
     assert.equal(response.status, 503);
-    assert.match((await response.json()).error, /Start Ollama on the server host/);
+    assert.match((await response.json()).error, /Start Ollama at the configured local endpoint/);
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.AI_PROVIDER;
@@ -1015,6 +1085,7 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     providerSource: 'session',
     provider: 'ollama',
     model: 'qwen2.5:3b',
+    baseUrl: 'http://127.0.0.1:11434',
   });
 
   const originalFetch = globalThis.fetch;
@@ -1057,7 +1128,9 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     body: JSON.stringify({ provider: 'openai-compatible', model: 'gemini-3.8-flash' }),
   });
   assert.equal(missingKey.status, 400);
-  assert.match((await missingKey.json()).error, /API key|AI_API_KEY/);
+  const missingKeyResult = await missingKey.json();
+  assert.match(missingKeyResult.error, /API key|AI_API_KEY/);
+  assert.doesNotMatch(JSON.stringify(missingKeyResult), /test-only-provider-secret/);
 
   const invalidBaseUrl = await fetch(`${baseUrl}/api/settings/ai`, {
     method: 'POST',
@@ -1114,7 +1187,11 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     const chatResponse = await originalFetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+      body: JSON.stringify({
+        provider: 'openai-compatible',
+        mode: 'study',
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
     });
     const chat = await chatResponse.json();
     assert.equal(chatResponse.status, 200);
@@ -1124,8 +1201,23 @@ test('configures a server-side OpenAI-compatible provider without returning its 
     assert.equal(providerRequest.model, 'gemini-3.8-flash');
     assert.equal(providerRequest.reasoning_effort, 'low');
     assert.equal(providerRequest.max_tokens, undefined);
+    assert.ok(providerRequest.messages[0].content.includes('Study Mode'));
     assert.deepEqual(providerRequest.messages.at(-1), { role: 'user', content: 'hello' });
     assert.doesNotMatch(JSON.stringify(chat), new RegExp(apiKey));
+
+    const summaryPrompt = 'Summarize retrieved search sources. Source [1]: Verified article title; URL: https://news.example/article.';
+    const summaryResponse = await originalFetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'openai-compatible',
+        singleAttempt: true,
+        messages: [{ role: 'user', content: summaryPrompt }],
+      }),
+    });
+    assert.equal(summaryResponse.status, 200);
+    assert.equal(providerRequest.model, 'gemini-3.8-flash');
+    assert.deepEqual(providerRequest.messages.at(-1), { role: 'user', content: summaryPrompt });
   } finally {
     globalThis.fetch = originalFetch;
     await originalFetch(`${baseUrl}/api/settings/ai`, {
@@ -1179,6 +1271,53 @@ test('reports rejected OpenAI-compatible provider keys without treating them as 
   } finally {
     globalThis.fetch = originalFetch;
     await originalFetch(`${baseUrl}/api/settings/ai`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'environment' }),
+    });
+  }
+});
+
+test('rejects a provider selection mismatch before contacting the configured endpoint', async () => {
+  const originalFetchImplementation = globalThis.fetch;
+  const configured = await originalFetchImplementation(`${baseUrl}/api/settings/ai`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'openai-compatible',
+      model: 'route-test-model',
+      apiKey: 'test-only-route-mismatch-key',
+      baseUrl: 'https://openai-compatible.invalid/v1/',
+    }),
+  });
+  assert.equal(configured.status, 200);
+
+  let upstreamCalls = 0;
+  globalThis.fetch = async (input, options) => {
+    if (String(input).startsWith('https://openai-compatible.invalid/')) upstreamCalls += 1;
+    if (String(input).startsWith('https://openai-compatible.invalid/')) {
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'must not run' } }] }));
+    }
+    return originalFetchImplementation(input, options);
+  };
+  try {
+    const response = await originalFetchImplementation(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'gemini',
+        messages: [{ role: 'user', content: 'Do not route to the configured OpenAI-compatible provider.' }],
+      }),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(result.code, 'AI_PROVIDER_MISMATCH');
+    assert.match(result.error, /selected provider is gemini.*configured for openai-compatible/i);
+    assert.equal(upstreamCalls, 0);
+    assert.doesNotMatch(JSON.stringify(result), /test-only-route-mismatch-key/);
+  } finally {
+    globalThis.fetch = originalFetchImplementation;
+    await originalFetchImplementation(`${baseUrl}/api/settings/ai`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ provider: 'environment' }),
@@ -1376,11 +1515,11 @@ test('fails closed in production when an access token has not been configured', 
 });
 
 test('validates search queries before contacting the search provider', async () => {
-  const empty = await fetch(`${baseUrl}/api/search?q=`);
+  const empty = await fetchViaLoopbackAddress(`${baseUrl}/api/search?q=`, {}, '127.0.0.3');
   assert.equal(empty.status, 400);
-  const tooLong = await fetch(`${baseUrl}/api/search?q=${'x'.repeat(201)}`);
+  const tooLong = await fetchViaLoopbackAddress(`${baseUrl}/api/search?q=${'x'.repeat(201)}`, {}, '127.0.0.3');
   assert.equal(tooLong.status, 400);
-  const unsupportedLanguage = await fetch(`${baseUrl}/api/search?q=test&lang=fr`);
+  const unsupportedLanguage = await fetchViaLoopbackAddress(`${baseUrl}/api/search?q=test&lang=fr`, {}, '127.0.0.3');
   assert.equal(unsupportedLanguage.status, 400);
 });
 
@@ -1397,7 +1536,7 @@ test('returns DuckDuckGo instant answers when it provides source-backed results'
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   try {
-    const response = await originalFetch(`${baseUrl}/api/search?q=example`);
+    const response = await fetchViaLoopbackAddress(`${baseUrl}/api/search?q=example`, {}, '127.0.0.4');
     const data = await response.json();
     assert.equal(response.status, 200);
     assert.equal(data.source, 'DuckDuckGo Instant Answer');
@@ -1426,7 +1565,11 @@ test('falls back to source-linked Wikipedia results in the selected language', a
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   try {
-    const response = await originalFetch(`${baseUrl}/api/search?q=${encodeURIComponent('भारत')}&lang=hi`);
+    const response = await fetchViaLoopbackAddress(
+      `${baseUrl}/api/search?q=${encodeURIComponent('भारत')}&lang=hi`,
+      {},
+      '127.0.0.5',
+    );
     const data = await response.json();
     assert.equal(response.status, 200);
     assert.equal(data.source, 'Wikipedia search (Hindi)');
@@ -1442,7 +1585,7 @@ test('reports search provider outages instead of fabricating results', async () 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new TypeError('network unavailable'); };
   try {
-    const response = await originalFetch(`${baseUrl}/api/search?q=example`);
+    const response = await fetchViaLoopbackAddress(`${baseUrl}/api/search?q=example`, {}, '127.0.0.6');
     assert.equal(response.status, 502);
     assert.match((await response.json()).error, /DuckDuckGo Instant Answers and Wikipedia search could not be reached/);
   } finally {
@@ -1458,13 +1601,16 @@ test('blocks paths that escape the public directory', async () => {
 test('queues automatic AI speech without interrupting voice preview', async () => {
   const client = await (await fetch(`${baseUrl}/app.js`)).text();
   const speakImplementation = client.match(/function speak\(text[^)]*\) \{([\s\S]*?)\n\}/)?.[1] || '';
-  const sendChatImplementation = client.match(/async function sendChat\(text,[\s\S]*?\n\}/)?.[0] || '';
+  const sendChatStart = client.indexOf('async function sendChat(text, {');
+  const sendChatEnd = client.indexOf('\nfunction retryLastChat', sendChatStart);
+  const sendChatImplementation = client.slice(sendChatStart, sendChatEnd);
   const primeVoiceOutputImplementation = client.match(/function primeVoiceOutput\(\) \{([\s\S]*?)\n\}/)?.[1] || '';
 
   assert.match(sendChatImplementation, /const reply = readChatReply\(data\)/);
   assert.match(sendChatImplementation, /if \(state\.preferences\.voiceEnabled\) \{\s*speechReplayController\.track\(replyMessage\);\s*reportSpeechDiagnostic\('AI reply reaches speak\(\)', \{ voiceOutputEnabled: true \}\);\s*speak\(reply, \{/);
   assert.doesNotMatch(sendChatImplementation, /primeVoiceOutput/);
-  assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\(\);\s*primeVoiceOutput\(\);\s*\}/);
+  assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\('command', false, false, true\);\s*\}/);
+  assert.match(client, /function startListening\(purpose = 'command', wakeHandoff = false, automaticWakeRestart = false, fromUserGesture = false\) \{[\s\S]*?if \(purpose === 'command' && 'speechSynthesis' in window\) stopSpeechOutput\(\);\s*if \(fromUserGesture\) primeVoiceOutput\(\);[\s\S]*?recognition\.start\(\)/);
   assert.match(client, /language: state\.preferences\.language === 'hi' \? 'hi-IN' : 'en-US'/);
   assert.match(speakImplementation, /speechOutputTexts\.has\(speechText\)/);
   assert.doesNotMatch(speakImplementation, /speechSynthesis\.cancel/);
@@ -1475,5 +1621,6 @@ test('queues automatic AI speech without interrupting voice preview', async () =
   assert.match(client, /onNotStarted: \(\) => speechReplayController\.markNotStarted\(message\)/);
   assert.match(client, /const pendingSpeechOptions = state\.pendingSpeechOptions;[\s\S]*?speak\(pendingSpeechText, pendingSpeechOptions \|\| \{\}\)/);
   assert.match(client, /document\.querySelector\('#preview-voice'\)\.addEventListener\('click', \(\) => \{[\s\S]*?speak\(state\.preferences\.language/);
+  assert.match(client, /if \(state\.preferences\.wakeWordEnabled\) \{\s*state\.wakeWordManualTakeoverPending = false;\s*startListening\('wake', false, false, true\);/);
   assert.doesNotMatch(primeVoiceOutputImplementation, /voiceOutputPrimed/);
 });

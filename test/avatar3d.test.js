@@ -295,12 +295,14 @@ test('creates a built-in holographic avatar with facial controls and animation',
 });
 
 test('creates a procedural Earth with continent texture, grid, orbit rings, particles, and scanline', () => {
-  const { root, globe, orbitRings, particles, scanline } = createHolographicGlobe();
+  const { root, globe, atmosphere, atmosphereHalo, orbitRings, particles, scanline } = createHolographicGlobe();
   assert.equal(root.name, 'jarvis-holographic-earth');
-  for (const name of ['earth-globe', 'earth-atmosphere', 'earth-ocean', 'earth-continents', 'earth-latitude-0', 'earth-longitude-0']) {
+  for (const name of ['earth-globe', 'earth-atmosphere', 'earth-atmosphere-halo', 'earth-ocean', 'earth-continents', 'earth-latitude-0', 'earth-longitude-0']) {
     assert.ok(root.getObjectByName(name), `expected globe feature ${name}`);
   }
   assert.equal(orbitRings.length, 2);
+  assert.equal(atmosphere.material.depthWrite, false);
+  assert.equal(atmosphereHalo.material.depthWrite, false);
   assert.equal(root.getObjectByName('earth-ocean').material.transparent, true);
   assert.ok(root.getObjectByName('earth-ocean').material.opacity < 0.2);
   assert.equal(root.getObjectByName('earth-ocean').material.depthWrite, false);
@@ -326,11 +328,15 @@ test('creates a procedural Earth with continent texture, grid, orbit rings, part
   assert.ok(root.getObjectByName('earth-longitude-350'));
   assert.equal(root.getObjectByName('earth-latitude-0').geometry.attributes.position.count, 181);
 
-  animateHolographicGlobe({ globe, orbitRig: root.getObjectByName('earth-orbit-rings'), particles, scanline }, 4);
+  const rig = { globe, atmosphere, atmosphereHalo, orbitRig: root.getObjectByName('earth-orbit-rings'), particles, scanline };
+  animateHolographicGlobe(rig, 4);
   assert.ok(globe.rotation.y > 0);
+  assert.notEqual(atmosphere.material.opacity, 0.22, 'the atmospheric rim should gently pulse');
   const rotatedY = globe.rotation.y;
-  animateHolographicGlobe({ globe, orbitRig: root.getObjectByName('earth-orbit-rings'), particles, scanline }, 8, { reducedMotion: true });
+  const haloOpacity = atmosphereHalo.material.opacity;
+  animateHolographicGlobe(rig, 8, { reducedMotion: true });
   assert.equal(globe.rotation.y, rotatedY);
+  assert.equal(atmosphereHalo.material.opacity, haloOpacity);
 
   root.traverse((object) => {
     object.geometry?.dispose();
@@ -444,6 +450,80 @@ test('opens the local file picker and preserves the portrait when a selected GLB
   }
 });
 
+test('loads a valid local VRM or GLB with a supported speech morph', async () => {
+  const previousGlobals = new Map(
+    ['window', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame']
+      .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+  );
+  const classes = new Set();
+  const root = new THREE.Group();
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+  mesh.morphTargetDictionary = { jawOpen: 0 };
+  mesh.morphTargetInfluences = [0];
+  root.add(mesh);
+  const renderer = {
+    outputColorSpace: null,
+    setClearColor() {},
+    setPixelRatio(value) { this.pixelRatio = value; },
+    getPixelRatio() { return this.pixelRatio; },
+    setSize() {},
+    render() {},
+    dispose() {},
+  };
+  globalThis.window = {
+    matchMedia() {
+      return { matches: true, addEventListener() {}, removeEventListener() {} };
+    },
+    addEventListener() {},
+  };
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => {};
+
+  try {
+    const avatar = initializeAvatar3d({
+      frame: {
+        classList: {
+          add(...names) { names.forEach((name) => classes.add(name)); },
+          remove(...names) { names.forEach((name) => classes.delete(name)); },
+        },
+        setAttribute() {},
+      },
+      canvas: {
+        hidden: true,
+        addEventListener() {},
+        getBoundingClientRect() { return { width: 640, height: 640 }; },
+      },
+      image: {
+        classList: {
+          add(name) { classes.add(name); },
+          remove(name) { classes.delete(name); },
+        },
+      },
+      status: { textContent: '', dataset: {} },
+      parseModel: async () => ({ scene: root, userData: {} }),
+      createRenderer: () => renderer,
+    });
+
+    assert.equal(
+      await avatar.loadModel({ name: 'assistant.vrm', size: 12, async arrayBuffer() { return makeGlb(); } }),
+      true,
+    );
+    assert.equal(avatar.getActiveMode(), 'avatar');
+    assert.equal(classes.has('is-3d-hidden'), true);
+
+    avatar.unload();
+  } finally {
+    for (const [key, descriptor] of previousGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+});
+
 test('unload invalidates pending model loads and disposes their stale scene', async () => {
   const previousWindow = globalThis.window;
   globalThis.window = { addEventListener() {} };
@@ -498,7 +578,7 @@ test('unload invalidates pending model loads and disposes their stale scene', as
   }
 });
 
-test('loads and unloads the holographic Earth through the shared renderer lifecycle', () => {
+test('loads and unloads the holographic Earth through the shared renderer lifecycle', async () => {
   const previousGlobals = new Map(
     ['window', 'document', 'ResizeObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame']
       .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
@@ -507,6 +587,8 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
   const listeners = new Map();
   let animationCallback = null;
   let animationRequests = 0;
+  let reducedMotion = true;
+  let motionChangeCallback = null;
   let renderCount = 0;
   let rendererDisposed = false;
   let motionListenerRemoved = false;
@@ -552,8 +634,8 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
   globalThis.window = {
     matchMedia() {
       return {
-        matches: true,
-        addEventListener() {},
+        get matches() { return reducedMotion; },
+        addEventListener(_type, callback) { motionChangeCallback = callback; },
         removeEventListener() { motionListenerRemoved = true; },
       };
     },
@@ -620,6 +702,21 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
       'camera framing should include the complete globe, atmosphere, particles, and orbital rings',
     );
     assert.equal(animationRequests, 1, 'reduced-motion mode should render a still globe without an animation loop');
+
+    assert.equal(globe.getActiveMode(), 'earth');
+    assert.equal(
+      await globe.loadModel({ name: 'unsupported.gltf', size: 12, async arrayBuffer() { return new ArrayBuffer(24); } }),
+      false,
+    );
+    assert.match(status.textContent, /self-contained \.glb or \.vrm/i);
+    assert.equal(globe.getActiveMode(), 'earth', 'an unsupported upload should not remove the active Earth');
+    assert.equal(canvas.hidden, false);
+
+    reducedMotion = false;
+    motionChangeCallback();
+    animationCallback(1_017);
+    assert.equal(renderCount, 2, 'the Earth should update at a smooth 60 FPS cadence');
+    assert.equal(animationRequests, 3, 'the animated Earth should keep one frame scheduled at a time');
 
     assert.equal(globe.loadBuiltInAvatar(), true);
     assert.equal(classes.has('is-globe-active'), false);
