@@ -2664,7 +2664,6 @@ body.new-interface .new-feature-bar { display: none; }
   body.new-interface .mobile-status-message,
   body.new-interface .presence-copy,
   body.new-interface .capability-strip,
-  body.new-interface .holo-waveform,
   body.new-interface .presence-topline {
     display: none !important;
   }
@@ -4752,7 +4751,6 @@ body.new-interface .right-rail .planner-panel { order: 10; }
   body.new-interface .mobile-status-message,
   body.new-interface .presence-copy,
   body.new-interface .capability-strip,
-  body.new-interface .holo-waveform,
   body.new-interface .presence-topline { display: none !important; }
   body.new-interface .holo-stage.is-avatar-active .avatar-frame { opacity: 1; }
   body.new-interface .holo-stage.is-avatar-active .avatar-canvas { opacity: 1; }
@@ -5063,6 +5061,113 @@ body.new-interface .holo-waveform {
 @keyframes globe-turn { to { transform: rotate(360deg); } }
 @keyframes glass-reflection { 50% { background-position: 100% 0; opacity: .32; } }
 @keyframes orbit-node { to { transform: rotate(360deg); transform-origin: 38px 38px; } }
+
+/* Authoritative mobile hologram geometry. All scene layers share the square
+   stage box; the portrait is a separate image-ratio box inside the sphere. */
+@media (max-width: 780px) {
+  body.new-interface .avatar-hero {
+    width: 100%;
+    height: 340px;
+    min-height: 340px;
+    display: grid;
+    place-items: center;
+    overflow: visible;
+  }
+  body.new-interface .holo-stage,
+  body.new-interface .holo-stage:not(.is-globe-active) {
+    width: min(100%, 340px);
+    height: 340px;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    max-width: min(100%, 340px);
+    margin: 0 auto;
+    overflow: visible;
+    display: block;
+    position: relative;
+    isolation: isolate;
+  }
+  body.new-interface .holo-stage > * {
+    position: absolute;
+  }
+  body.new-interface .holo-sphere-shell,
+  body.new-interface .holo-particles,
+  body.new-interface .holo-emitter {
+    inset: 7%;
+    width: 86%;
+    height: 86%;
+  }
+  body.new-interface .avatar-frame.portrait-cutout-frame,
+  body.new-interface .holo-stage.is-avatar-active .avatar-frame,
+  body.new-interface .holo-stage .avatar-frame {
+    width: 78%;
+    height: 85.3%;
+    left: 50%;
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    overflow: visible;
+    opacity: 1;
+    visibility: visible;
+    display: block;
+  }
+  body.new-interface .portrait-cutout-frame .portrait-artwork,
+  body.new-interface .portrait-artwork {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 800 / 875;
+    left: 50%;
+    top: auto;
+    bottom: 0;
+    transform: translateX(-50%);
+    overflow: visible;
+  }
+  body.new-interface .portrait-artwork > .ai-avatar,
+  body.new-interface .portrait-cutout-image,
+  body.new-interface #ai-avatar {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 800 / 875;
+    left: 0;
+    top: auto;
+    bottom: 0;
+    position: absolute;
+    display: block;
+    opacity: 1;
+    visibility: visible;
+  }
+  body.new-interface .mobile-assistant-bubble {
+    display: block;
+    z-index: 12;
+  }
+  body.new-interface .orbit {
+    z-index: 6;
+  }
+  body.new-interface .holo-platform {
+    width: 58%;
+    height: 8%;
+    left: 21%;
+    bottom: 3%;
+    z-index: 9;
+  }
+  body.new-interface .holo-waveform {
+    position: relative;
+    z-index: 12;
+    display: flex;
+    width: min(100%, 260px);
+    height: 22px;
+    min-height: 22px;
+    margin: 0 auto 4px;
+  }
+  body.new-interface .presence {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* Final mobile cascade for the Home dashboard. This comes after all of the
    legacy desktop and globe/portrait overrides so narrow layouts cannot inherit
