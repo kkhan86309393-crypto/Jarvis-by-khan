@@ -540,10 +540,12 @@ const portraitAnimation = createPortraitAnimation({
 
 const portraitOverlay = PORTRAIT_OVERLAY_CONFIG.cutout;
 document.documentElement.style.setProperty('--portrait-eye-y', `${portraitOverlay.eyes.y * 100}%`);
-document.documentElement.style.setProperty('--portrait-eye-left-x', `${(portraitOverlay.eyes.leftX - 0.06) * 100}%`);
-document.documentElement.style.setProperty('--portrait-eye-right-x', `${(portraitOverlay.eyes.rightX - 0.06) * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-left-x', `${portraitOverlay.eyes.leftX * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-right-x', `${portraitOverlay.eyes.rightX * 100}%`);
 document.documentElement.style.setProperty('--portrait-mouth-x', `${portraitOverlay.mouth.x * 100}%`);
 document.documentElement.style.setProperty('--portrait-mouth-y', `${portraitOverlay.mouth.y * 100}%`);
+document.documentElement.style.setProperty('--portrait-chin-y', `${portraitOverlay.chin.y * 100}%`);
+document.documentElement.style.setProperty('--portrait-debug', new URLSearchParams(location.search).get('debug') === '1' ? 'flex' : 'none');
 window.jarvisAvatarAnimation = {
   setSpeaking: (active) => portraitAnimation.setSpeaking(active),
   setEyeMode: (mode) => portraitAnimation.setEyeMode(mode),

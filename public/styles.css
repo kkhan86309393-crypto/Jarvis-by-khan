@@ -97,22 +97,34 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .holo-particles i:nth-child(8) { left: 91%; top: 59%; animation-delay: -.3s; }
 .ai-avatar { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center center; opacity: .96; filter: saturate(1.06) brightness(.96) contrast(1.04) drop-shadow(0 0 10px rgba(58, 174, 255, .7)); mix-blend-mode: normal; }
 .ai-avatar.is-unavailable { display: none; }
-.portrait-artwork { width: 100%; height: 100%; position: absolute; inset: 0; }
+.portrait-artwork {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 800 / 875;
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+}
 .portrait-artwork > .ai-avatar { width: 100%; height: 100%; }
 .portrait-animation { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
-.portrait-eye-lid { width: 12%; height: 5%; position: absolute; top: var(--portrait-eye-y, 26.4%); overflow: hidden; }
-.portrait-eye-lid-left { left: var(--portrait-eye-left-x, 37.5%); }
-.portrait-eye-lid-right { left: var(--portrait-eye-right-x, 50.5%); }
+.portrait-eye-lid { width: 9.5%; height: 3%; position: absolute; top: calc(var(--portrait-eye-y, 28.5%) - 1.5%); overflow: hidden; }
+.portrait-eye-lid-left { left: calc(var(--portrait-eye-left-x, 43.6%) - 4.75%); }
+.portrait-eye-lid-right { left: calc(var(--portrait-eye-right-x, 58.5%) - 4.75%); }
 .portrait-upper-lid,
 .portrait-lower-lid { position: absolute; inset: 0; display: block; clip-path: ellipse(49% 42% at 50% 50%); }
 .portrait-upper-lid {
-  background: linear-gradient(180deg, #bb846f 0%, #e1b09a 58%, #805247 78%, #d8a18a 88%, #e9bda5 100%);
+  background-image: url('/jarvis-portrait.webp');
+  background-size: 1052.632% 3333.333%;
+  background-position: 49% 28.5%;
   transform: scaleY(0);
   transform-origin: top;
   transition: transform 45ms ease-in;
 }
 .portrait-lower-lid {
-  background: linear-gradient(0deg, #e1b09a 0%, #d39a82 65%, #805247 100%);
+  background-image: url('/jarvis-portrait.webp');
+  background-size: 1052.632% 3333.333%;
+  background-position: 49% 28.5%;
   transform: scaleY(0);
   transform-origin: bottom;
   transition: transform 45ms ease-in;
@@ -122,7 +134,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .avatar-frame[data-blink="closed"] .portrait-upper-lid { transform: scaleY(1); }
 .avatar-frame[data-blink="closed"] .portrait-lower-lid { transform: scaleY(.28); }
 .portrait-mouth {
-  width: 15%;
+  width: 11%;
   height: 4%;
   position: absolute;
   top: var(--portrait-mouth-y, 43.8%);
@@ -147,6 +159,27 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: rgba(255, 224, 209, .92);
   content: "";
 }
+.portrait-debug-markers {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: var(--portrait-debug, none);
+  pointer-events: none;
+}
+.portrait-debug-marker {
+  width: 8px;
+  height: 8px;
+  position: absolute;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #f00;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px #f00;
+}
+.portrait-debug-left-eye { left: var(--portrait-eye-left-x, 43.6%); top: var(--portrait-eye-y, 28.5%); }
+.portrait-debug-right-eye { left: var(--portrait-eye-right-x, 58.5%); top: var(--portrait-eye-y, 28.5%); }
+.portrait-debug-mouth { left: var(--portrait-mouth-x, 51.7%); top: var(--portrait-mouth-y, 41.9%); }
+.portrait-debug-chin { left: 51.7%; top: var(--portrait-chin-y, 50%); }
 .avatar-frame[data-speaking="true"][data-viseme="neutral"] .portrait-mouth {
   opacity: .85;
   animation: portrait-mouth-idle 460ms ease-in-out infinite alternate;
@@ -5095,12 +5128,24 @@ body.new-interface .holo-waveform {
   body.new-interface #ai-avatar,
   body.new-interface .ai-avatar {
     width: 100%;
-    height: 100%;
+    height: auto;
     min-width: 0;
     display: block;
     visibility: visible;
     opacity: 1;
     object-fit: contain;
     object-position: center bottom;
+  }
+
+  body.new-interface .portrait-artwork {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 800 / 875;
+  }
+
+  body.new-interface .portrait-artwork > .ai-avatar {
+    width: 100%;
+    height: auto;
+    position: relative;
   }
 }
