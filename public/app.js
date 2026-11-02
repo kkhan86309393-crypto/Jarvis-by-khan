@@ -551,6 +551,11 @@ window.jarvisAvatarAnimation = {
   setEyeMode: (mode) => portraitAnimation.setEyeMode(mode),
 };
 createMobileHome();
+if (window.matchMedia('(max-width: 780px)').matches) {
+  window.requestAnimationFrame(() => {
+    window.setTimeout(() => activateHolographicEarth(), 120);
+  });
+}
 elements.avatarImage.addEventListener(PORTRAIT_ANIMATION_EVENT, ({ detail }) => {
   elements.avatarFrame.dataset.blink = detail.blink;
   elements.avatarFrame.dataset.viseme = detail.viseme;
