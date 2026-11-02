@@ -162,10 +162,17 @@ test('diagnostics capture TTS voice, synthesis state, queue timing, and missing 
       paused: false,
     },
   });
+  recordSpeechEvent({
+    detail: {
+      event: 'TTS voices changed',
+      voiceCount: 2,
+    },
+  });
 
   assert.match(output.textContent, /TTS utterance onstart \(language=en-US, voiceName=Google US English, voiceLanguage=en-US, speaking=true, pending=false, paused=false, queueDurationMs=250\)/);
   assert.match(output.textContent, /TTS utterance onend \(language=hi-IN, voiceName=Google हिन्दी, voiceLanguage=hi-IN, speaking=false, pending=false, paused=false, started=false, elapsedMs=3000\)/);
   assert.match(output.textContent, /TTS utterance skipped \(speaking=false, pending=false, paused=false, reason=page-unfocused\)/);
+  assert.match(output.textContent, /TTS voices changed \(voiceCount=2\)/);
   assert.doesNotMatch(output.textContent, /private reply/);
 });
 

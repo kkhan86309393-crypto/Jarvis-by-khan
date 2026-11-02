@@ -26,6 +26,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     'SpeechRecognition stop failed',
     'TTS utterance skipped',
     'TTS utterance deferred',
+    'TTS voices changed',
     'TTS utterance creation failed',
     'TTS utterance queue failed',
     'TTS utterance queued',
@@ -225,7 +226,7 @@ if (diagnosticsEnabled && diagnosticsPanel && diagnosticsOutput) {
     for (const field of ['continuous', 'finalResult', 'matched', 'activated', 'alreadyActivated', 'unexpected', 'wakeWordTriggered', 'enabled', 'focused', 'secureContext', 'speaking', 'pending', 'paused', 'started', 'recognitionActive', 'queued']) {
       if (typeof detail[field] === 'boolean') fields.push(`${field}=${detail[field]}`);
     }
-    for (const field of ['maxAlternatives', 'resultCount', 'alternativeCount', 'attempt', 'delayMs', 'durationMs', 'queueDurationMs', 'elapsedMs', 'limit']) {
+    for (const field of ['maxAlternatives', 'resultCount', 'alternativeCount', 'voiceCount', 'attempt', 'delayMs', 'durationMs', 'queueDurationMs', 'elapsedMs', 'limit']) {
       if (Number.isSafeInteger(detail[field]) && detail[field] >= 0) fields.push(`${field}=${detail[field]}`);
     }
     if (wakeWordRestartReasons.has(detail.reason)) fields.push(`reason=${detail.reason}`);

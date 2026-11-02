@@ -286,7 +286,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?hud=58/);
+  assert.match(html, /app\.js\?hud=59/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -344,6 +344,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /speechOutputTexts\.has\(speechText\)/);
   const speakImplementation = client.match(/function speak\(text[^)]*\) \{([\s\S]*?)\n\}/)?.[1] || '';
   const sendChatImplementation = client.match(/async function sendChat\(text,[\s\S]*?\n\}/)?.[0] || '';
+  const duplicateSpeechBranch = speakImplementation.match(/if \(state\.speechOutputTexts\.has\(speechText\)\) \{([\s\S]*?)\n  \}/)?.[1] || '';
+  assert.match(duplicateSpeechBranch, /onNotStarted\?\.\(\)/);
+  assert.doesNotMatch(duplicateSpeechBranch, /onStart\?\.\(\)/);
+  assert.match(client, /function handleSpeechVoicesChanged\(\) \{\s*updateVoiceList\(\);\s*reportTtsDiagnostic\('TTS voices changed', \{ voiceCount: state\.voices\.length \}\);\s*\}/);
+  assert.ok(client.indexOf("addEventListener('voiceschanged', handleSpeechVoicesChanged)")
+    < client.lastIndexOf('syncSettings();'), 'voice-list changes must be observed before startup settings are synchronized');
+  assert.match(client, /window\.addEventListener\('pagehide', \(event\) => \{\s*if \(event\.persisted\) return;\s*portraitAnimation\.destroy\(\);\s*avatar3dInstance\?\.unload\?\.\(\);/);
   assert.doesNotMatch(speakImplementation, /speechSynthesis\.cancel/);
   assert.doesNotMatch(sendChatImplementation, /primeVoiceOutput/);
   assert.match(client, /if \(event\.submitter === elements\.send && !command\) primeVoiceOutput\(\)/);
@@ -492,9 +499,9 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-emitter::before \{[^}]*width: 32%;[\s\S]*?height: 220%;[\s\S]*?var\(--avatar-holo-secondary\) 96%/);
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-emitter::after \{[^}]*display: none;/);
   assert.match(styles, /@media \(max-width: 780px\)[\s\S]*?body\.new-interface \.holo-stage\.is-globe-active \{[^}]*width: min\(calc\(100vw - 28px\), 440px\)/);
-  assert.match(mobileDashboardStyles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: static;[\s\S]*?bottom: auto;[\s\S]*?z-index: auto/);
+  assert.match(styles, /body\.new-interface \.dashboard-commandbar \{\s*position: static;\s*bottom: auto;\s*z-index: auto;/);
   assert.doesNotMatch(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*position: sticky/);
-  assert.match(mobileDashboardStyles, /body\.new-interface \.main-frame \{[^}]*padding: 7px 0 calc\(80px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(styles, /body\.new-interface \.main-frame \{[^}]*padding: 7px 0 calc\(80px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(html, /styles\.css\?hud=60/);
   assert.match(html, /diagnostics\.js\?hud=28/);
@@ -513,7 +520,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v73/);
+  assert.match(worker, /jarvis-shell-v74/);
   assert.match(worker, /styles\.css\?hud=60/);
   assert.match(worker, /jarvis-portrait\.png/);
   assert.doesNotMatch(worker, /reference-face\.jpg/);
@@ -523,7 +530,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /jarvis-mouth-wide\.png/);
   assert.doesNotMatch(worker, /closed-eye-portrait-reference\.png/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?hud=58/);
+  assert.match(worker, /app\.js\?hud=59/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -543,7 +550,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.match(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=53/);
+  assert.match(client, /service-worker\.js\?hud=54/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);

@@ -1552,7 +1552,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
   }
   if (state.speechOutputTexts.has(speechText)) {
     reportTtsDiagnostic('TTS utterance skipped', { reason: 'duplicate-text' });
-    onStart?.();
+    onNotStarted?.();
     return;
   }
   if (!shouldPlaySpeech(document.visibilityState, pageIsFocused())) {
@@ -1774,7 +1774,9 @@ function updateVoiceList() {
     elements.voiceSupport.textContent = 'Speech output is not supported by this browser';
     return;
   }
-  state.voices = window.speechSynthesis.getVoices();
+  state.voices = typeof window.speechSynthesis.getVoices === 'function'
+    ? window.speechSynthesis.getVoices()
+    : [];
   elements.voice.replaceChildren(new Option('System default', ''));
   for (const voice of state.voices) {
     const label = `${voice.name} (${voice.lang})${voice.default ? ' · default' : ''}`;
@@ -1786,6 +1788,20 @@ function updateVoiceList() {
     : state.voices.length ? `${state.voices.length} voice${state.voices.length === 1 ? '' : 's'} available on this device` : 'No system voices are available';
   updateLabVoiceOptions();
   if (!elements.personalizePanel.hidden && personalizeDraft) renderPersonalizePreview(personalizeDraft);
+}
+
+function handleSpeechVoicesChanged() {
+  updateVoiceList();
+  reportTtsDiagnostic('TTS voices changed', { voiceCount: state.voices.length });
+}
+
+if ('speechSynthesis' in window) {
+  const synthesis = window.speechSynthesis;
+  if (typeof synthesis?.addEventListener === 'function') {
+    synthesis.addEventListener('voiceschanged', handleSpeechVoicesChanged);
+  } else if (synthesis) {
+    synthesis.onvoiceschanged = handleSpeechVoicesChanged;
+  }
 }
 
 function updateLabVoiceOptions(selectedURI = personalizeDraft?.voiceURI ?? state.labPreferences.voiceURI) {
@@ -4530,6 +4546,11 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('blur', pauseVoiceForPageLifecycle);
 window.addEventListener('focus', resumeVoiceForPageLifecycle);
 window.addEventListener('pagehide', pauseVoiceForPageLifecycle);
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) return;
+  portraitAnimation.destroy();
+  avatar3dInstance?.unload?.();
+});
 window.addEventListener('pageshow', resumeVoiceForPageLifecycle);
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
@@ -4613,9 +4634,8 @@ checkServer();
 logActivity('Interface initialized');
 updateInstallButton();
 
-if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=53', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?hud=54', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

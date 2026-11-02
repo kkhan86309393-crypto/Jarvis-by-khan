@@ -9,12 +9,12 @@ J.A.R.V.I.S. is a cross-platform personal assistant: a Node.js-served browser/PW
 - Repository: `kkhan86309393-crypto/Jarvis-by-khan`
 - Local path: `/workspaces/Jarvis-by-khan`
 - Development environment: Linux workspace / VS Code Codespace
-- Current branch: `backup/jarvis-handoff-20261030`
+- Current working branch: `feature/jarvis-audit-completion-20261102`, based on the published `backup/jarvis-handoff-20261030` tip `c9c2888`.
+- The local `backup/jarvis-handoff-20261030` branch remains unchanged at `02877f1`. The remote backup tip was fetched and verified at `c9c2888`; audit changes are uncommitted and have not been pushed.
 - Base commit: `924d9217a064f7649931cd0bf9e571bf3aa900f6`
 - Progress snapshot commit: `9a5d62c96a70ba3918acc84bf0df3730178e1b25` (`Save JARVIS progress and prepare project handover`)
 - Remote: `origin` → `https://github.com/kkhan86309393-crypto/Jarvis-by-khan`
-- Branch tracks `origin/backup/jarvis-handoff-20261030`.
-- The progress snapshot is committed locally. A normal push was attempted but Git could not obtain the required password/authentication. The remote still points to the base commit above; authenticate normally and push this branch. No force-push was used.
+- The feature branch is based on `origin/backup/jarvis-handoff-20261030`; publishing the feature branch requires explicit user approval. No push or merge was performed.
 
 ## Technologies
 
@@ -64,7 +64,7 @@ Untracked image staging decisions confirmed by the user:
 - Keep `public/a_high_detail_sci_fi_holographic_tech_illustration.png` (1269×1240 RGBA; unused concept illustration) local and untracked.
 - Keep `public/file_000000003c208208acf876139a63a9f6.png` (724×2172 RGB; mobile screenshot/reference) local and untracked.
 
-The commit also adds this `HANDOVER.md`. The progress commit was created after all staged and unstaged diffs passed the requested validation. The current checkout is one documentation-status commit ahead of the progress snapshot described above; this status update records the failed push. The four excluded image references remain local, untracked, and unstaged. `.env`/`.env.*`, key files, `node_modules/`, and generated avatar bundle are ignored. No credentials or environment files appeared in the staged/untracked file listing. The older `HANDOFF.md` is an earlier snapshot and does not reflect this current worktree; prefer this document.
+The four excluded image references remain local, untracked, and unstaged. `.env`/`.env.*`, key files, `node_modules/`, and generated avatar bundle are ignored. No credentials or environment files appeared in the tracked change listing. The older `HANDOFF.md` is an earlier snapshot and does not reflect this current worktree; prefer this document.
 
 ## Completed project work represented in the worktree
 
@@ -75,7 +75,7 @@ The commit also adds this `HANDOVER.md`. The progress commit was created after a
 - Static portrait updated in the current UI to a transparent cutout image.
 - Portrait animation state hook wired to speech lifecycle; details below.
 
-These changes are committed locally in the progress snapshot above; review that commit before continuing.
+Those earlier implementation changes are committed in the progress snapshot above. The separate audit changes below are uncommitted on the feature branch.
 
 ## Portrait blinking and lip-sync status
 
@@ -86,13 +86,13 @@ These changes are committed locally in the progress snapshot above; review that 
 - Mouth state resets on pause, end, error, timeout, and cancellation; playback identifiers reject stale callbacks.
 - Speech lifecycle is wired from `public/app.js`; optional 3D avatar controls remain separate.
 
-The static portrait now has a visible, approximate blink made from CSS eyelid overlays. Their size and placement are constrained to the eye area, with staged open/half/closed states and reduced-motion handling. The canonical portrait remains unchanged; the closed-eye reference image is not loaded by production markup or styles. This is a visual approximation, not a photorealistic eyelid reconstruction.
+The static portrait now has visible, approximate blink and mouth-shape changes made from transparent overlays sized to the full portrait canvas. Blink frames are staged open/half/closed/reopening, and mouth states change only while speech is active and speech-boundary cues arrive. Reduced-motion handling disables both overlays, and the canonical portrait remains unchanged. This is not phoneme-accurate lip-sync or a photorealistic eyelid reconstruction.
 
-For more natural blink contours and accurate speech lip-sync, aligned, transparent, full-canvas 1199×1312 RGBA facial assets or a facial rig are still needed. Any new assets should be authored/retouched against the original portrait and alignment-checked; the closed-eye reference and screenshots must not be used as production portrait frames.
+Automated tests confirm all seven overlays are 1199×1312 RGBA assets and are served/cached by the app. Actual visual alignment and Android rendering still require a browser/device check; the closed-eye reference and screenshots are not loaded as production portrait frames.
 
 ## Validation
 
-Latest validation:
+Prior validation on the published backup branch:
 
 - `npm run check`: passed, including avatar bundle build and JavaScript syntax checks.
 - `node --test test/portrait-animation.test.js test/server.test.js test/service-worker.test.js`: passed, 52 tests, 0 failures.
@@ -100,12 +100,23 @@ Latest validation:
 
 The test suite prints expected simulated upstream/API failures from negative-path tests; the final suite status is still 199/199 passing.
 
+Audit update (2026-11-02):
+
+- Fixed duplicate-text playback handling so an utterance that did not emit `onstart` cannot be reported as successfully spoken.
+- Registered the speech voice-change listener before startup settings synchronization and added a diagnostic voice count.
+- Bound portrait/3D animation cleanup to non-persisted page teardown while preserving animation on back-forward-cache restores.
+- Bumped the app-shell cache to `jarvis-shell-v74`; it precaches the updated app script and the local facial overlays, and excludes API paths.
+- `node --test`: 202 tests passed, 0 failed, 0 skipped. The focused voice/avatar/desktop/PWA/server suite passed 121/121.
+- JavaScript syntax checks and `git diff --check` passed. `npm run check` was not run because it rewrites the protected generated avatar bundle.
+- Static Electron/IPC and PWA/manifest checks are automated. Real Android Chrome speech/PWA checks and Windows packaging/OS behavior remain pending on those devices.
+- Changes remain uncommitted on the feature branch. The published backup branch is unchanged; do not push without user approval.
+
 ## Remaining work and safe sequence
 
-1. Authenticate to GitHub with normal approved credentials, verify the remote branch still has no newer commits, and push the local branch with a normal fast-forward. Never force-push or overwrite remote commits.
-2. Keep the four explicitly excluded untracked reference images local unless the user later approves adding them. The canonical portrait and intentional old-portrait deletion are already in the progress commit.
-3. For portrait visuals, create and review aligned facial overlays before implementing the rendering layer.
-4. Test Android Chrome speech replay/wake-word behavior on the target device; browser tests cannot establish actual speaker output or OS-level recognition reliability.
+1. Ask for approval before publishing the feature branch; verify the remote backup tip again before any push. Never force-push or overwrite remote commits.
+2. Keep the four explicitly excluded untracked reference images local unless the user later approves adding them. The canonical portrait and approved overlays are tracked on the remote backup branch.
+3. Test Android Chrome speech replay/wake-word behavior and the PWA offline flow on the target device; browser tests cannot establish actual speaker output or OS-level recognition reliability.
+4. Run Windows packaging and OS-level Electron checks on Windows before distribution.
 
 ## Instructions for the next ChatGPT account
 

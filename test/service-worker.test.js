@@ -87,7 +87,7 @@ test('installs the app shell with the portrait blink overlays', async () => {
   assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-mouth-wide.png'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/portrait-animation.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/diagnostics.js?hud=28'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=58'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/app.js?hud=59'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-planner.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/local-memory.js'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/smart-command-router.js'));
@@ -113,7 +113,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v73');
+  assert.equal(version, 'jarvis-shell-v74');
 
   let ignored = false;
   worker.listeners.get('message')({
