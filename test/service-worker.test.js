@@ -109,7 +109,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v76');
+  assert.equal(version, 'jarvis-shell-v77');
 
   let ignored = false;
   worker.listeners.get('message')({

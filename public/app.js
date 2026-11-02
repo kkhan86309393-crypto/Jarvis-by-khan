@@ -4933,9 +4933,36 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  try {
+    sessionStorage.removeItem('jarvis:sw-reloaded');
+  } catch {}
   navigator.serviceWorker.register('/service-worker.js?avatar=57', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
+    const activateWaitingWorker = () => {
+      if (!registration.waiting) return;
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    };
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed') activateWaitingWorker();
+      });
+    });
+    activateWaitingWorker();
   }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    try {
+      if (sessionStorage.getItem('jarvis:sw-reloaded')) return;
+      sessionStorage.setItem('jarvis:sw-reloaded', '1');
+    } catch {}
+    location.reload();
+  });
+  window.setInterval(() => {
+    navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
+  }, 60_000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
+  });
 }
 
 window.dispatchEvent(new Event('jarvis:app-ready'));
