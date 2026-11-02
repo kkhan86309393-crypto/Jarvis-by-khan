@@ -10,10 +10,10 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?hud=55">
+    <link rel="stylesheet" href="/styles.css?avatar=57">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
-  <body>
+  <body class="new-interface">
     <div class="app-shell">
       <header class="topbar">
         <a class="wordmark" href="/" aria-label="J.A.R.V.I.S. home">
@@ -22,9 +22,10 @@
         </a>
         <div class="topbar-right">
           <span class="connection-indicator" id="connection-status"><i></i><span>CONNECTING</span></span>
-          <div class="interface-switcher" role="group" aria-label="Interface selection">
-            <button class="text-button" id="new-interface-button" type="button" aria-pressed="false">New Interface</button>
-            <button class="text-button" id="old-interface-button" type="button" aria-pressed="true">Old Interface</button>
+          <div class="mobile-session-bar" aria-label="Session status">
+            <span class="mobile-online-chip"><i aria-hidden="true"></i>Online</span>
+            <span class="mobile-session-time" id="mobile-session-time">00:00</span>
+            <span class="mobile-signal" aria-label="Signal strength"><i></i><i></i><i></i><i></i></span>
           </div>
           <button class="icon-button" id="install-button" type="button" aria-label="Install J.A.R.V.I.S." title="Install app or view installation steps">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
@@ -38,8 +39,8 @@
       <div class="main-frame">
         <nav class="primary-nav" aria-label="Primary navigation">
           <span class="nav-label">WORKSPACE</span>
-          <button class="nav-item" type="button" data-nav="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg><span>Home</span></button>
-          <button class="nav-item is-current" type="button" data-nav="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>AI Chat</span></button>
+          <button class="nav-item is-current" type="button" data-nav="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg><span>Home</span></button>
+          <button class="nav-item" type="button" data-nav="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8m-8 4h5"/></svg><span>AI Chat</span></button>
           <button class="nav-item" type="button" data-nav="voice"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Voice assistant</span></button>
           <button class="nav-item" type="button" data-nav="history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7v5h5M5.6 16.5A8 8 0 1 0 4 12"/><path d="M12 7v5l3 2"/></svg><span>Conversation history</span></button>
           <button class="nav-item" type="button" data-nav="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2h8v12H4zM8 13h8m-8 3h6"/></svg><span>Files</span></button>
@@ -61,11 +62,13 @@
         </nav>
 
       <main class="workspace">
-        <div class="dashboard-layout" id="dashboard-layout" hidden>
+        <div class="dashboard-layout" id="dashboard-layout">
           <section class="presence" data-lab-widget="assistant" aria-labelledby="presence-title">
             <div class="presence-topline"><span>PERSONAL ASSISTANT</span><span>J.A.R.V.I.S.</span></div>
             <div class="avatar-hero">
               <div class="holo-stage" id="holo-stage">
+                <div class="mobile-assistant-bubble" id="mobile-assistant-bubble">How can I help you today?</div>
+                <div class="mobile-data-panels" aria-hidden="true"><span>LINK 98%</span><span>CORE ACTIVE</span><span>VOICE 24 kHz</span></div>
                 <div class="holo-sphere-shell" aria-hidden="true"><i></i></div>
                 <canvas class="avatar-canvas" id="avatar-canvas" aria-hidden="true" hidden></canvas>
                 <div class="holo-emitter" aria-hidden="true"></div>
@@ -77,7 +80,7 @@
                 <span class="holo-hud holo-hud-right" aria-hidden="true"><i></i><span>NEURAL LINK</span><small>ONLINE</small></span>
                 <div class="avatar-frame portrait-cutout-frame" data-blink="open" data-viseme="neutral" data-speaking="false">
                   <div class="portrait-artwork">
-                    <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/jarvis-portrait.png" alt="J.A.R.V.I.S. female assistant portrait" width="1199" height="1312" fetchpriority="high" decoding="async" draggable="false">
+                    <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/reference-face.jpg" alt="J.A.R.V.I.S. female assistant portrait" width="1536" height="1536" fetchpriority="high" decoding="async" draggable="false">
                     <span class="portrait-animation" aria-hidden="true">
                       <i class="portrait-eye-lid portrait-eye-lid-left"><i class="portrait-upper-lid"></i><i class="portrait-lower-lid"></i></i>
                       <i class="portrait-eye-lid portrait-eye-lid-right"><i class="portrait-upper-lid"></i><i class="portrait-lower-lid"></i></i>
@@ -87,18 +90,9 @@
                   <span class="portrait-scanline" aria-hidden="true"></span>
                 </div>
                 <span class="playback-indicator" aria-hidden="true"></span>
-              </div>
-              <div class="avatar-model-controls">
-                <button class="avatar-model-button" id="activate-3d-avatar" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate 3D Avatar</button>
-                <button class="avatar-model-button" id="activate-holographic-earth" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate Holographic Earth</button>
-                <button class="avatar-model-button" id="load-custom-avatar" type="button" aria-describedby="avatar-model-help avatar-model-status">Load Custom Avatar</button>
-                <input id="avatar-model-file" type="file" accept=".vrm,.glb,model/gltf-binary" hidden>
-                <p class="avatar-model-help" id="avatar-model-help">Choose a self-contained VRM or GLB up to 20 MB with a supported mouth or speech-expression rig. The model stays on this device.</p>
-                <p class="avatar-model-status" id="avatar-model-status" role="status" aria-live="polite"></p>
+                <span class="mobile-avatar-name"><i aria-hidden="true"></i>J.A.R.V.I.S.</span>
               </div>
             </div>
-            <p class="assistant-greeting">Hello. I am here when you need me.</p>
-            <span class="assistant-identity"><i aria-hidden="true"></i>J.A.R.V.I.S. <small>PERSONAL AI</small></span>
             <div class="holo-waveform" id="holo-waveform" role="img" aria-label="Voice activity idle">
               <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
@@ -115,12 +109,12 @@
           </section>
 
         <section class="dashboard-panel state-panel" data-lab-widget="status" aria-labelledby="state-panel-title">
-          <div class="panel-heading"><div><span class="eyebrow">LIVE ASSISTANT</span><h2 id="state-panel-title">Assistant status</h2></div><span class="live-label" id="state-panel-live">STANDBY</span></div>
+          <span class="sr-only" id="state-panel-live">STANDBY</span>
           <div class="holo-state-strip" id="holo-state-strip" role="group" aria-label="Assistant states">
-            <span class="holo-state" data-holo-state="listening"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Listening</span></span>
-            <span class="holo-state" data-holo-state="thinking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 18h5m-4.5 3h4m-5.7-6.2A6.5 6.5 0 1 1 15.7 15c-.8.6-1.2 1.4-1.2 2h-5c0-.8-.4-1.6-1.2-2.2Z"/><path d="M12 2V1m8 11h1M3 12H2m15.7-6.7.7-.7M5.6 5.6l-.7-.7"/></svg><span>Thinking</span></span>
-            <span class="holo-state" data-holo-state="speaking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span>Speaking</span></span>
-            <span class="holo-state" data-holo-state="online"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7"/><circle cx="12" cy="12" r="9"/></svg><span>Online</span></span>
+            <button class="holo-state" type="button" data-holo-state="listening" data-mobile-state="listening"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Listening</span><small>Waiting for your voice...</small></button>
+            <button class="holo-state" type="button" data-holo-state="thinking" data-mobile-state="thinking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 18h5m-4.5 3h4m-5.7-6.2A6.5 6.5 0 1 1 15.7 15c-.8.6-1.2 1.4-1.2 2h-5c0-.8-.4-1.6-1.2-2.2Z"/><path d="M12 2V1m8 11h1M3 12H2m15.7-6.7.7-.7M5.6 5.6l-.7-.7"/></svg><span>Thinking</span><small>Analyzing...</small></button>
+            <button class="holo-state" type="button" data-holo-state="speaking" data-mobile-state="speaking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span>Speaking</span><small>Generating response...</small></button>
+            <button class="holo-state" type="button" data-holo-state="online" data-mobile-state="online"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7"/><circle cx="12" cy="12" r="9"/></svg><span>Online</span><small>Ready</small></button>
           </div>
         </section>
         <div class="dashboard-commandbar">
@@ -343,7 +337,7 @@
           <button type="button" data-dashboard-feature="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
         </nav>
 
-        <section class="conversation" id="conversation-view" aria-label="Assistant conversation">
+        <section class="conversation" id="conversation-view" aria-label="Legacy assistant conversation" hidden>
           <div class="conversation-heading">
             <div><span class="eyebrow">LIVE SESSION</span><h2>Conversation</h2></div>
             <button class="icon-button subtle" id="clear-button" type="button" aria-label="Clear conversation history" title="Clear history">
@@ -714,6 +708,23 @@
     <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <form method="dialog" class="settings-head"><div><span class="eyebrow">PREFERENCES</span><h2 id="settings-title">Settings</h2></div><button class="icon-button subtle" aria-label="Close settings" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
       <div class="settings-content">
+        <section class="avatar-dev-settings" aria-labelledby="avatar-dev-title">
+          <div class="provider-settings-heading"><span class="eyebrow">3D PROJECTION</span><h3 id="avatar-dev-title">Avatar controls</h3></div>
+          <div class="avatar-model-controls">
+            <button class="avatar-model-button" id="activate-3d-avatar" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate 3D Avatar</button>
+            <button class="avatar-model-button" id="activate-holographic-earth" type="button" aria-pressed="false" aria-describedby="avatar-model-status">Activate Holographic Earth</button>
+            <button class="avatar-model-button" id="load-custom-avatar" type="button" aria-describedby="avatar-model-help avatar-model-status">Load Custom Avatar</button>
+            <button class="avatar-model-button" id="toggle-hologram" type="button" aria-pressed="true">Hologram On</button>
+            <label class="hologram-quality">Quality
+              <select id="hologram-quality" aria-label="Hologram quality">
+                <option value="auto">Auto</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+              </select>
+            </label>
+            <input id="avatar-model-file" type="file" accept=".vrm,.glb,model/gltf-binary" hidden>
+            <p class="avatar-model-help" id="avatar-model-help">Choose a self-contained VRM or GLB up to 20 MB. The model stays on this device.</p>
+            <p class="avatar-model-status" id="avatar-model-status" role="status" aria-live="polite"></p>
+          </div>
+        </section>
         <section class="ai-provider-settings" aria-labelledby="ai-provider-title">
           <div class="provider-settings-heading"><span class="eyebrow">SERVER-SIDE AI</span><h3 id="ai-provider-title">AI provider</h3><p id="ai-setup-status" class="settings-disclaimer" role="status" aria-live="polite">Checking current provider…</p></div>
           <form id="ai-settings-form">
@@ -829,6 +840,6 @@
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
     <script src="/diagnostics.js?hud=28"></script>
-    <script src="/app.js?hud=58" type="module"></script>
+    <script src="/app.js?avatar=60" type="module"></script>
   </body>
 </html>

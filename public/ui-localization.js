@@ -150,8 +150,6 @@ const ENGLISH_TO_HINDI = Object.freeze({
   'Only needed when the server administrator enabled access protection. Kept in memory until this tab closes.': 'केवल तब आवश्यक है जब सर्वर व्यवस्थापक ने एक्सेस सुरक्षा सक्षम की हो। यह टैब बंद होने तक मेमोरी में रहता है।',
   'x playback rate': 'गति गुणक',
   'PERSONAL ASSISTANT': 'व्यक्तिगत सहायक',
-  'New Interface': 'नया इंटरफ़ेस',
-  'Old Interface': 'पुराना इंटरफ़ेस',
   'Install J.A.R.V.I.S.': 'J.A.R.V.I.S. इंस्टॉल करें',
   'Install app or view installation steps': 'ऐप इंस्टॉल करें या निर्देश देखें',
   'Settings': 'सेटिंग्स',

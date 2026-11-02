@@ -1,0 +1,68 @@
+[33mcommit 50894bcea6ff81f3c42b79c7b27fecd318549e42[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: v4781920-cmyk <v4781920@gmail.com>
+Date:   Sun Nov 1 10:30:28 2026 +0000
+
+    Save JARVIS project progress
+
+ .gitignore   |  15 [32m+[m
+ HANDOVER.md  |  74 [32m+[m[31m-[m
+ README.md    |  45 [32m+[m[31m-[m
+ ...p.spec.js | 478 [32m+++[m
+ ...torage.js | 240 [32m++[m
+ ...dation.js |  20 [32m+[m
+ .../main.js  |  17 [32m+[m[31m-[m
+ ...eload.cjs |  25 [32m+[m
+ ...s RETURN) |  47 [32m+[m
+ ...lock.json |  65 [32m+[m[31m-[m
+ package.json |   5 [32m+[m
+ ...config.js |  51 [32m+[m
+ .../app.js   | 566 [32m+++[m[31m-[m
+ ...atar3d.js |  70 [32m+[m[31m-[m
+ ...-timer.js | 201 [32m++[m
+ ...ttings.js | 203 [32m++[m
+ ...ndex.html |  34 [32m+[m[31m-[m
+ ...iefing.js | 194 [32m++[m
+ ...worker.js |   4 [32m+[m[31m-[m
+ ...tyles.css | 221 [32m+[m[31m-[m
+ ...zation.js | 801 [32m++++++[m
+ "s\""        | 258 [32m++[m
+ server.js    | 376 [32m++[m[31m-[m
+ ...d.test.js | 111 [32m+[m[31m-[m
+ ...n.test.js |  77 [32m+[m
+ ...t.test.js | 115 [32m+[m
+ ...e.test.js | 314 [32m++[m
+ ...p.test.js |  13 [32m+[m
+ ...r.test.js | 181 [32m++[m
+ ...s.test.js | 189 [32m++[m
+ ...r.test.js | 451 [32m+++[m
+ ...n.test.js |   2 [32m+[m[31m-[m
+ ...n.test.js |  77 [32m+[m
+ ...g.test.js | 239 [32m++[m
+ ...r.test.js | 353 [32m+++[m
+ ...g.test.js |  88 [32m+[m
+ ...r.test.js | 205 [32m+[m[31m-[m
+ ...r.test.js |  11 [32m+[m[31m-[m
+ ...e.test.js |  29 [32m+[m
+ ...n.test.js | 325 [32m+++[m
+ ...n.test.js | 352 [32m+++[m
+ 41 files changed, 6814 insertions(+), 328 deletions(-)
+
+[33mcommit af397c059e2312a3f20f190bca00a42d8773ba33[m
+Merge: 360ba17 107f673
+Author: a724657khan-del <a724657khan@gmail.com>
+Date:   Sat Oct 31 18:14:19 2026 +0530
+
+    Merge pull request #5 from kkhan86309393-crypto/revert-4-backup/jarvis-handoff-20261030
+    
+    Revert "Add files via upload"
+
+[33mcommit 107f6739d7cfe93295903cdc231967cfec3b5a87[m[33m ([m[1;31morigin/revert-4-backup/jarvis-handoff-20261030[m[33m)[m
+Author: a724657khan-del <a724657khan@gmail.com>
+Date:   Sat Oct 31 18:08:23 2026 +0530
+
+    Revert "Add files via upload"
+
+ ...ROMPT.txt |  20 [31m------[m
+ README.txt   |   8 [31m---[m
+ ...rence.png | Bin [31m2243167[m -> [32m0[m bytes
+ 3 files changed, 28 deletions(-)

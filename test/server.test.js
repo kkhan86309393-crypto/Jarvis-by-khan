@@ -4,11 +4,6 @@ import { request as httpRequest } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { createAppServer, getAssistantText } from '../server.js';
 import { getForwardedUrl, getServerEnvironment } from '../scripts/codespaces.js';
-import {
-  readWorkspaceView,
-  saveWorkspaceView,
-  switchWorkspaceView,
-} from '../public/interface-switcher.js';
 import { detectDeviceProfile } from '../public/device-monitor.js';
 
 function fetchViaLoopbackAddress(url, options = {}, localAddress = '127.0.0.2') {
@@ -136,7 +131,6 @@ test('provides every client-selected element and the avatar/mobile controls', as
   const client = await (await fetch(`${baseUrl}/app.js`)).text();
   const appHub = await (await fetch(`${baseUrl}/app-hub.js`)).text();
   const searchSummary = await (await fetch(`${baseUrl}/search-summary.js`)).text();
-  const interfaceSwitcher = await (await fetch(`${baseUrl}/interface-switcher.js`)).text();
   const deviceMonitor = await (await fetch(`${baseUrl}/device-monitor.js`)).text();
   const shareLink = await (await fetch(`${baseUrl}/share-link.js`)).text();
   const diagnostics = await (await fetch(`${baseUrl}/diagnostics.js`)).text();
@@ -162,7 +156,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /cache: 'no-store'/);
   assert.match(client, /requestSequence !== healthRequestSequence/);
   assert.doesNotMatch(client, /from '\.\/avatar3d\.bundle\.js'/);
-  assert.doesNotMatch(worker, /avatar3d\.bundle\.js/);
+  assert.match(worker, /\/avatar3d\.bundle\.js\?avatar=5/);
   assert.doesNotMatch(worker, /avatar-cues\.js/);
   const selectedIds = [...client.matchAll(/querySelector\('#([\w-]+)'\)/g)].map((match) => match[1]);
   const missingIds = [...new Set(selectedIds)].filter((id) => !html.includes(`id="${id}"`));
@@ -171,7 +165,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.equal(new Set(documentIds).size, documentIds.length, 'HTML IDs must be unique');
   assert.match(html, /class="presence"/);
   assert.match(html, /id="holo-stage"/);
-  assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.png"/);
+  assert.match(html, /id="ai-avatar" src="\/reference-face\.jpg"/);
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar"/);
   assert.doesNotMatch(html, /ai-avatar\.jpg/);
@@ -212,7 +206,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function executeSmartCommand/);
   assert.match(client, /function activate3DAvatar\(\) \{\s*return activate3DProjection\('avatar'\)/);
   assert.match(client, /function activateHolographicEarth\(\) \{\s*return activate3DProjection\('earth'\)/);
-  assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=4'\)/);
+  assert.match(client, /import\('\/avatar3d\.bundle\.js\?avatar=5'\)/);
   assert.match(client, /if \(!avatar3dActivated\) return;/);
   assert.doesNotMatch(client, /\bsetAvatarMouth\b|toggleAudioLipSync/);
   assert.match(client, /utterance\.onpause/);
@@ -222,11 +216,10 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="mobile-nav"/);
   assert.match(html, /id="file-input"/);
   assert.match(html, /id="dashboard-layout"/);
-  assert.match(html, /<div class="dashboard-layout" id="dashboard-layout" hidden>/);
+  assert.match(html, /<div class="dashboard-layout" id="dashboard-layout">/);
   assert.match(html, /id="conversation-view"/);
-  assert.match(html, /<section class="conversation" id="conversation-view"[^>]*>/);
-  assert.match(html, /id="new-interface-button"[^>]*>New Interface</);
-  assert.match(html, /id="old-interface-button"[^>]*>Old Interface</);
+  assert.match(html, /<section class="conversation" id="conversation-view"[^>]*hidden/);
+  assert.doesNotMatch(html, /New Interface|Old Interface|interface-switcher/);
   assert.match(html, /id="dashboard-transcript"/);
   assert.match(html, /id="conversation-chat-state"[^>]*role="status"[^>]*aria-live="polite"[^>]*hidden/);
   assert.match(html, /id="conversation-chat-state-label"/);
@@ -241,10 +234,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /\.conversation-chat-state\[data-state="thinking"\]::before/);
   assert.match(styles, /\.conversation-chat-state\[data-state="error"\]/);
   assert.match(html, /class="right-rail"/);
-  assert.match(html, /class="assistant-greeting"/);
-  assert.match(html, /class="assistant-identity"/);
+  assert.doesNotMatch(html, /class="assistant-greeting"|class="assistant-identity"/);
   assert.match(html, /class="dashboard-panel state-panel"/);
-  assert.match(html, /id="state-panel-live"/);
   assert.match(html, /id="dashboard-voice-mic-button"/);
   assert.match(html, /id="dashboard-chat-title">Chat History/);
   assert.match(html, /id="system-title">Real-Time Info/);
@@ -336,7 +327,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?hud=58/);
+  assert.match(html, /app\.js\?avatar=60/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -379,13 +370,12 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /getDisplayMedia/);
   assert.match(client, /showHistory/);
   assert.match(client, /searchAttachedFiles/);
-  assert.match(client, /setWorkspaceView\('chat'\)/);
+  assert.doesNotMatch(client, /setWorkspaceView\(['"]chat['"]\)|interface-switcher/);
   assert.match(client, /toggleStudyMode/);
   assert.match(client, /loadSystemMetrics/);
-  assert.match(interfaceSwitcher, /LEGACY_PREFERENCE_KEYS = \['jarvis\.interface\.mode\.v6', 'jarvis\.interface\.mode\.v5', 'jarvis\.interface\.mode\.v4'\]/);
   assert.match(html, /id="install-button"/);
-  assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);\s*initializeDeviceMonitor\(\)/);
-  assert.match(client, /import\('\/avatar3d\.bundle\.js\?earth=4'\)/);
+  assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);[\s\S]*?initializeDeviceMonitor\(\)/);
+  assert.match(client, /import\('\/avatar3d\.bundle\.js\?avatar=5'\)/);
   assert.doesNotMatch(client, /\bsetAvatarMouth\b|audioLipSync|avatarSpeechTimer/);
   assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
   assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\('command', false, false, true\);\s*\}/);
@@ -433,7 +423,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /setDashboardChatState\('thinking'/);
   assert.match(client, /setAssistantState\('error'/);
   assert.match(client, /elements\.message\.addEventListener\('keydown',[\s\S]*?event\.key === 'Enter' && !event\.shiftKey && !event\.isComposing[\s\S]*?elements\.form\.requestSubmit\(\)/);
-  assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.png"/);
+  assert.match(html, /id="ai-avatar" src="\/reference-face\.jpg"/);
+  assert.match(html, /class="avatar-dev-settings"/);
   assert.match(html, /class="avatar-model-controls"/);
   assert.match(html, /id="avatar-canvas"/);
   assert.doesNotMatch(html, /lip-sync/i);
@@ -464,7 +455,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /<canvas class="avatar-canvas" id="avatar-canvas"[^>]*><\/canvas>\s*<div class="holo-emitter"/);
   assert.match(html, /<div class="avatar-frame portrait-cutout-frame"[^>]*>\s*<div class="portrait-artwork">\s*<img class="ai-avatar/);
-  assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.png"/);
+  assert.match(html, /id="ai-avatar" src="\/reference-face\.jpg"/);
   assert.doesNotMatch(html, /ai-avatar\.jpg/);
   assert.match(html, /id="load-custom-avatar"/);
   assert.match(html, /id="avatar-model-file"[^>]*accept="\.vrm,\.glb/);
@@ -472,8 +463,6 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /id="avatar-canvas"[^>]*hidden/);
   assert.match(html, /News &amp; Briefing/);
   assert.match(html, /data-nav="news" data-requires-full-access/);
-  assert.match(interfaceSwitcher, /dashboard\.hidden = view !== 'dashboard'/);
-  assert.match(interfaceSwitcher, /conversation\.hidden = view !== 'chat'/);
   assert.match(html, /id="install-help"/);
   assert.match(client, /beforeinstallprompt/);
   assert.match(client, /appinstalled/);
@@ -506,17 +495,21 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.ai-avatar \{[^}]*object-fit: cover;[^}]*filter: none;/);
   assert.match(styles, /body\.new-interface \.holo-waveform\.is-active i/);
   assert.match(styles, /body\.new-interface \.holo-emitter/);
+  assert.match(styles, /body\.new-interface \.state-panel \.holo-state-strip \{[^}]*grid-template-columns: repeat\(4, 58px\);[\s\S]*?justify-content: space-around;/);
+  assert.match(styles, /body\.new-interface \.state-panel \.holo-state \{[^}]*width: 58px;[\s\S]*?height: 58px;[\s\S]*?aspect-ratio: 1;[\s\S]*?border-radius: 50%;[\s\S]*?radial-gradient/);
   assert.match(styles, /\.holo-stage\.is-globe-active > \.avatar-canvas \{[^}]*z-index: 2;[\s\S]*?transform: none;/);
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.avatar-frame \.ai-avatar \{[^}]*object-fit: contain;[\s\S]*?-webkit-mask-image: none;[\s\S]*?mask-image: none;/);
   assert.match(html, /<span class="holo-platform" aria-hidden="true"><\/span>/);
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.avatar-frame \{[^}]*width: 90%;[\s\S]*?height: 70%;[\s\S]*?top: 34%;[\s\S]*?z-index: 5;/);
-  assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-platform \{[^}]*width: 92%;[\s\S]*?height: 32%;[\s\S]*?bottom: -3%;[\s\S]*?left: 4%;[\s\S]*?repeating-radial-gradient[\s\S]*?rotateX\(58deg\)/);
+  assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-platform \{[^}]*width: 74%;[\s\S]*?height: 13%;[\s\S]*?bottom: 1%;[\s\S]*?left: 13%;[\s\S]*?radial-gradient[\s\S]*?rotateX\(68deg\)/);
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-emitter::before \{[^}]*width: 32%;[\s\S]*?height: 220%;[\s\S]*?var\(--avatar-holo-secondary\) 96%/);
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \.holo-emitter::after \{[^}]*display: none;/);
   assert.match(styles, /@media \(max-width: 780px\)[\s\S]*?body\.new-interface \.holo-stage\.is-globe-active \{[^}]*width: min\(calc\(100vw - 28px\), 440px\)/);
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[\s\S]*?position: sticky/);
+  assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*width: min\(100%, 720px\);[\s\S]*?min-height: 58px;/);
+  assert.match(styles, /body\.new-interface \.dashboard-command > \.dashboard-command-mic \{[^}]*width: 48px;[\s\S]*?height: 48px;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?hud=55/);
+  assert.match(html, /styles\.css\?avatar=57/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -533,13 +526,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v70/);
-  assert.match(worker, /styles\.css\?hud=55/);
-  assert.match(worker, /jarvis-portrait\.png/);
-  assert.doesNotMatch(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?hud=55/);
+  assert.match(worker, /jarvis-shell-v76/);
+  assert.match(worker, /styles\.css\?avatar=57/);
+  assert.doesNotMatch(worker, /jarvis-portrait\.png/);
+  assert.match(worker, /reference-face\.jpg/);
+  assert.match(worker, /styles\.css\?avatar=57/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?hud=58/);
+  assert.match(worker, /app\.js\?avatar=60/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -557,9 +550,9 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.ok(worker.includes("requestUrl.pathname.startsWith('/api/')"));
   assert.match(worker, /share-link\.js/);
   assert.match(worker, /device-monitor\.js/);
-  assert.match(worker, /interface-switcher\.js/);
+  assert.doesNotMatch(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?hud=55/);
+  assert.match(client, /service-worker\.js\?avatar=57/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);
@@ -627,81 +620,16 @@ test('prevents horizontal page overflow for the mobile holographic Earth', async
   assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active \{\s*width: min\(calc\(100vw - 28px\), 440px\);\s*max-width: 100%;[\s\S]*?margin: 0 auto;/);
 });
 
-test('switches between the original chat and new dashboard in both directions', () => {
-  const dashboard = { hidden: true };
-  const conversation = { hidden: false };
-  const bodyClasses = new Set(['mobile-system-open']);
-  const body = {
-    classList: {
-      toggle(name, enabled) {
-        if (enabled) bodyClasses.add(name);
-        else bodyClasses.delete(name);
-      },
-      remove(...names) {
-        for (const name of names) bodyClasses.delete(name);
-      },
-    },
-  };
-  const navigationItems = ['chat', 'dashboard'].map((destination) => ({
-    dataset: { nav: destination },
-    classes: new Set(),
-    classList: {
-      toggle(name, enabled) {
-        const selected = this.owner.classes;
-        if (enabled) selected.add(name);
-        else selected.delete(name);
-      },
-      owner: null,
-    },
-  }));
-  for (const item of navigationItems) item.classList.owner = item;
+test('opens only the Master Dashboard regardless of stale interface preferences', async () => {
+  const html = await (await fetch(baseUrl)).text();
+  const client = await (await fetch(`${baseUrl}/app.js`)).text();
 
-  for (const [view, expectedDashboardHidden, expectedChatView] of [
-    ['dashboard', false, false],
-    ['chat', true, true],
-    ['dashboard', false, false],
-    ['chat', true, true],
-  ]) {
-    switchWorkspaceView(view, { dashboard, conversation, body, navigationItems });
-    assert.equal(dashboard.hidden, expectedDashboardHidden);
-    assert.equal(conversation.hidden, !expectedDashboardHidden);
-    assert.equal(bodyClasses.has('chat-view'), expectedChatView);
-    assert.equal(bodyClasses.has('new-interface'), !expectedChatView);
-    assert.equal(bodyClasses.has('mobile-system-open'), false);
-    assert.equal(navigationItems[0].classes.has('is-current'), expectedChatView);
-    assert.equal(navigationItems[1].classes.has('is-current'), !expectedDashboardHidden);
-  }
-});
-
-test('defaults to the original interface and remembers the selected interface', () => {
-  const values = new Map([['jarvis.interface.mode.v6', 'new']]);
-  const storage = {
-    getItem(key) { return values.get(key) ?? null; },
-    setItem(key, value) { values.set(key, value); },
-    removeItem(key) { values.delete(key); },
-  };
-
-  assert.equal(readWorkspaceView(storage), 'chat');
-  assert.equal(values.has('jarvis.interface.mode.v6'), false);
-  saveWorkspaceView('dashboard', storage);
-  assert.equal(readWorkspaceView(storage), 'dashboard');
-  saveWorkspaceView('chat', storage);
-  assert.equal(readWorkspaceView(storage), 'chat');
-  assert.equal(values.get('jarvis.interface.mode.v7'), 'old');
-});
-
-test('uses the dashboard as the first-time mobile view while preserving saved choices', () => {
-  const values = new Map();
-  const storage = {
-    getItem(key) { return values.get(key) ?? null; },
-    setItem(key, value) { values.set(key, value); },
-    removeItem(key) { values.delete(key); },
-  };
-
-  assert.equal(readWorkspaceView(storage, 'dashboard'), 'dashboard');
-  assert.equal(readWorkspaceView(storage, 'chat'), 'chat');
-  saveWorkspaceView('chat', storage);
-  assert.equal(readWorkspaceView(storage, 'dashboard'), 'chat');
+  assert.match(html, /<body class="new-interface">/);
+  assert.match(html, /<div class="dashboard-layout" id="dashboard-layout">/);
+  assert.match(html, /id="conversation-view"[^>]*hidden/);
+  assert.doesNotMatch(html, /interface-switcher|New Interface|Old Interface/);
+  assert.doesNotMatch(client, /jarvis\.interface\.mode|interface-switcher/);
+  assert.match(client, /workspaceView:\s*loadWorkspaceView\(\)/);
 });
 
 test('serves PWA metadata with the current dashboard theme', async () => {

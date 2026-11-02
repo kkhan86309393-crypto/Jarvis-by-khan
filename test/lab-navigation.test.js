@@ -1,79 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { switchWorkspaceView } from '../public/interface-switcher.js';
 
 const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 const appSource = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 
-function createViewState(startingView) {
-  const classes = new Set(startingView === 'dashboard' ? ['new-interface'] : ['chat-view']);
-  const body = {
-    classList: {
-      toggle(name, enabled) {
-        if (enabled) classes.add(name);
-        else classes.delete(name);
-      },
-      remove(...names) {
-        for (const name of names) classes.delete(name);
-      },
-    },
-  };
-  const dashboard = { hidden: startingView !== 'dashboard' };
-  const conversation = { hidden: startingView !== 'chat' };
-  const lab = { hidden: true };
-  const navigationItems = ['dashboard', 'chat', 'lab'].map((nav) => ({
-    dataset: { nav },
-    isCurrent: nav === startingView,
-    classList: {
-      toggle(name, enabled) {
-        if (name === 'is-current') this.owner.isCurrent = enabled;
-      },
-      owner: null,
-    },
-  }));
-  for (const item of navigationItems) item.classList.owner = item;
-
-  return {
-    body,
-    classes,
-    dashboard,
-    conversation,
-    lab,
-    navigationItems,
-  };
-}
-
-function switchView(state, view) {
-  switchWorkspaceView(view, {
-    dashboard: state.dashboard,
-    conversation: state.conversation,
-    lab: state.lab,
-    body: state.body,
-    navigationItems: state.navigationItems,
-  });
-}
-
-test('opens LAB from either JARVIS view and returns without changing the saved workspace view', () => {
-  for (const startingView of ['dashboard', 'chat']) {
-    const state = createViewState(startingView);
-
-    switchView(state, 'lab');
-    assert.equal(state.lab.hidden, false);
-    assert.equal(state.dashboard.hidden, true);
-    assert.equal(state.conversation.hidden, true);
-    assert.equal(state.classes.has('jarvis-lab-view'), true);
-    assert.equal(state.navigationItems.find(({ dataset }) => dataset.nav === 'lab').isCurrent, true);
-
-    switchView(state, startingView);
-    assert.equal(state.lab.hidden, true);
-    assert.equal(state.dashboard.hidden, startingView !== 'dashboard');
-    assert.equal(state.conversation.hidden, startingView !== 'chat');
-    assert.equal(state.classes.has('jarvis-lab-view'), false);
-    assert.equal(state.classes.has('new-interface'), startingView === 'dashboard');
-    assert.equal(state.classes.has('chat-view'), startingView === 'chat');
-  }
+test('keeps the Master Dashboard permanent and LAB separate from interface selection', () => {
+  assert.match(html, /<body class="new-interface">/);
+  assert.match(html, /id="dashboard-layout"/);
+  assert.match(html, /id="conversation-view"[^>]*hidden/);
+  assert.doesNotMatch(html, /New Interface|Old Interface|interface-switcher/);
+  assert.doesNotMatch(appSource, /setWorkspaceView\(['"]chat['"]\)|interface-switcher/);
 });
 
 test('provides bottom navigation launchers, a return control, and four interface-only modules', () => {

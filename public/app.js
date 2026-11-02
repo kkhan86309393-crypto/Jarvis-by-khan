@@ -1,4 +1,4 @@
-import { readWorkspaceView, saveWorkspaceView, switchWorkspaceView } from './interface-switcher.js';
+import { createMobileHome } from './mobile-home.js';
 import { detectDeviceProfile } from './device-monitor.js';
 import { getPublicShareUrl } from './share-link.js';
 import { initializeAppHubs } from './app-hub.js';
@@ -164,6 +164,8 @@ const elements = {
   holoStage: document.querySelector('#holo-stage'),
   avatarFrame: document.querySelector('.avatar-frame'),
   avatarCanvas: document.querySelector('#avatar-canvas'),
+  hologramToggle: document.querySelector('#toggle-hologram'),
+  hologramQuality: document.querySelector('#hologram-quality'),
   avatarImage: document.querySelector('#ai-avatar'),
   avatarActivateButton: document.querySelector('#activate-3d-avatar'),
   earthActivateButton: document.querySelector('#activate-holographic-earth'),
@@ -451,12 +453,7 @@ function loadPreferences() {
 }
 
 function loadWorkspaceView() {
-  try {
-    const defaultView = window.matchMedia?.('(max-width: 780px)').matches ? 'dashboard' : 'chat';
-    return readWorkspaceView(localStorage, defaultView);
-  } catch {
-    return 'chat';
-  }
+  return 'dashboard';
 }
 
 const state = {
@@ -539,6 +536,11 @@ const portraitAnimation = createPortraitAnimation({
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
 });
+window.jarvisAvatarAnimation = {
+  setSpeaking: (active) => portraitAnimation.setSpeaking(active),
+  setEyeMode: (mode) => portraitAnimation.setEyeMode(mode),
+};
+createMobileHome();
 elements.avatarImage.addEventListener(PORTRAIT_ANIMATION_EVENT, ({ detail }) => {
   elements.avatarFrame.dataset.blink = detail.blink;
   elements.avatarFrame.dataset.viseme = detail.viseme;
@@ -1101,6 +1103,18 @@ function updateHologramState() {
     : announcement === 'offline' ? 'J.A.R.V.I.S. is offline.'
       : `J.A.R.V.I.S. is ${announcement}.`;
   elements.statePanelLive.textContent = announcement.toUpperCase();
+  const mobileMode = state.assistantMode === 'listening' || state.assistantMode === 'thinking'
+    || state.assistantMode === 'speaking' ? state.assistantMode : (state.holoOnline ? 'idle' : 'idle');
+  window.dispatchEvent(new CustomEvent('jarvis:assistant-state', { detail: { mode: mobileMode } }));
+  const hologramState = ['idle', 'listening', 'thinking', 'speaking'].includes(mobileMode) ? mobileMode : 'idle';
+  avatar3dInstance?.setHologramState?.(hologramState, state.assistantMode === 'listening' || state.assistantMode === 'speaking' ? 0.55 : 0);
+  window.dispatchEvent(new CustomEvent('jarvis:hologram-state', {
+    detail: { state: hologramState, level: state.assistantMode === 'listening' || state.assistantMode === 'speaking' ? 0.55 : 0 },
+  }));
+  window.jarvisAvatarAnimation.setSpeaking(state.assistantMode === 'speaking');
+  window.jarvisAvatarAnimation.setEyeMode(
+    mobileMode === 'idle' ? 'idle' : mobileMode,
+  );
 }
 
 function updateProjectionButtons() {
@@ -1117,10 +1131,20 @@ function updateProjectionButtons() {
   elements.earthActivateButton.setAttribute('aria-pressed', String(avatar3dActiveMode === 'earth'));
 }
 
+async function loadReferenceFaceImage() {
+  if (typeof Image === 'undefined') return null;
+  return new Promise((resolve) => {
+    const referenceImage = new Image();
+    referenceImage.onload = () => resolve(referenceImage);
+    referenceImage.onerror = () => resolve(null);
+    referenceImage.src = '/reference-face.jpg';
+  });
+}
+
 async function getAvatar3dInstance() {
   let avatarModule;
   try {
-    avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?earth=4'));
+    avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?avatar=5'));
   } catch (error) {
     avatar3dModulePromise = null;
     throw error;
@@ -1131,8 +1155,10 @@ async function getAvatar3dInstance() {
     stage: elements.holoStage,
     canvas: elements.avatarCanvas,
     image: elements.avatarImage,
+    referenceImage: await loadReferenceFaceImage(),
     status: elements.avatarStatus,
   });
+  window.setHologramState = (hologramState, level01) => avatar3dInstance?.setHologramState?.(hologramState, level01);
   return avatar3dInstance;
 }
 
@@ -1216,6 +1242,11 @@ function activate3DAvatar() {
 
 function activateHolographicEarth() {
   return activate3DProjection('earth');
+}
+
+function ensurePortraitAvatarActive() {
+  if (avatar3dActiveMode === 'avatar' || avatar3dActivationPending) return;
+  void activate3DAvatar();
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
@@ -1735,6 +1766,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
     if (playbackStarted || playbackId !== state.speechPlaybackId) return;
     playbackStarted = true;
     portraitAnimation.startSpeech(playbackId);
+    window.dispatchEvent(new CustomEvent('jarvis:assistant-reply', { detail: { text: speechText } }));
     state.speechStartMonitorCancel?.();
     state.speechStartMonitorCancel = null;
     setAssistantState('speaking', 'VOICE OUTPUT');
@@ -3502,42 +3534,32 @@ function selectNavigation(destination) {
 }
 
 function setWorkspaceView(view, { remember = true } = {}) {
-  state.workspaceView = view;
-  switchWorkspaceView(view, {
-    dashboard: elements.dashboardLayout,
-    conversation: elements.conversationView,
-    lab: elements.labLayout,
-    body: document.body,
-    navigationItems: document.querySelectorAll('[data-nav]'),
+  state.workspaceView = 'dashboard';
+  elements.dashboardLayout.hidden = false;
+  elements.conversationView.hidden = true;
+  if (elements.labLayout) elements.labLayout.hidden = true;
+  document.body.classList.add('new-interface');
+  document.body.classList.remove('chat-view', 'jarvis-lab-view');
+  document.querySelectorAll('[data-nav]').forEach((item) => {
+    item.classList.toggle('is-current', item.dataset.nav === 'dashboard');
   });
-  document.querySelector('#new-interface-button').setAttribute('aria-pressed', String(view === 'dashboard'));
-  document.querySelector('#old-interface-button').setAttribute('aria-pressed', String(view === 'chat'));
-  if (remember) {
-    try {
-      saveWorkspaceView(view, localStorage);
-    } catch {
-      showFeedback('Your interface choice could not be saved in this browser.');
-    }
-  }
 }
 
 function openJarvisLab() {
-  switchWorkspaceView('lab', {
-    dashboard: elements.dashboardLayout,
-    conversation: elements.conversationView,
-    lab: elements.labLayout,
-    body: document.body,
-    navigationItems: document.querySelectorAll('[data-nav]'),
+  elements.dashboardLayout.hidden = true;
+  elements.conversationView.hidden = true;
+  elements.labLayout.hidden = false;
+  document.body.classList.add('jarvis-lab-view');
+  document.body.classList.remove('chat-view');
+  document.querySelectorAll('[data-nav]').forEach((item) => {
+    item.classList.toggle('is-current', item.dataset.nav === 'lab');
   });
-  document.querySelector('#new-interface-button').setAttribute('aria-pressed', 'false');
-  document.querySelector('#old-interface-button').setAttribute('aria-pressed', 'false');
   document.querySelector('#jarvis-lab-title').focus();
 }
 
 function returnToJarvisWorkspace() {
   setWorkspaceView(state.workspaceView, { remember: false });
   if (state.workspaceView === 'dashboard') elements.dashboardMessage.focus();
-  else elements.message.focus();
 }
 
 function showHistory() {
@@ -3563,7 +3585,7 @@ function showHistory() {
     number.textContent = String(index + 1).padStart(2, '0');
     row.append(number, role, text);
     row.addEventListener('click', () => {
-      setWorkspaceView('chat');
+      setWorkspaceView('dashboard');
       elements.historyDialog.close();
     });
     elements.historyList.append(row);
@@ -3608,7 +3630,7 @@ function toggleStudyMode() {
   elements.leftModeStatus.textContent = state.preferences.studyMode ? 'STUDY' : 'STANDARD';
   savePreferences();
   logActivity(state.preferences.studyMode ? 'Study Mode enabled' : 'Study Mode disabled');
-  setWorkspaceView('chat');
+  setWorkspaceView('dashboard');
   elements.message.placeholder = state.preferences.studyMode ? 'Ask a question to learn step by step...' : 'Ask J.A.R.V.I.S. anything...';
   elements.dashboardMessage.placeholder = state.preferences.studyMode ? 'Ask a study question...' : 'Ask J.A.R.V.I.S.';
   elements.message.focus();
@@ -3972,15 +3994,11 @@ function handleNavigation(event) {
   } else if (destination === 'dashboard') {
     setWorkspaceView('dashboard');
   } else if (destination === 'chat') {
-    if (state.workspaceView === 'dashboard' && elements.labLayout.hidden) {
-      elements.dashboardMessage.focus();
-      elements.dashboardChatPanel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      setWorkspaceView('chat');
-      elements.message.focus();
-    }
+    setWorkspaceView('dashboard');
+    elements.dashboardMessage.focus();
+    elements.dashboardChatPanel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } else if (destination === 'voice') {
-    if (state.workspaceView !== 'dashboard' || !elements.labLayout.hidden) setWorkspaceView('chat');
+    setWorkspaceView('dashboard');
     startListeningFromUserGesture();
   } else if (destination === 'more') {
     elements.moreNavigationDialog.showModal();
@@ -4151,10 +4169,18 @@ elements.shareLinkButton.addEventListener('click', async () => {
     elements.shareStatus.textContent = error.message;
   }
 });
-document.querySelector('#new-interface-button').addEventListener('click', () => setWorkspaceView('dashboard'));
-document.querySelector('#old-interface-button').addEventListener('click', () => setWorkspaceView('chat'));
 elements.avatarActivateButton.addEventListener('click', activate3DAvatar);
 elements.earthActivateButton.addEventListener('click', activateHolographicEarth);
+elements.hologramToggle?.addEventListener('click', () => {
+  const enabled = elements.hologramToggle.getAttribute('aria-pressed') !== 'true';
+  elements.hologramToggle.setAttribute('aria-pressed', String(enabled));
+  elements.hologramToggle.textContent = enabled ? 'Hologram On' : 'Hologram Off';
+  avatar3dInstance?.setHologramMode?.(enabled);
+  if (enabled) void avatar3dInstance?.enableDeviceOrientation?.();
+});
+elements.hologramQuality?.addEventListener('change', () => {
+  avatar3dInstance?.setHologramQuality?.(elements.hologramQuality.value);
+});
 elements.customAvatarButton.addEventListener('click', () => elements.customAvatarFile.click());
 elements.customAvatarFile.addEventListener('change', () => {
   const [file] = elements.customAvatarFile.files || [];
@@ -4308,7 +4334,7 @@ elements.dashboardMessage.addEventListener('keydown', (event) => {
 elements.fileSearchQuery.addEventListener('input', searchAttachedFiles);
 document.querySelector('#history-open-chat').addEventListener('click', () => {
   elements.historyDialog.close();
-  setWorkspaceView('chat');
+  setWorkspaceView('dashboard');
   elements.message.focus();
 });
 document.querySelectorAll('[data-quick-action="capture"]').forEach((button) => button.addEventListener('click', () => {
@@ -4629,7 +4655,7 @@ elements.fullAccessMobile.addEventListener('change', () => {
 });
 document.querySelectorAll('[data-quick-action]').forEach((button) => button.addEventListener('click', () => {
   if (button.dataset.quickAction === 'chat') {
-    setWorkspaceView('chat');
+    setWorkspaceView('dashboard');
     elements.message.focus();
     return;
   }
@@ -4642,7 +4668,7 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => button.addE
     startListeningFromUserGesture();
   }
   if (button.dataset.quickAction === 'search') {
-    setWorkspaceView('chat');
+    setWorkspaceView('dashboard');
     state.searchMode = true;
     updateSearchMode();
     elements.message.focus();
@@ -4894,6 +4920,7 @@ initializeAppHubs({
 });
 updateSearchMode();
 setWorkspaceView(state.workspaceView, { remember: false });
+if (state.workspaceView === 'dashboard') ensurePortraitAvatarActive();
 initializeDeviceMonitor();
 updateLocalDateTime();
 window.setInterval(() => {
@@ -4906,7 +4933,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?hud=55', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?avatar=57', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
   }).catch(() => {});
 }

@@ -254,6 +254,36 @@ test('maps the bundled reference photo onto a lightweight, lit face texture', ()
   }
 });
 
+test('builds the reference Avatar from one original-aspect portrait plane', () => {
+  const previousDocument = globalThis.document;
+  globalThis.document = {
+    createElement() {
+      return {
+        width: 0,
+        height: 0,
+        getContext() {
+          return { drawImage() {} };
+        },
+      };
+    },
+  };
+  try {
+    const image = { width: 1536, height: 1536, naturalWidth: 1536, naturalHeight: 1536 };
+    const { root, rig } = createBuiltInAvatar(image);
+    assert.equal(root.name, 'jarvis-master-reference-avatar');
+    assert.equal(root.getObjectByName('reference-portrait-plane') !== undefined, true);
+    assert.equal(root.getObjectByName('shoulders'), undefined);
+    assert.equal(root.getObjectByName('neck'), undefined);
+    assert.equal(root.getObjectByName('face'), undefined);
+    const portrait = root.getObjectByName('reference-portrait-plane');
+    assert.deepEqual(portrait.geometry.parameters, { width: 1.08, height: 1.08, widthSegments: 1, heightSegments: 1 });
+    assert.equal(rig.referencePortrait, portrait);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
+
 test('creates a built-in holographic avatar with facial controls and animation', () => {
   const { root, rig } = createBuiltInAvatar();
   assert.equal(root.name, 'jarvis-holographic-avatar');
@@ -261,9 +291,9 @@ test('creates a built-in holographic avatar with facial controls and animation',
     assert.ok(root.getObjectByName(name), `expected built-in avatar part ${name}`);
   }
   assert.equal(root.getObjectByName('face').material.map.image.width, 128);
-  assert.equal(root.getObjectByName('hair-cap').material.color.getHex(), 0x211711);
+  assert.equal(root.getObjectByName('hair-cap').material.color.getHex(), 0x2b1b14);
   assert.equal(root.getObjectByName('eyelid-1').material.color.getHex(), 0xd8ad98);
-  assert.equal(root.getObjectByName('iris-1').children[0].material.color.getHex(), 0x70472e);
+  assert.equal(root.getObjectByName('iris-1').children[0].material.color.getHex(), 0x4f6650);
   for (const name of ['nose-bridge', 'nose-tip', 'nose-wing--1', 'nose-wing-1', 'sclera--1', 'sclera-1', 'eye-reflection--1', 'eye-reflection-1', 'upper-lip', 'lower-lip']) {
     assert.ok(root.getObjectByName(name), `expected refined facial detail ${name}`);
   }
@@ -629,6 +659,7 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
       remove(name) { classes.delete(name); },
     },
   };
+  const referenceImage = { width: 1536, height: 1536, naturalWidth: 1536, naturalHeight: 1536 };
   const status = { textContent: '', dataset: {} };
 
   globalThis.window = {
@@ -641,7 +672,19 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
     },
     addEventListener() {},
   };
-  globalThis.document = { visibilityState: 'visible', addEventListener() {} };
+  globalThis.document = {
+    visibilityState: 'visible',
+    addEventListener() {},
+    createElement() {
+      return {
+        width: 0,
+        height: 0,
+        getContext() {
+          return { drawImage() {}, save() {}, translate() {}, scale() {}, restore() {} };
+        },
+      };
+    },
+  };
   globalThis.ResizeObserver = class {
     observe() {}
     disconnect() {}
@@ -659,6 +702,7 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
       frame,
       canvas,
       image,
+      referenceImage,
       mouthOverlay: { hidden: false },
       fileInput: null,
       modelButton: null,
@@ -680,7 +724,7 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
     assert.equal(renderCount, 1);
     const globeRoot = renderedScene.getObjectByName('jarvis-holographic-earth');
     assert.ok(globeRoot, 'the Earth and orbital effects should share one transformed root');
-    assert.equal(globeRoot.scale.x, 1.5, 'the Earth should fill more of the projection while remaining behind the portrait');
+    assert.equal(globeRoot.scale.x, 1.72, 'the Earth should fill more of the projection while remaining behind the portrait');
     assert.deepEqual(globeRoot.position.toArray(), [0, 0, 0], 'the Earth should align horizontally and vertically with the portrait');
     const halfVisibleAngle = Math.atan(
       Math.tan(THREE.MathUtils.degToRad(renderedCamera.fov / 2))

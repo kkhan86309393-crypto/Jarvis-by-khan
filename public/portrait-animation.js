@@ -14,12 +14,13 @@ export function createPortraitAnimation({
   let blink = 'open';
   let viseme = 'neutral';
   let speaking = false;
+  let eyeMode = 'idle';
   let activePlaybackId = null;
   let destroyed = false;
   const blinkTimers = new Set();
 
   function emit() {
-    if (!destroyed) onChange({ blink, viseme, speaking });
+    if (!destroyed)     onChange({ blink, viseme, speaking, eyeMode });
   }
 
   function scheduleBlink(callback, delay) {
@@ -97,6 +98,19 @@ export function createPortraitAnimation({
   }
 
   return {
+    setSpeaking(active) {
+      if (destroyed) return false;
+      speaking = Boolean(active);
+      if (!speaking) viseme = 'neutral';
+      emit();
+      return true;
+    },
+    setEyeMode(nextMode = 'idle') {
+      if (destroyed) return false;
+      eyeMode = ['idle', 'thinking', 'listening'].includes(nextMode) ? nextMode : 'idle';
+      emit();
+      return true;
+    },
     startSpeech(playbackId) {
       if (destroyed || playbackId === null || playbackId === undefined) return false;
       activePlaybackId = playbackId;

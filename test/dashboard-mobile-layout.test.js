@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const styles = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 
 function readCssRules(source) {
   const rules = [];
@@ -49,24 +50,19 @@ function readDeclarations(rules) {
 
 const rules = readCssRules(styles);
 
-test('mobile command bar cascade stays sticky above navigation with page clearance', () => {
+test('mobile Home scrolls and keeps the command bar above navigation', () => {
   const commandRules = rules.filter((rule) => rule.selector === 'body.new-interface .dashboard-commandbar');
-  const stickyRules = commandRules.filter((rule) => readDeclarations([rule]).get('position') === 'sticky');
-  assert.equal(stickyRules.length, 1, 'there should be one consolidated sticky rule');
-  assert.ok(stickyRules[0].media.some((media) => /max-width:\s*780px/.test(media)));
-
   const mobileRules = commandRules.filter((rule) =>
     rule.media.length === 0 || rule.media.every((media) => /max-width:\s*780px/.test(media)),
   );
   const mobileCascade = readDeclarations(mobileRules);
-  assert.equal(mobileCascade.get('position'), 'sticky');
-  assert.equal(mobileCascade.get('bottom'), 'calc(66px + env(safe-area-inset-bottom))');
+  assert.equal(mobileCascade.get('position'), 'fixed');
+  assert.match(mobileCascade.get('bottom'), /60px/);
   assert.equal(mobileCascade.get('z-index'), '8');
 
   const desktopRules = commandRules.filter((rule) => rule.media.length === 0);
   const desktopCascade = readDeclarations(desktopRules);
-  assert.equal(desktopCascade.has('position'), false, 'desktop should retain normal-flow positioning');
-  assert.equal(desktopCascade.has('z-index'), false, 'desktop should retain the default stacking level');
+  assert.doesNotMatch(styles.slice(0, styles.indexOf('@media (max-width: 780px)')), /body\.new-interface \.dashboard-commandbar\s*\{[^}]*position:\s*(sticky|fixed)/);
 
   const mobileNavigation = rules.filter((rule) => rule.selector === '.mobile-nav');
   const fixedNavigation = readDeclarations(mobileNavigation);
@@ -82,11 +78,40 @@ test('mobile command bar cascade stays sticky above navigation with page clearan
     rule.selector === 'body.new-interface .main-frame'
     && (rule.media.length === 0 || rule.media.every((media) => /max-width:\s*780px/.test(media))),
   );
-  assert.equal(
-    readDeclarations(mobileMainFrame).get('padding'),
-    '7px 0 calc(72px + env(safe-area-inset-bottom))',
+  assert.match(
+    readDeclarations(mobileMainFrame).get('padding') || '',
+    /132px/,
     'dashboard scroll area should clear the fixed navigation',
   );
+});
+
+test('mobile Home keeps cards reachable and portrait visible', () => {
+  const mobileRules = rules.filter((rule) => rule.media.some((media) => /max-width:\s*780px/.test(media)));
+  assert.doesNotMatch(styles, /body\.new-interface,\s*body\.new-interface \.app-shell\s*\{[^}]*height:\s*100dvh;\s*overflow:\s*hidden;/);
+  assert.match(styles, /grid-template-rows:\s*auto\s+auto\s+auto\s+auto/);
+  const hiddenHero = readDeclarations(mobileRules.filter((rule) => rule.selector.includes('.avatar-model-controls')));
+  assert.match(hiddenHero.get('display'), /^none(?: !important)?$/);
+  assert.doesNotMatch(styles, /body\.new-interface \.right-rail\s*\{[^}]*display:\s*none;/);
+  assert.doesNotMatch(styles, /body\.new-interface \.holo-stage\.is-avatar-active \.avatar-frame\s*\{\s*opacity:\s*0;/);
+  assert.ok(styles.includes('@media (max-width: 359px)'));
+  assert.match(styles, /-webkit-line-clamp:\s*2/);
+  assert.match(styles, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(styles, /overflow-x:\s*clip/);
+  assert.match(styles, /width:\s*78%;[\s\S]*height:\s*88%;[\s\S]*opacity:\s*1;/);
+  for (const selector of [
+    'id="system-panel"',
+    'aria-labelledby="quick-title"',
+    'id="briefing-title"',
+    'id="upload-title"',
+    'data-app-hub',
+    'aria-labelledby="ai-status-title"',
+    'id="activity-panel"',
+    'id="dashboard-message"',
+    'id="ai-avatar"',
+  ]) {
+    assert.match(html, new RegExp(selector), `mobile Home should contain ${selector}`);
+  }
+  assert.match(html, /placeholder="Ask J\.A\.R\.V\.I\.S\."/);
 });
 
 test('mobile chat and settings controls reflow within narrow touch viewports', () => {
