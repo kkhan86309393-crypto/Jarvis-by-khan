@@ -69,6 +69,8 @@ Technical cards, including Real-Time Info, Server RAM, Server Storage, Quick Act
 5. Preserve `public/reference-face.jpg`, all voice/chat functionality, every dashboard card, every bottom-navigation option, and existing vertical scrolling.
 6. For mobile visual work, test 360x780, 390x844 and 430x932 with Playwright. Compare real screenshots; passing CSS tests alone is not sufficient.
 7. Run tests, build and diff validation before every commit.
+8. To add a collaborator with another GitHub identity, the repository owner must open GitHub repository settings, choose Collaborators, enter the collaborator GitHub username, and accept/approve the invitation themselves. Do not invite or change repository ownership without explicit owner approval. Clone setup:
+   `git clone https://github.com/kkhan86309393-crypto/Jarvis-by-khan.git`, then run `cd Jarvis-by-khan && npm install && npm start`.
 
 ## Non-negotiable guardrails
 
