@@ -53,7 +53,11 @@ Technical cards, including Real-Time Info, Server RAM, Server Storage, Quick Act
 ## Release state
 
 - Service worker cache: `jarvis-shell-v86`
-- Last known project commit before this handoff backup: `c1121a9`
+- Final audit baseline restored: `087c0b4`
+- Automated Node regression suite: 275 tests passing
+- Avatar build and repository syntax checks: passing
+- Runtime layout smoke checks: 360x780, 390x844, 430x932 and 1440x1000 all have no horizontal overflow; mobile page height remains scrollable
+- Playwright screenshot capture: headless Chromium renderer crashes in this environment with and without the avatar WebGL bundle, so screenshot/video verification remains incomplete for hardware-independent automation
 - Run `npm test`, `npm run build`, and `git diff --check` before pushing or deploying further changes.
 
 ## Next collaborator instructions
