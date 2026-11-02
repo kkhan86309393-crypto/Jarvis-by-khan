@@ -76,7 +76,7 @@ test('installs the lightweight app shell without avatar assets', async () => {
   await installation;
   assert.equal(worker.skipWaitingCalled, true);
   assert.ok(worker.storedResponses.has('https://jarvis.test/'));
-  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?avatar=57'));
+  assert.ok(worker.storedResponses.has('https://jarvis.test/styles.css?avatar=58'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/reference-face.jpg'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/jarvis-portrait.webp'));
   assert.ok(worker.storedResponses.has('https://jarvis.test/avatar3d.bundle.js?avatar=5'));
@@ -110,7 +110,7 @@ test('reports the active shell cache version only to an explicit diagnostics req
     data: { type: 'JARVIS_DIAGNOSTICS' },
     ports: [{ postMessage: (message) => { version = message.cacheVersion; } }],
   });
-  assert.equal(version, 'jarvis-shell-v84');
+  assert.equal(version, 'jarvis-shell-v86');
 
   let ignored = false;
   worker.listeners.get('message')({

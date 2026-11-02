@@ -1786,7 +1786,6 @@ body.new-interface .new-feature-bar { display: none; }
     grid-template-columns: 150px minmax(0, 1fr);
     gap: 12px;
   }
-
   body.new-interface .dashboard-layout {
     grid-template-columns: minmax(0, 1fr) minmax(235px, 32%);
     grid-template-rows: minmax(440px, 1fr) auto auto;
@@ -4822,6 +4821,28 @@ body.new-interface .right-rail .planner-panel { order: 10; }
     max-height: none;
     overflow: visible;
     gap: 12px;
+  }
+  body.new-interface .presence { min-height: 0; }
+  body.new-interface .avatar-hero { width: 100%; }
+  body.new-interface .avatar-hero {
+    height: min(calc(100vw - 12px), 390px) !important;
+    min-height: min(calc(100vw - 12px), 390px) !important;
+  }
+  body.new-interface .holo-stage,
+  body.new-interface .holo-stage.is-globe-active {
+    width: min(calc(100vw - 12px), 390px) !important;
+    height: min(calc(100vw - 12px), 390px) !important;
+    aspect-ratio: 1;
+    max-height: none !important;
+  }
+  body.new-interface .holo-stage.is-globe-active > .avatar-canvas {
+    width: 104% !important;
+    height: 104% !important;
+  }
+  body.new-interface .holo-stage.is-globe-active .avatar-frame {
+    width: 68% !important;
+    height: 76% !important;
+    top: 58%;
   }
   body.new-interface .right-rail > * {
     display: block;

@@ -290,7 +290,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /document\.querySelector\('\.avatar-hero'\)\.addEventListener\('click', handleDashboardFeature\)/);
   assert.match(client, /async function loadBriefing\(\)/);
   assert.match(client, /briefingButton\.addEventListener\('click', loadBriefing\)/);
-  assert.match(client, /destination === 'news'[\s\S]*?mobile-news-open[\s\S]*?loadBriefing\(\)/);
+  assert.match(client, /destination === 'news'[\s\S]*?loadBriefing\(\)/);
+  assert.doesNotMatch(client, /mobile-(news|system|activity)-open/);
   assert.match(html, /class="feature-toolbar"/);
   const featureToolbar = html.match(/<nav class="feature-toolbar"[\s\S]*?<\/nav>/)?.[0] || '';
   assert.equal([...featureToolbar.matchAll(/<svg\b/g)].length, 7);
@@ -509,7 +510,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*width: min\(100%, 720px\);[\s\S]*?min-height: 58px;/);
   assert.match(styles, /body\.new-interface \.dashboard-command > \.dashboard-command-mic \{[^}]*width: 48px;[\s\S]*?height: 48px;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?avatar=57/);
+  assert.match(html, /styles\.css\?avatar=58/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -526,11 +527,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v84/);
-  assert.match(worker, /styles\.css\?avatar=57/);
+  assert.match(worker, /jarvis-shell-v86/);
+  assert.match(worker, /styles\.css\?avatar=58/);
   assert.doesNotMatch(worker, /jarvis-portrait\.png/);
   assert.match(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?avatar=57/);
+  assert.match(worker, /styles\.css\?avatar=58/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
   assert.match(worker, /app\.js\?avatar=60/);
   assert.match(worker, /local-planner\.js/);
@@ -552,7 +553,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.doesNotMatch(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?avatar=57/);
+  assert.match(client, /service-worker\.js\?avatar=58/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);
