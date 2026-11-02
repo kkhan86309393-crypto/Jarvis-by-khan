@@ -7,7 +7,7 @@ export const PORTRAIT_OVERLAY_CONFIG = Object.freeze({
   reference: {
     eyes: { y: 0.264, leftX: 0.435, rightX: 0.565 },
     mouth: { x: 0.5, y: 0.438 },
-    chin: { y: 0.58 },
+    chin: { y: 0.52 },
   },
   cutout: {
     eyes: { y: 0.285, leftX: 0.436, rightX: 0.585, width: 0.095, height: 0.030 },
