@@ -115,7 +115,7 @@ export function createMobileHome({
       level = samples.reduce((total, sample) => total + Math.abs(sample - 128), 0) / samples.length / 128;
     } else if (mode === 'speaking') level = 0.18 + Math.random() * 0.35;
     bars.forEach((bar, index) => {
-      const wave = mode === 'idle' ? 0.05 : Math.min(1, level + Math.abs(Math.sin(Date.now() / 180 + index * 0.55)) * level * 0.35);
+      const wave = mode === 'idle' ? 0.35 : Math.min(1, level + Math.abs(Math.sin(Date.now() / 180 + index * 0.55)) * level * 0.35);
       bar.style.transform = `scaleY(${Math.max(0.08, wave).toFixed(2)})`;
     });
     animationFrame = window.requestAnimationFrame(animateWaveform);

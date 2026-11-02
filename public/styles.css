@@ -4972,8 +4972,6 @@ body.new-interface .portrait-cutout-image {
   filter:
     saturate(1.04)
     brightness(.98)
-    sepia(.04)
-    hue-rotate(145deg)
     drop-shadow(0 0 8px rgba(var(--assistant-state-rgb), .66));
   -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 78%, transparent 100%);
@@ -4986,9 +4984,9 @@ body.new-interface .portrait-scanline {
   width: 100%;
   top: 0;
   left: 0;
-  height: 18%;
+  height: 4px;
   border-top: 1px solid rgba(var(--assistant-state-rgb), .38);
-  background: linear-gradient(180deg, rgba(var(--assistant-state-rgb), 0), rgba(var(--assistant-state-rgb), .14));
+  background: linear-gradient(180deg, transparent, rgba(var(--assistant-state-rgb), .06));
   box-shadow: none;
   mix-blend-mode: screen;
   animation: scan-portrait 5s linear infinite;
@@ -5252,5 +5250,150 @@ body.new-interface .holo-waveform {
     width: 100%;
     height: auto;
     position: relative;
+  }
+
+  /* Mobile Home hero polish: compact, square, transparent hologram stack. */
+  body.new-interface .presence {
+    height: auto;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  body.new-interface .avatar-hero {
+    width: 100%;
+    height: clamp(272px, 77vw, 300px);
+    min-height: 0;
+  }
+  body.new-interface .holo-stage,
+  body.new-interface .holo-stage:not(.is-globe-active) {
+    width: clamp(272px, 77vw, 300px);
+    height: clamp(272px, 77vw, 300px);
+    max-width: 100%;
+  }
+  body.new-interface .holo-sphere-shell,
+  body.new-interface .holo-sphere-shell:not(.is-globe-active) {
+    inset: 7%;
+    width: 86%;
+    height: 86%;
+    background:
+      radial-gradient(circle at 50% 48%, rgba(7, 28, 52, .12) 0 48%, rgba(var(--assistant-state-rgb), .08) 66%, rgba(var(--assistant-state-rgb), .30) 82%, rgba(var(--assistant-state-rgb), .62) 96%, rgba(var(--assistant-state-rgb), .08) 100%);
+    box-shadow:
+      inset 0 0 22px rgba(var(--assistant-state-rgb), .30),
+      inset 8px 0 15px rgba(var(--assistant-state-rgb), .08),
+      0 0 28px rgba(var(--assistant-state-rgb), .24);
+  }
+  body.new-interface .holo-sphere-shell::before {
+    background:
+      repeating-radial-gradient(ellipse at 50% 50%, transparent 0 20%, rgba(var(--assistant-state-rgb), .09) 20.5%, transparent 21%),
+      repeating-linear-gradient(90deg, transparent 0 23%, rgba(var(--assistant-state-rgb), .075) 23.5%, transparent 24%);
+    opacity: .66;
+  }
+  body.new-interface .holo-sphere-shell::after {
+    width: 18px;
+    height: 10px;
+    top: 7%;
+    left: 18%;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(220, 250, 255, .82);
+    box-shadow: 0 0 12px rgba(var(--assistant-state-rgb), .72);
+    filter: blur(.3px);
+    transform: rotate(-32deg);
+  }
+  body.new-interface .portrait-cutout-frame {
+    width: 60% !important;
+    height: 73% !important;
+    top: 42%;
+    z-index: 5;
+    background: transparent;
+  }
+  body.new-interface .portrait-cutout-frame .portrait-artwork::after {
+    display: none;
+  }
+  body.new-interface .portrait-artwork {
+    height: auto;
+    min-height: 0;
+  }
+  body.new-interface .portrait-cutout-image {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    filter: saturate(1.02) brightness(.99) contrast(1.02)
+      drop-shadow(0 0 8px rgba(var(--assistant-state-rgb), .58));
+  }
+  body.new-interface .holo-platform,
+  body.new-interface .holo-stage.is-avatar-active .holo-platform,
+  body.new-interface .holo-stage.is-globe-active .holo-platform {
+    width: 68%;
+    height: 9%;
+    left: 16%;
+    bottom: 3%;
+    display: block !important;
+    border: 1px solid rgba(var(--assistant-state-rgb), .72);
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(var(--assistant-state-rgb), .24), rgba(var(--assistant-state-rgb), .06) 48%, transparent 70%);
+    box-shadow: 0 0 18px rgba(var(--assistant-state-rgb), .58), inset 0 0 12px rgba(var(--assistant-state-rgb), .26);
+  }
+  body.new-interface .holo-platform::before,
+  body.new-interface .holo-platform::after {
+    width: 78%;
+    height: 42%;
+    left: 11%;
+    top: 29%;
+    border: 1px solid rgba(var(--assistant-state-rgb), .72);
+    border-radius: 50%;
+  }
+  body.new-interface .holo-emitter,
+  body.new-interface .holo-stage.is-avatar-active .holo-emitter,
+  body.new-interface .holo-stage.is-globe-active .holo-emitter {
+    inset: auto 8% 11%;
+    width: 84%;
+    height: 23%;
+    display: block !important;
+    opacity: .55;
+  }
+  body.new-interface .holo-emitter::before {
+    height: 150%;
+  }
+  body.new-interface .mobile-avatar-name {
+    bottom: 4%;
+    z-index: 13;
+  }
+  body.new-interface .mobile-assistant-bubble {
+    width: min(55%, 174px);
+    max-width: 55%;
+    right: 4%;
+    top: 9%;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  body.new-interface .mobile-data-panels span {
+    font-size: 5px;
+    letter-spacing: .4px;
+  }
+  body.new-interface .holo-waveform {
+    width: min(58%, 220px);
+    height: 28px;
+    min-height: 28px;
+    margin-top: -2px;
+    margin-bottom: 0;
+    align-items: center;
+    gap: 3px;
+  }
+  body.new-interface .holo-waveform i {
+    width: 3px;
+    height: 18px;
+    background: currentColor;
+    box-shadow: 0 0 6px currentColor;
+    opacity: .78;
+    transform-origin: center;
+  }
+  body.new-interface .dashboard-layout {
+    gap: 0;
+  }
+  body.new-interface .state-panel {
+    height: 60px;
+    min-height: 60px;
+    margin-top: 0;
+    z-index: 20;
   }
 }
