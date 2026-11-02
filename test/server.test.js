@@ -165,7 +165,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.equal(new Set(documentIds).size, documentIds.length, 'HTML IDs must be unique');
   assert.match(html, /class="presence"/);
   assert.match(html, /id="holo-stage"/);
-  assert.match(html, /id="ai-avatar" src="\/reference-face\.jpg"/);
+  assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.webp"/);
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar"/);
   assert.doesNotMatch(html, /ai-avatar\.jpg/);
@@ -423,7 +423,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /setDashboardChatState\('thinking'/);
   assert.match(client, /setAssistantState\('error'/);
   assert.match(client, /elements\.message\.addEventListener\('keydown',[\s\S]*?event\.key === 'Enter' && !event\.shiftKey && !event\.isComposing[\s\S]*?elements\.form\.requestSubmit\(\)/);
-  assert.match(html, /id="ai-avatar" src="\/reference-face\.jpg"/);
+  assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.webp"/);
   assert.match(html, /class="avatar-dev-settings"/);
   assert.match(html, /class="avatar-model-controls"/);
   assert.match(html, /id="avatar-canvas"/);
@@ -455,7 +455,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="avatar-frame portrait-cutout-frame"/);
   assert.match(html, /<canvas class="avatar-canvas" id="avatar-canvas"[^>]*><\/canvas>\s*<div class="holo-emitter"/);
   assert.match(html, /<div class="avatar-frame portrait-cutout-frame"[^>]*>\s*<div class="portrait-artwork">\s*<img class="ai-avatar/);
-  assert.match(html, /id="ai-avatar" src="\/reference-face\.jpg"/);
+  assert.match(html, /id="ai-avatar" src="\/jarvis-portrait\.webp"/);
   assert.doesNotMatch(html, /ai-avatar\.jpg/);
   assert.match(html, /id="load-custom-avatar"/);
   assert.match(html, /id="avatar-model-file"[^>]*accept="\.vrm,\.glb/);
@@ -526,7 +526,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v77/);
+  assert.match(worker, /jarvis-shell-v78/);
   assert.match(worker, /styles\.css\?avatar=57/);
   assert.doesNotMatch(worker, /jarvis-portrait\.png/);
   assert.match(worker, /reference-face\.jpg/);

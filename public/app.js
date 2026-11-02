@@ -39,6 +39,7 @@ import {
 import { applySpeechBoundaryCue } from './avatar-cues.js';
 import {
   createPortraitAnimation,
+  PORTRAIT_OVERLAY_CONFIG,
   PORTRAIT_ANIMATION_EVENT,
 } from './portrait-animation.js';
 import { parseSmartCommand } from './smart-command-router.js';
@@ -536,6 +537,13 @@ const portraitAnimation = createPortraitAnimation({
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
 });
+
+const portraitOverlay = PORTRAIT_OVERLAY_CONFIG.cutout;
+document.documentElement.style.setProperty('--portrait-eye-y', `${portraitOverlay.eyes.y * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-left-x', `${(portraitOverlay.eyes.leftX - 0.06) * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-right-x', `${(portraitOverlay.eyes.rightX - 0.06) * 100}%`);
+document.documentElement.style.setProperty('--portrait-mouth-x', `${portraitOverlay.mouth.x * 100}%`);
+document.documentElement.style.setProperty('--portrait-mouth-y', `${portraitOverlay.mouth.y * 100}%`);
 window.jarvisAvatarAnimation = {
   setSpeaking: (active) => portraitAnimation.setSpeaking(active),
   setEyeMode: (mode) => portraitAnimation.setEyeMode(mode),

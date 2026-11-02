@@ -3,6 +3,19 @@ const BLINK_INTERVAL_RANGE_MS = 4_200;
 const VISMESES = new Set(['neutral', 'aa', 'ee', 'ih', 'oh', 'ou']);
 export const PORTRAIT_ANIMATION_EVENT = 'jarvis:portrait-animation';
 
+export const PORTRAIT_OVERLAY_CONFIG = Object.freeze({
+  reference: {
+    eyes: { y: 0.264, leftX: 0.435, rightX: 0.565 },
+    mouth: { x: 0.5, y: 0.438 },
+    chin: { y: 0.735 },
+  },
+  cutout: {
+    eyes: { y: 0.344, leftX: 0.410, rightX: 0.590 },
+    mouth: { x: 0.505, y: 0.485 },
+    chin: { y: 0.655 },
+  },
+});
+
 export function createPortraitAnimation({
   onChange = () => {},
   reducedMotionQuery = globalThis.window?.matchMedia?.('(prefers-reduced-motion: reduce)')

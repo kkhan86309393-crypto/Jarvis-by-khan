@@ -112,6 +112,8 @@ test('mobile Home keeps cards reachable and portrait visible', () => {
     assert.match(html, new RegExp(selector), `mobile Home should contain ${selector}`);
   }
   assert.match(html, /placeholder="Ask J\.A\.R\.V\.I\.S\."/);
+  assert.match(html, /src="\/jarvis-portrait\.webp"/);
+  assert.match(styles, /mask-image:\s*linear-gradient\(to bottom,\s*#000 78%,\s*transparent 100%\)/);
 });
 
 test('mobile chat and settings controls reflow within narrow touch viewports', () => {
