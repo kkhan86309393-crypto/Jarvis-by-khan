@@ -22,6 +22,7 @@ import {
   validateAvatarFile,
   validateSelfContainedGlb,
 } from '../public/avatar3d.js';
+import { applyHologramMaterial } from '../public/hologram-scene.js';
 
 function makeMorphMesh(names) {
   const mesh = new THREE.Mesh();
@@ -278,10 +279,32 @@ test('builds the reference Avatar from one original-aspect portrait plane', () =
     const portrait = root.getObjectByName('reference-portrait-plane');
     assert.deepEqual(portrait.geometry.parameters, { width: 1.08, height: 1.08, widthSegments: 1, heightSegments: 1 });
     assert.equal(rig.referencePortrait, portrait);
+    assert.doesNotThrow(() => animateBuiltInAvatar(rig, { mouthValue: 0.2, mouthViseme: 'oh' }));
   } finally {
     if (previousDocument === undefined) delete globalThis.document;
     else globalThis.document = previousDocument;
   }
+});
+
+test('hologram shader uses its declared view-position varying', () => {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1),
+    new THREE.MeshBasicMaterial(),
+  );
+  const root = new THREE.Group();
+  root.add(mesh);
+
+  applyHologramMaterial(root);
+  const shader = {
+    uniforms: {},
+    vertexShader: '#include <common>\nvoid main() {\n#include <begin_vertex>\n}',
+    fragmentShader: '#include <common>\nvoid main() {\n#include <opaque_fragment>\n}',
+  };
+  mesh.material.onBeforeCompile(shader);
+
+  assert.match(shader.fragmentShader, /varying vec3 vHoloView;/);
+  assert.match(shader.fragmentShader, /vHoloView\.y/);
+  assert.doesNotMatch(shader.fragmentShader, /vViewPosition/);
 });
 
 test('creates a built-in holographic avatar with facial controls and animation', () => {

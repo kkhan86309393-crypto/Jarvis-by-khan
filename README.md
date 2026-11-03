@@ -62,13 +62,13 @@ The browser suite mocks all `/api/*` responses locally and blocks external reque
 
 ### GitHub Codespaces and phone
 
-In a Codespace, run:
+In a Codespace, start one server with:
 
 ```sh
 npm run codespaces
 ```
 
-Port `4173` is configured for automatic forwarding with **Private** visibility. The command prints the Codespaces HTTPS URL and starts the existing server; Codespaces may also open the forwarded URL in the browser. To use it on your phone, copy that HTTPS URL from the terminal or the VS Code **Ports** tab. The phone must be signed into an account authorized for this private Codespace. No public deployment or public port visibility is configured.
+Port `4173` is configured for automatic forwarding with **Private** visibility. The command prints the Codespaces HTTPS URL and starts the existing Node server, which listens on all interfaces for port forwarding. Do not start `npm start` at the same time; the operating system allows only one server to bind port `4173`, and a second launch now reports that conflict clearly. Codespaces may open the forwarded URL in the browser. Browser refreshes and direct opening of `/` or `/index.html` serve the app shell; service-worker updates take effect without forcing a page reload. To use it on your phone, copy the HTTPS URL from the terminal or the VS Code **Ports** tab. The phone must be signed into an account authorized for this private Codespace. No public deployment or public port visibility is configured.
 
 For a Gemini key that survives server restarts, add an account-level **Codespaces secret** named `AI_API_KEY` in GitHub Settings → Codespaces → Codespaces secrets, and grant this repository access. Do not put the key in project files, a terminal command, or the Settings form if it must persist. Stop and restart the Codespace after creating or changing the secret; `npm run codespaces` inherits it as an environment variable. `/api/health` then reports `providerSource: "environment"` and `aiConfigured: true` without returning the key. If it reports `"none"`, the secret is not available in this Codespace. The Settings form remains available for a temporary key held in server memory only.
 

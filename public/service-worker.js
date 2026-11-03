@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jarvis-shell-v87';
-const APP_SHELL = ['/', '/styles.css?avatar=59', '/diagnostics.js?hud=28', '/app.js?avatar=60', '/mobile-home.js', '/avatar3d.bundle.js?avatar=5', '/reference-face.jpg', '/jarvis-portrait.webp', '/portrait-animation.js', '/local-planner.js', '/local-memory.js', '/smart-command-router.js', '/lab-personalize.js', '/lab-ai-modify.js', '/lab-code-studio.js', '/lab-extensions.js', '/lab-safety.js', '/app-hub.js', '/search-summary.js', '/news-briefing.js', '/gemini-key-settings.js', '/ui-localization.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
+const CACHE_NAME = 'jarvis-shell-v88';
+const APP_SHELL = ['/', '/styles.css?avatar=60', '/diagnostics.js?hud=28', '/app.js?avatar=61', '/mobile-home.js', '/avatar3d.bundle.js?avatar=5', '/reference-face.jpg', '/jarvis-portrait.webp', '/portrait-animation.js', '/portrait-motion.js', '/local-planner.js', '/local-memory.js', '/smart-command-router.js', '/lab-personalize.js', '/lab-ai-modify.js', '/lab-code-studio.js', '/lab-extensions.js', '/lab-safety.js', '/app-hub.js', '/search-summary.js', '/news-briefing.js', '/gemini-key-settings.js', '/ui-localization.js', '/device-monitor.js', '/share-link.js', '/manifest.webmanifest', '/icons/jarvis.svg', '/icons/jarvis-192.png', '/icons/jarvis-512.png'];
 const NETWORK_TIMEOUT_MS = 4_000;
 
 self.addEventListener('message', (event) => {

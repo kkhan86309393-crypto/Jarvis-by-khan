@@ -14,7 +14,7 @@
 - `public/styles.css` contains desktop/mobile layout and hologram presentation.
 - `public/app.js` controls application state, navigation, voice/chat routing and WebGL activation.
 - `public/avatar3d.js` and `public/avatar3d.bundle.js` contain the Three.js holographic avatar/Earth implementation.
-- `public/portrait-animation.js`, `public/avatar-cues.js` and `public/mobile-home.js` contain blink, lip-sync, gaze, assistant-state and mobile waveform behavior.
+- `public/portrait-animation.js`, `public/portrait-motion.js`, `public/avatar-cues.js` and `public/mobile-home.js` contain blink, lip-sync, gaze, assistant-state and mobile waveform behavior.
 - `public/jarvis-portrait.webp` is the Home portrait asset.
 - `public/reference-face.jpg` remains the avatar/animation texture source; it must not be replaced by the Home cutout.
 - `public/service-worker.js` provides offline application caching.
@@ -28,7 +28,8 @@
 2. Mobile navigation, dashboard cards and voice/chat flows were restored.
 3. Scrollable single-column mobile layout and safe fixed input/nav positioning were restored.
 4. Holographic portrait/Earth stage, rings, platform, beam and waveform were implemented and refined.
-5. Local commits, cache updates and mobile Playwright verification were added.
+5. Mobile hero visuals were verified at 360x780 and 390x844 across idle and assistant states.
+6. Portrait motion now adds subtle input tilt, breathing, gaze, blink and speech-boundary lip movement while preserving normalized overlays.
 
 ## Mobile restoration requirements
 
@@ -48,16 +49,19 @@ Technical cards, including Real-Time Info, Server RAM, Server Storage, Quick Act
 ## Feature status
 
 - Working: navigation, Home dashboard, chat, voice entry, applications, More, Lab, cards, technical monitoring, scrolling, fixed input bar, portrait cutout, overlays, service worker, desktop shell.
-- Visual polish in progress: reference-faithful Earth brightness/grid/continents, exact portrait proportions, platform/beam prominence and status row sizing should be checked in real screenshots at 360x780, 390x844 and 430x932.
+- Verified: compact mobile hero layout, status row, portrait overlays and subtle portrait motion.
+- Service-worker activation no longer reloads the document; the app now refreshes the shell normally without a forced reload.
+- Avatar animation tolerates the reference-image rig's missing 3D mouth mesh, and the hologram shader uses its declared view varying.
 
 ## Release state
 
-- Service worker cache: `jarvis-shell-v87`
-- Final audit baseline restored: `087c0b4`
-- Automated Node regression suite: 275 tests passing
+- Service worker cache: `jarvis-shell-v88`
+- Part 1 visuals committed locally as `bf17a9d`
+- Automated Node regression suite: 281 tests passing
 - Avatar build and repository syntax checks: passing
 - Runtime layout smoke checks: 360x780, 390x844, 430x932 and 1440x1000 all have no horizontal overflow; mobile page height remains scrollable
-- Playwright screenshot capture: headless Chromium renderer crashes in this environment with and without the avatar WebGL bundle, so screenshot/video verification remains incomplete for hardware-independent automation
+- Playwright portrait-motion pixel comparison: mouth 102/288 and 163/288 changed pixels; eyes 278/384; portrait tilt 9464/32706. Maximum observed tilt was 2.88 degrees, with 4.8px portrait and -3.36px sphere depth.
+- Browser refresh, in-app navigation, direct `/index.html` access, service-worker control, and console-error checks pass.
 - Run `npm test`, `npm run build`, and `git diff --check` before pushing or deploying further changes.
 
 ## Next collaborator instructions

@@ -1264,7 +1264,16 @@ export function createAppServer() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  createAppServer().listen(port, '0.0.0.0', () => {
+  const server = createAppServer();
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use. Stop the existing server before starting J.A.R.V.I.S. again.`);
+    } else {
+      console.error(`J.A.R.V.I.S. could not listen on port ${port}: ${error.message}`);
+    }
+    process.exitCode = 1;
+  });
+  server.listen(port, '0.0.0.0', () => {
     console.log(`J.A.R.V.I.S. ready at http://localhost:${port}`);
   });
 }

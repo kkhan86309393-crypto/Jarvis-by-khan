@@ -42,6 +42,7 @@ import {
   PORTRAIT_OVERLAY_CONFIG,
   PORTRAIT_ANIMATION_EVENT,
 } from './portrait-animation.js';
+import { createPortraitMotion } from './portrait-motion.js';
 import { parseSmartCommand } from './smart-command-router.js';
 import {
   createMemory,
@@ -537,6 +538,14 @@ const portraitAnimation = createPortraitAnimation({
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
 });
+const portraitMotion = createPortraitMotion({
+  stage: elements.holoStage,
+  portraitFrame: elements.avatarFrame,
+  portraitArtwork: elements.avatarFrame.querySelector('.portrait-artwork'),
+  sphere: elements.holoStage.querySelector('.holo-sphere-shell'),
+  mouth: elements.avatarFrame.querySelector('.portrait-mouth'),
+});
+portraitMotion.setQuality(elements.hologramQuality?.value);
 
 const portraitOverlay = PORTRAIT_OVERLAY_CONFIG.cutout;
 document.documentElement.style.setProperty('--portrait-eye-y', `${portraitOverlay.eyes.y * 100}%`);
@@ -547,9 +556,21 @@ document.documentElement.style.setProperty('--portrait-mouth-y', `${portraitOver
 document.documentElement.style.setProperty('--portrait-chin-y', `${portraitOverlay.chin.y * 100}%`);
 document.documentElement.style.setProperty('--portrait-debug', new URLSearchParams(location.search).get('debug') === '1' ? 'flex' : 'none');
 window.jarvisAvatarAnimation = {
-  setSpeaking: (active) => portraitAnimation.setSpeaking(active),
-  setEyeMode: (mode) => portraitAnimation.setEyeMode(mode),
+  setSpeaking: (active) => {
+    portraitAnimation.setSpeaking(active);
+    portraitMotion.setSpeaking(active);
+  },
+  setEyeMode: (mode) => {
+    portraitAnimation.setEyeMode(mode);
+    portraitMotion.setEyeMode(mode);
+  },
+  setSpeechCue: (opening, viseme, options) => portraitMotion.setSpeechCue(opening, viseme, options),
+  setAudioLevel: (level) => portraitMotion.setAudioLevel(level),
+  blink: () => portraitAnimation.blink(),
 };
+window.addEventListener('jarvis:hologram-quality-change', ({ detail }) => {
+  portraitMotion.setQuality(detail?.quality);
+});
 createMobileHome();
 if (window.matchMedia('(max-width: 780px)').matches) {
   window.requestAnimationFrame(() => {
@@ -1824,6 +1845,11 @@ function speak(text, { onStart, onNotStarted } = {}) {
       || state.assistantMode !== 'speaking'
     ) return;
     applySpeechBoundaryCue(speechText, event, (opening, viseme) => {
+      const boundaryIndex = Number.isInteger(event.charIndex) ? event.charIndex : 0;
+      const prefix = speechText.slice(0, boundaryIndex);
+      const boundaryWord = speechText.slice(boundaryIndex).match(/^[\p{L}\p{N}']+/u)?.[0] || '';
+      const emphasis = opening >= 0.58 || boundaryWord.length >= 8 || /[.!?]\s*$/.test(prefix);
+      portraitMotion.setSpeechCue(opening, viseme, { emphasis });
       portraitAnimation.setViseme(playbackId, viseme);
       if (avatar3dActivated && avatar3dInstance) {
         avatar3dInstance.setMouth?.(opening);
@@ -4191,6 +4217,7 @@ elements.hologramToggle?.addEventListener('click', () => {
   if (enabled) void avatar3dInstance?.enableDeviceOrientation?.();
 });
 elements.hologramQuality?.addEventListener('change', () => {
+  portraitMotion.setQuality(elements.hologramQuality.value);
   avatar3dInstance?.setHologramQuality?.(elements.hologramQuality.value);
 });
 elements.customAvatarButton.addEventListener('click', () => elements.customAvatarFile.click());
@@ -4945,35 +4972,18 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  try {
-    sessionStorage.removeItem('jarvis:sw-reloaded');
-  } catch {}
-  navigator.serviceWorker.register('/service-worker.js?avatar=59', { updateViaCache: 'none' }).then((registration) => {
-    registration.update().catch(() => {});
-    const activateWaitingWorker = () => {
-      if (!registration.waiting) return;
-      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-    };
-    registration.addEventListener('updatefound', () => {
-      const worker = registration.installing;
-      worker?.addEventListener('statechange', () => {
-        if (worker.state === 'installed') activateWaitingWorker();
+  navigator.serviceWorker.register('/service-worker.js?avatar=61', { updateViaCache: 'none' }).then((registration) => {
+    const updateWorker = () => {
+      registration.update().catch((error) => {
+        console.warn('J.A.R.V.I.S. could not check for an application update.', error);
       });
+    };
+    updateWorker();
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) updateWorker();
     });
-    activateWaitingWorker();
-  }).catch(() => {});
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    try {
-      if (sessionStorage.getItem('jarvis:sw-reloaded')) return;
-      sessionStorage.setItem('jarvis:sw-reloaded', '1');
-    } catch {}
-    location.reload();
-  });
-  window.setInterval(() => {
-    navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
-  }, 60_000);
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
+  }).catch((error) => {
+    console.error('J.A.R.V.I.S. could not register its offline application cache.', error);
   });
 }
 

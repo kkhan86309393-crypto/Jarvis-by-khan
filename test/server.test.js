@@ -332,7 +332,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?avatar=60/);
+  assert.match(html, /app\.js\?avatar=61/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -514,7 +514,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*width: min\(100%, 720px\);[\s\S]*?min-height: 58px;/);
   assert.match(styles, /body\.new-interface \.dashboard-command > \.dashboard-command-mic \{[^}]*width: 48px;[\s\S]*?height: 48px;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?avatar=59/);
+  assert.match(html, /styles\.css\?avatar=60/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -531,13 +531,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v87/);
-  assert.match(worker, /styles\.css\?avatar=59/);
+  assert.match(worker, /jarvis-shell-v88/);
+  assert.match(worker, /styles\.css\?avatar=60/);
   assert.doesNotMatch(worker, /jarvis-portrait\.png/);
   assert.match(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?avatar=59/);
+  assert.match(worker, /styles\.css\?avatar=60/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?avatar=60/);
+  assert.match(worker, /app\.js\?avatar=61/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -548,6 +548,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /JARVIS_DIAGNOSTICS/);
   assert.doesNotMatch(worker, /avatar-cues\.js|ai-avatar\.jpg/);
   assert.match(worker, /portrait-animation\.js/);
+  assert.match(worker, /portrait-motion\.js/);
   assert.match(worker, /app-hub\.js/);
   assert.match(worker, /search-summary\.js/);
   assert.match(worker, /NETWORK_TIMEOUT_MS = 4_000/);
@@ -557,7 +558,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.doesNotMatch(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?avatar=59/);
+  assert.match(client, /service-worker\.js\?avatar=61/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);
@@ -567,6 +568,8 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /PORTRAIT_ANIMATION_EVENT/);
   assert.match(client, /avatarFrame\.dataset\.blink = detail\.blink/);
   assert.match(client, /avatarFrame\.dataset\.viseme = detail\.viseme/);
+  assert.doesNotMatch(client, /location\.reload\(\)|jarvis:sw-reloaded/);
+  assert.match(client, /could not register its offline application cache/);
   assert.match(client, /portraitAnimation\.startSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.pauseSpeech\(playbackId\)/);
   assert.match(client, /portraitAnimation\.resumeSpeech\(playbackId\)/);

@@ -65,7 +65,7 @@ test('blinking runs independently of speech with a short, staged closure', () =>
 
   assert.equal(harness.current.blink, 'open');
   assert.equal(harness.current.speaking, false);
-  harness.advance(2_800);
+  harness.advance(2_500);
   assert.equal(harness.current.blink, 'half');
   assert.equal(harness.current.speaking, false);
   harness.advance(45);
@@ -74,6 +74,28 @@ test('blinking runs independently of speech with a short, staged closure', () =>
   assert.equal(harness.current.blink, 'half');
   harness.advance(55);
   assert.equal(harness.current.blink, 'open');
+
+  harness.animation.destroy();
+  assert.equal(harness.timers.size, 0);
+});
+
+test('blinking occasionally double-blinks and can be forced by the avatar hook', () => {
+  const randomValues = [0, 0.1, 0];
+  const harness = createHarness({ random: () => randomValues.shift() ?? 0.5 });
+
+  harness.advance(2_500);
+  assert.equal(harness.current.blink, 'half');
+  harness.advance(45);
+  harness.advance(65);
+  harness.advance(55);
+  assert.equal(harness.current.blink, 'open');
+  harness.advance(180);
+  assert.equal(harness.current.blink, 'half');
+
+  assert.equal(harness.animation.blink(), true);
+  assert.equal(harness.current.blink, 'half');
+  harness.advance(45);
+  assert.equal(harness.current.blink, 'closed');
 
   harness.animation.destroy();
   assert.equal(harness.timers.size, 0);

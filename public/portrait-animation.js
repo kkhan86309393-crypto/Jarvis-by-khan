@@ -1,5 +1,5 @@
-const BLINK_MIN_INTERVAL_MS = 2_800;
-const BLINK_INTERVAL_RANGE_MS = 4_200;
+const BLINK_MIN_INTERVAL_MS = 2_500;
+const BLINK_INTERVAL_RANGE_MS = 3_500;
 const VISMESES = new Set(['neutral', 'aa', 'ee', 'ih', 'oh', 'ou']);
 export const PORTRAIT_ANIMATION_EVENT = 'jarvis:portrait-animation';
 
@@ -49,25 +49,31 @@ export function createPortraitAnimation({
     blinkTimers.clear();
   }
 
-  function scheduleNextBlink() {
-    if (destroyed || reducedMotionQuery?.matches) return;
+  function runBlink() {
+    blink = 'half';
+    emit();
     scheduleBlink(() => {
-      blink = 'half';
+      blink = 'closed';
       emit();
       scheduleBlink(() => {
-        blink = 'closed';
+        blink = 'half';
         emit();
         scheduleBlink(() => {
-          blink = 'half';
+          blink = 'open';
           emit();
-          scheduleBlink(() => {
-            blink = 'open';
-            emit();
+          if (random() < 0.18) {
+            scheduleNextBlink(180 + random() * 140);
+          } else {
             scheduleNextBlink();
-          }, 55);
-        }, 65);
-      }, 45);
-    }, BLINK_MIN_INTERVAL_MS + random() * BLINK_INTERVAL_RANGE_MS);
+          }
+        }, 55);
+      }, 65);
+    }, 45);
+  }
+
+  function scheduleNextBlink(delay = BLINK_MIN_INTERVAL_MS + random() * BLINK_INTERVAL_RANGE_MS) {
+    if (destroyed || reducedMotionQuery?.matches) return;
+    scheduleBlink(runBlink, delay);
   }
 
   function handleReducedMotionChange() {
@@ -111,6 +117,12 @@ export function createPortraitAnimation({
   }
 
   return {
+    blink() {
+      if (destroyed || reducedMotionQuery?.matches) return false;
+      clearBlinkTimers();
+      runBlink();
+      return true;
+    },
     setSpeaking(active) {
       if (destroyed) return false;
       speaking = Boolean(active);

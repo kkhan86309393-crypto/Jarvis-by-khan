@@ -4504,6 +4504,8 @@ body.new-interface .right-rail .planner-panel { order: 10; }
   }
 }
 
+
+
 @media (max-width: 780px) {
   .composer-actions {
     flex-wrap: wrap;
@@ -5740,4 +5742,65 @@ body.new-interface .holo-waveform {
       min-height: 20px;
       margin: -2px auto 0;
     }
+  }
+}
+
+body.new-interface .holo-stage {
+  perspective: 900px;
+  transform-style: preserve-3d;
+}
+
+body.new-interface .holo-stage .avatar-frame.portrait-cutout-frame {
+  animation: none;
+  transform: translate(-50%, -50%)
+    rotateX(calc(var(--portrait-tilt-x, 0deg) + var(--portrait-nod, 0deg)))
+    rotateY(var(--portrait-tilt-y, 0deg))
+    rotateZ(var(--portrait-head-drift, 0deg))
+    scale(var(--portrait-breath, 1));
+  transform-origin: 50% 58%;
+  transform-style: preserve-3d;
+  translate: var(--portrait-depth-x, 0px) var(--portrait-depth-y, 0px);
+  will-change: transform, translate;
+}
+
+body.new-interface .portrait-artwork {
+  translate: var(--portrait-gaze-x, 0px) var(--portrait-gaze-y, 0px);
+}
+
+body.new-interface .holo-sphere-shell {
+  translate: var(--sphere-depth-x, 0px) var(--sphere-depth-y, 0px);
+  will-change: translate;
+}
+
+body.new-interface .avatar-frame[data-speaking="true"] .portrait-mouth {
+  animation: none;
+  opacity: .84;
+  transform: translate(-50%, -50%) scaleY(var(--portrait-mouth-open, 0));
+}
+
+body.new-interface .avatar-frame[data-viseme="aa"] .portrait-mouth,
+body.new-interface .avatar-frame[data-viseme="ee"] .portrait-mouth,
+body.new-interface .avatar-frame[data-viseme="ih"] .portrait-mouth,
+body.new-interface .avatar-frame[data-viseme="oh"] .portrait-mouth,
+body.new-interface .avatar-frame[data-viseme="ou"] .portrait-mouth {
+  transform: translate(-50%, -50%) scaleY(var(--portrait-mouth-open, 0));
+}
+
+body.new-interface .portrait-mouth {
+  transition: width 75ms ease-out, height 75ms ease-out, transform 75ms ease-out, opacity 75ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.new-interface .portrait-cutout-frame,
+  body.new-interface .holo-sphere-shell { will-change: auto; }
+
+  body.new-interface .avatar-frame[data-speaking="true"] .portrait-mouth,
+  body.new-interface .avatar-frame[data-viseme="aa"] .portrait-mouth,
+  body.new-interface .avatar-frame[data-viseme="ee"] .portrait-mouth,
+  body.new-interface .avatar-frame[data-viseme="ih"] .portrait-mouth,
+  body.new-interface .avatar-frame[data-viseme="oh"] .portrait-mouth,
+  body.new-interface .avatar-frame[data-viseme="ou"] .portrait-mouth {
+    opacity: .6 !important;
+    transform: translate(-50%, -50%) scaleY(var(--portrait-mouth-open, 0)) !important;
+    transition: width 75ms ease-out, height 75ms ease-out, transform 75ms ease-out, opacity 75ms ease-out !important;
   }

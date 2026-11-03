@@ -27,7 +27,7 @@ export function applyHologramMaterial(root) {
         ).replace(
           '#include <opaque_fragment>',
           `float holoFresnel = pow(1.0 - abs(dot(normalize(vHoloNormal), normalize(vHoloView))), 2.25);
-          float holoScan = sin((vViewPosition.y * 18.0) - uHologramTime * 5.0) * 0.5 + 0.5;
+          float holoScan = sin((vHoloView.y * 18.0) - uHologramTime * 5.0) * 0.5 + 0.5;
           float holoGlitch = step(0.992, sin(uHologramTime * 37.0) * sin(uHologramTime * 7.0));
           vec3 holoTint = mix(vec3(0.18, 0.66, 1.0), vec3(0.0, 0.90, 1.0), holoScan);
           outgoingLight = mix(outgoingLight, outgoingLight * holoTint, uHologramStrength * 0.72);

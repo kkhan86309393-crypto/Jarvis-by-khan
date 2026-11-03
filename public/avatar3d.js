@@ -695,11 +695,13 @@ export function animateBuiltInAvatar(rig, {
       + rig.gazeY;
   }
   const targetVisemeScale = mouthViseme === 'oh' || mouthViseme === 'ou' ? 0.78 : mouthViseme === 'ee' ? 0.72 : 1;
-  rig.visemeScale = THREE.MathUtils.damp(rig.visemeScale ?? 1, targetVisemeScale, 14, deltaTime);
-  rig.mouth.scale.y = 0.001 + Math.max(mouthValue, happy * 0.3) * 0.042;
-  rig.mouth.scale.x = 0.068 * (rig.visemeScale + happy * 0.2 - frown * 0.16);
-  rig.mouth.position.y = -0.32 + happy * 0.012 - frown * 0.012;
-  rig.mouth.rotation.z = -frown * 0.16;
+  if (rig.mouth) {
+    rig.visemeScale = THREE.MathUtils.damp(rig.visemeScale ?? 1, targetVisemeScale, 14, deltaTime);
+    rig.mouth.scale.y = 0.001 + Math.max(mouthValue, happy * 0.3) * 0.042;
+    rig.mouth.scale.x = 0.068 * (rig.visemeScale + happy * 0.2 - frown * 0.16);
+    rig.mouth.position.y = -0.32 + happy * 0.012 - frown * 0.012;
+    rig.mouth.rotation.z = -frown * 0.16;
+  }
   if (rig.lowerLip) {
     rig.lowerLip.position.y = rig.lowerLip.userData.openY - mouthValue * 0.012;
     rig.lowerLip.scale.x = 1 + happy * 0.12;
@@ -1641,6 +1643,7 @@ export function initializeAvatar3d({
   function setHologramQuality(quality) {
     if (!['auto', 'high', 'medium', 'low'].includes(quality)) return;
     hologramQuality = quality;
+    window.dispatchEvent(new CustomEvent('jarvis:hologram-quality-change', { detail: { quality } }));
     if (hologramRig) attachHologram();
     if (renderer) {
       renderer.setPixelRatio(quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2));
