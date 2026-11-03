@@ -535,6 +535,14 @@ const wakeWordRecoveryPolicy = createWakeWordRecoveryPolicy();
 const microphonePermissionGuard = createMicrophonePermissionGuard();
 const portraitAnimation = createPortraitAnimation({
   onChange: (detail) => {
+    elements.avatarFrame.style.setProperty(
+      '--portrait-blink-close-duration',
+      `${detail.blinkCloseDuration}ms`,
+    );
+    elements.avatarFrame.style.setProperty(
+      '--portrait-blink-open-duration',
+      `${detail.blinkOpenDuration}ms`,
+    );
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
 });
@@ -574,9 +582,15 @@ window.jarvisAvatarAnimation = {
   setSpeechCue: (opening, viseme, options) => portraitMotion.setSpeechCue(opening, viseme, options),
   setAudioLevel: (level) => portraitMotion.setAudioLevel(level),
   setLiveliness: (value) => portraitMotion.setLiveliness(value),
-  blink: () => portraitAnimation.blink(),
+  blink: (options) => portraitAnimation.blink(options),
   getMotionState: () => portraitMotion.getState(),
 };
+window.addEventListener('jarvis:avatar-projection-fallback', () => {
+  avatar3dActiveMode = '';
+  avatar3dActivated = false;
+  avatar3dActivationPending = false;
+  updateProjectionButtons();
+});
 window.addEventListener('jarvis:hologram-quality-change', ({ detail }) => {
   portraitMotion.setQuality(detail?.quality);
 });
@@ -1091,9 +1105,9 @@ function resetAvatarMouth() {
 
 function syncAvatarAssistantState() {
   if (!avatar3dActivated) return;
-  const avatarState = ['listening', 'thinking', 'speaking', 'happy', 'error'].includes(state.assistantMode)
+  const avatarState = ['listening', 'thinking', 'speaking', 'happy', 'error', 'offline'].includes(state.assistantMode)
     ? state.assistantMode
-    : 'normal';
+    : state.holoOnline ? 'normal' : 'offline';
   avatar3dInstance?.setState?.(avatarState);
   if (state.assistantMode !== 'speaking') resetAvatarMouth();
 }
@@ -1121,7 +1135,7 @@ function setAssistantState(mode, label) {
 }
 
 function updateHologramState() {
-  const activeMode = ['listening', 'thinking', 'speaking'].includes(state.assistantMode)
+  const activeMode = ['listening', 'thinking', 'speaking', 'error', 'offline'].includes(state.assistantMode)
     ? state.assistantMode
     : state.holoOnline ? 'online' : '';
   const announcement = activeMode || 'offline';
@@ -1141,15 +1155,22 @@ function updateHologramState() {
   elements.holoStateAnnouncement.textContent = announcement === 'online'
     ? 'J.A.R.V.I.S. is online.'
     : announcement === 'offline' ? 'J.A.R.V.I.S. is offline.'
+      : announcement === 'error' ? 'J.A.R.V.I.S. encountered an error.'
       : `J.A.R.V.I.S. is ${announcement}.`;
   elements.statePanelLive.textContent = announcement.toUpperCase();
   const mobileMode = state.assistantMode === 'listening' || state.assistantMode === 'thinking'
     || state.assistantMode === 'speaking' ? state.assistantMode : (state.holoOnline ? 'idle' : 'idle');
   window.dispatchEvent(new CustomEvent('jarvis:assistant-state', { detail: { mode: mobileMode } }));
-  const hologramState = ['idle', 'listening', 'thinking', 'speaking'].includes(mobileMode) ? mobileMode : 'idle';
-  avatar3dInstance?.setHologramState?.(hologramState, state.assistantMode === 'listening' || state.assistantMode === 'speaking' ? 0.55 : 0);
+  const avatarState = ['listening', 'thinking', 'speaking', 'error', 'offline'].includes(state.assistantMode)
+    ? state.assistantMode
+    : state.holoOnline ? 'normal' : 'offline';
+  elements.holoStage.classList.toggle('is-offline', avatarState === 'offline');
+  elements.holoStage.classList.toggle('is-error', avatarState === 'error');
+  const hologramState = avatarState === 'normal' ? 'idle' : avatarState;
+  const activityLevel = state.assistantMode === 'listening' || state.assistantMode === 'speaking' ? 0.55 : 0;
+  avatar3dInstance?.setHologramState?.(hologramState, activityLevel);
   window.dispatchEvent(new CustomEvent('jarvis:hologram-state', {
-    detail: { state: hologramState, level: state.assistantMode === 'listening' || state.assistantMode === 'speaking' ? 0.55 : 0 },
+    detail: { state: hologramState, level: activityLevel },
   }));
   window.jarvisAvatarAnimation.setSpeaking(state.assistantMode === 'speaking');
   window.jarvisAvatarAnimation.setEyeMode(
@@ -1184,7 +1205,7 @@ async function loadReferenceFaceImage() {
 async function getAvatar3dInstance() {
   let avatarModule;
   try {
-    avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?avatar=5'));
+    avatarModule = await (avatar3dModulePromise ||= import('/avatar3d.bundle.js?avatar=7'));
   } catch (error) {
     avatar3dModulePromise = null;
     throw error;
@@ -1851,7 +1872,7 @@ function speak(text, { onStart, onNotStarted } = {}) {
       portraitMotion.setSpeechCue(opening, viseme, { emphasis });
       portraitAnimation.setViseme(playbackId, viseme);
       if (avatar3dActivated && avatar3dInstance) {
-        avatar3dInstance.setMouth?.(opening);
+        avatar3dInstance.setMouth?.(opening, { emphasis });
         avatar3dInstance.setViseme?.(viseme);
       }
     });
@@ -4882,7 +4903,10 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('blur', pauseVoiceForPageLifecycle);
 window.addEventListener('focus', resumeVoiceForPageLifecycle);
-window.addEventListener('pagehide', pauseVoiceForPageLifecycle);
+window.addEventListener('pagehide', (event) => {
+  pauseVoiceForPageLifecycle();
+  if (!event.persisted) portraitMotion.destroy();
+});
 window.addEventListener('pageshow', resumeVoiceForPageLifecycle);
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
@@ -4970,7 +4994,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?avatar=63', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?avatar=66', { updateViaCache: 'none' }).then((registration) => {
     if (!registration || typeof registration.update !== 'function') {
       console.warn('J.A.R.V.I.S. could not check for an application update because this browser did not provide a service worker registration.');
       return;

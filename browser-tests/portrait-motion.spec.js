@@ -52,7 +52,9 @@ async function comparePixels(page, images) {
 }
 
 test('head-only portrait keeps its body static and proves blink and speaking changes', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize(testInfo.project.name === 'android-mobile'
+    ? { width: 390, height: 844 }
+    : { width: 1440, height: 1000 });
   await page.goto('/');
   await page.waitForFunction(() => Boolean(window.jarvisAvatarAnimation));
   await page.locator('#ai-avatar').evaluate((image) => image.decode());
@@ -85,14 +87,27 @@ test('head-only portrait keeps its body static and proves blink and speaking cha
     };
   });
   expect(blinkAsset).toEqual({ width: 800, height: 875, alphaDifferences: 0 });
+  const eyeAlignment = await page.locator('.portrait-blink-image').evaluate((image) => {
+    const closed = image.getBoundingClientRect();
+    const head = image.closest('.portrait-head-content').getBoundingClientRect();
+    const styles = getComputedStyle(image);
+    return {
+      mask: styles.maskImage,
+      sameBoxAsHead: Math.abs(closed.width - head.width) < 0.5
+        && Math.abs(closed.height - head.height) < 0.5,
+    };
+  });
+  expect(eyeAlignment.sameBoxAsHead).toBe(true);
+  expect(eyeAlignment.mask).toContain('43.6% 28.8%');
+  expect(eyeAlignment.mask).toContain('58.9% 27.6%');
 
   const output = (name) => testInfo.outputPath(name);
   const artworkBox = await page.locator('.portrait-artwork').boundingBox();
   const bodyRegion = {
     x: artworkBox.x,
-    y: artworkBox.y + artworkBox.height * 0.64,
+    y: artworkBox.y + artworkBox.height * 0.66,
     width: artworkBox.width,
-    height: artworkBox.height * 0.36,
+    height: artworkBox.height * 0.34,
   };
   const headRegion = {
     x: artworkBox.x + artworkBox.width * 0.23,
@@ -151,12 +166,40 @@ test('head-only portrait keeps its body static and proves blink and speaking cha
   await page.evaluate(() => window.jarvisAvatarAnimation.setSpeaking(false));
   await expect(page.locator('.portrait-cutout-frame')).toHaveAttribute('data-blink', 'open');
   const openEyes = (await captureRegion(page, eyeRegion, output('eyes-open.png'))).image;
-  await page.evaluate(() => window.jarvisAvatarAnimation.blink());
-  await expect(page.locator('.portrait-cutout-frame')).toHaveAttribute('data-blink', 'closed', { timeout: 500 });
-  await page.waitForTimeout(60);
-  const closedEyes = (await captureRegion(page, eyeRegion, output('eyes-closed.png'))).image;
-  const eyeDifference = (await comparePixels(page, [openEyes, closedEyes]))[0];
+  const closedEyes = await page.evaluate(async () => {
+    const image = document.querySelector('.portrait-blink-image');
+    const transitionEnded = new Promise((resolve) => {
+      image.addEventListener('transitionend', ({ propertyName }) => {
+        if (propertyName === 'opacity') resolve();
+      }, { once: true });
+    });
+    window.jarvisAvatarAnimation.blink({ holdDurationMs: 200 });
+    const frame = document.querySelector('.portrait-cutout-frame');
+    const transition = getComputedStyle(image).transitionDuration;
+    const duration = Number.parseFloat(transition);
+    const closeTransitionMs = transition.endsWith('ms') ? duration : duration * 1_000;
+    await transitionEnded;
+    return {
+      state: frame.dataset.blink,
+      opacity: getComputedStyle(image).opacity,
+      duration: closeTransitionMs,
+    };
+  });
+  expect(closedEyes.state).toBe('closed');
+  expect(closedEyes.opacity).toBe('1');
+  expect(closedEyes.duration).toBeGreaterThanOrEqual(45);
+  expect(closedEyes.duration).toBeLessThanOrEqual(60);
+  const closedEyesImage = (await captureRegion(page, eyeRegion, output('eyes-closed.png'))).image;
+  const eyeDifference = (await comparePixels(page, [openEyes, closedEyesImage]))[0];
   expect(eyeDifference.changedPixels).toBeGreaterThan(0);
+  await expect(page.locator('.portrait-cutout-frame')).toHaveAttribute('data-blink', 'open', { timeout: 300 });
+  const openTransition = await page.locator('.portrait-blink-image').evaluate((image) => {
+    const transition = getComputedStyle(image).transitionDuration;
+    const duration = Number.parseFloat(transition);
+    return transition.endsWith('ms') ? duration : duration * 1_000;
+  });
+  expect(openTransition).toBeGreaterThanOrEqual(70);
+  expect(openTransition).toBeLessThanOrEqual(95);
 
   await page.goto('/?debug=1');
   await expect(page.locator('.portrait-debug-markers')).toBeVisible();
@@ -188,4 +231,88 @@ test('head-only portrait keeps its body static and proves blink and speaking cha
     mouth: mouthDifferences,
     debugMarkers: markers,
   }));
+});
+
+test('captures static and Three.js portrait motion states with bounded static transforms', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  page.on('pageerror', (error) => console.error('Portrait motion browser error:', error));
+  page.on('console', (message) => {
+    if (message.type() === 'error') console.error('Portrait motion browser console:', message.text());
+  });
+  const mobile = testInfo.project.name === 'android-mobile';
+  await page.setViewportSize(mobile
+    ? { width: 390, height: 844 }
+    : { width: 1440, height: 1000 });
+  await page.route('**/api/health', (route) => route.abort());
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean(window.jarvisAvatarAnimation), undefined, { timeout: 10_000 });
+  await page.locator('#ai-avatar').evaluate((image) => image.decode());
+  await expect(page.locator('#holo-stage')).toHaveClass(/is-offline/);
+  await expect(page.locator('#holo-state-announcement')).toHaveText('J.A.R.V.I.S. is offline.');
+  await expect(page.locator('#holo-waveform')).toHaveAttribute('aria-label', 'Voice activity idle');
+  await expect(page.locator('#holo-waveform')).not.toHaveClass(/is-active/);
+
+  const staticStates = [];
+  await page.locator('.portrait-artwork').screenshot({
+    path: testInfo.outputPath(`${mobile ? 'mobile' : 'desktop'}-static-offline.png`),
+  });
+  for (const state of ['idle', 'listening', 'thinking', 'speaking']) {
+    await page.evaluate((nextState) => {
+      const animation = window.jarvisAvatarAnimation;
+      animation.setSpeaking(nextState === 'speaking');
+      animation.setEyeMode(['listening', 'thinking'].includes(nextState) ? nextState : 'idle');
+      if (nextState === 'speaking') animation.setSpeechCue(0.7, 'aa', { emphasis: true });
+    }, state);
+    await page.waitForTimeout(500);
+    const transform = await page.locator('.portrait-head-content').evaluate((head) => ({
+      rotation: Number.parseFloat(getComputedStyle(head).getPropertyValue('--portrait-head-rotation')) || 0,
+      translation: Number.parseFloat(getComputedStyle(head).getPropertyValue('--portrait-head-y')) || 0,
+    }));
+    expect(Math.abs(transform.rotation), `${state} rotation`).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(transform.translation), `${state} translation`).toBeLessThanOrEqual(1.2);
+    staticStates.push({ state, ...transform });
+    await page.locator('.portrait-artwork').screenshot({
+      path: testInfo.outputPath(`${mobile ? 'mobile' : 'desktop'}-static-${state}.png`),
+    });
+  }
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForTimeout(400);
+  const reducedMotionTransform = await page.locator('.portrait-head-content').evaluate((head) => ({
+    rotation: Number.parseFloat(getComputedStyle(head).getPropertyValue('--portrait-head-rotation')) || 0,
+    translation: Number.parseFloat(getComputedStyle(head).getPropertyValue('--portrait-head-y')) || 0,
+  }));
+  expect(Math.abs(reducedMotionTransform.rotation)).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(reducedMotionTransform.translation)).toBeLessThanOrEqual(1.2);
+  await page.locator('.portrait-artwork').screenshot({
+    path: testInfo.outputPath(`${mobile ? 'mobile' : 'desktop'}-static-reduced-motion.png`),
+  });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  await page.locator('#activate-3d-avatar').evaluate((button) => button.click());
+  await expect(page.locator('#holo-stage')).toHaveClass(/is-avatar-active/);
+  await expect(page.locator('#avatar-canvas')).toBeVisible();
+  await page.waitForFunction(() => typeof window.setHologramState === 'function');
+  for (const state of ['idle', 'listening', 'thinking', 'speaking', 'offline']) {
+    await page.evaluate((nextState) => window.setHologramState(nextState, nextState === 'speaking' ? 0.55 : 0), state);
+    await page.waitForTimeout(500);
+    await page.locator('#holo-stage').screenshot({
+      path: testInfo.outputPath(`${mobile ? 'mobile' : 'desktop'}-3d-${state}.png`),
+    });
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForTimeout(500);
+  await page.locator('#holo-stage').screenshot({
+    path: testInfo.outputPath(`${mobile ? 'mobile' : 'desktop'}-3d-reduced-motion.png`),
+  });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.locator('#hologram-quality').evaluate((select) => {
+    select.value = 'low';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(500);
+  await page.locator('#holo-stage').screenshot({
+    path: testInfo.outputPath(`${mobile ? 'mobile' : 'desktop'}-3d-low-quality.png`),
+  });
+  console.log('Portrait motion screenshot bounds', JSON.stringify({ project: testInfo.project.name, staticStates, reducedMotionTransform }));
 });

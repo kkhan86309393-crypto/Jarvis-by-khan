@@ -5,8 +5,13 @@ import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 import {
   initializeAvatar3d,
   applyVrmExpressions,
+  applyMorphTargetInfluence,
   applySpeechBoundaryCue,
   applyHeadMotion,
+  clampAvatarParallax,
+  getSpeechNodPulse,
+  getAvatarExpressionProfile,
+  dampAvatarExpression,
   animateBuiltInAvatar,
   createReferenceFaceTexture,
   createBuiltInAvatar,
@@ -55,6 +60,7 @@ test('detects usable mouth, blink, and expression morph targets', () => {
     'mouthSmileLeft',
     'browInnerUp',
     'listening',
+    'speaking',
   ]));
 
   assert.deepEqual(rig.mouthTargets.map(({ name }) => name), ['jawOpen']);
@@ -62,6 +68,7 @@ test('detects usable mouth, blink, and expression morph targets', () => {
   assert.deepEqual(rig.smileTargets.map(({ name }) => name), ['mouthSmileLeft']);
   assert.deepEqual(rig.thinkTargets.map(({ name }) => name), ['browInnerUp']);
   assert.deepEqual(rig.attentiveTargets.map(({ name }) => name), ['listening']);
+  assert.deepEqual(rig.speakingTargets.map(({ name }) => name), ['speaking']);
 });
 
 test('rejects a face rig without a recognized mouth control', () => {
@@ -116,8 +123,11 @@ test('surfaces GLTFLoader parse failures to the avatar fallback handler', async 
   assert.ok(registeredPlugin instanceof VRMLoaderPlugin);
 });
 
-test('maps VRM aa, ee, ih, oh, ou, blink, and happy presets and resets them', () => {
-  const presets = new Set(['aa', 'ee', 'ih', 'oh', 'ou', 'blink', 'happy']);
+test('maps available VRM mouth, blink, and subtle expression targets without surprise fallback', () => {
+  const presets = new Set([
+    'aa', 'ee', 'ih', 'oh', 'ou', 'blink', 'happy', 'sad', 'relaxed',
+    'cheekPuff', 'browInnerUp', 'listening', 'attentive', 'thinking', 'frown', 'speaking',
+  ]);
   const values = new Map();
   const expressions = {
     getExpression(name) { return presets.has(name) ? { presetName: name } : null; },
@@ -126,17 +136,95 @@ test('maps VRM aa, ee, ih, oh, ou, blink, and happy presets and resets them', ()
 
   applyVrmExpressions(expressions, {
     mouthViseme: 'ee',
-    mouthValue: 0.65,
+    mouthValue: 2,
     blinkValue: 0.4,
-    happy: 0.3,
+    happy: 2,
+    attentive: 0.12,
+    thinking: 0.1,
+    frown: 0.08,
+    brow: 0.06,
+    cheek: 0.05,
+    speaking: 1,
   });
   for (const viseme of ['aa', 'ih', 'oh', 'ou']) assert.equal(values.get(viseme), 0);
-  assert.equal(values.get('ee'), 0.65);
+  assert.equal(values.get('ee'), 0.78);
   assert.equal(values.get('blink'), 0.4);
-  assert.equal(values.get('happy'), 0.3);
+  assert.equal(values.get('happy'), 0.18);
+  assert.equal(values.get('sad'), 0.08);
+  assert.equal(values.get('relaxed'), 0.12);
+  assert.equal(values.get('cheekPuff'), 0.05);
+  assert.equal(values.get('browInnerUp'), 0.06);
+  assert.equal(values.get('listening'), 0.12);
+  assert.equal(values.get('thinking'), 0.1);
+  assert.equal(values.get('speaking'), 0.18);
+  assert.equal(values.has('surprised'), false);
 
   applyVrmExpressions(expressions);
   for (const preset of presets) assert.equal(values.get(preset), 0);
+  assert.doesNotThrow(() => applyVrmExpressions({ getExpression: () => null, setValue() {
+    throw new Error('must not set unsupported expression');
+  } }, getAvatarExpressionProfile('offline')));
+  assert.doesNotThrow(() => applyVrmExpressions(null));
+});
+
+test('builds conservative state profiles and scales them for accessibility and quality', () => {
+  const profiles = Object.fromEntries(
+    ['idle', 'listening', 'thinking', 'speaking', 'offline'].map((state) => [
+      state,
+      getAvatarExpressionProfile(state),
+    ]),
+  );
+  assert.ok(profiles.idle.happy > 0);
+  assert.ok(profiles.listening.attentive > 0);
+  assert.ok(profiles.thinking.thinking > 0);
+  assert.ok(profiles.speaking.brow > 0);
+  assert.ok(profiles.offline.frown > 0);
+  for (const profile of Object.values(profiles)) {
+    for (const value of Object.values(profile)) assert.ok(value >= 0 && value <= 0.18);
+  }
+  assert.deepEqual(getAvatarExpressionProfile('online'), profiles.idle);
+  assert.deepEqual(getAvatarExpressionProfile('error'), profiles.offline);
+  assert.ok(getAvatarExpressionProfile('listening', { reducedMotion: true }).attentive
+    < profiles.listening.attentive);
+  assert.ok(getAvatarExpressionProfile('listening', { quality: 'low' }).attentive
+    < profiles.listening.attentive);
+  assert.equal(getAvatarExpressionProfile('offline', { scale: 0 }).frown, 0);
+});
+
+test('smoothly blends bounded morph expression targets while keeping blink and lip-sync independent', () => {
+  const root = makeMorphMesh([
+    'jawOpen', 'eyeBlinkLeft', 'mouthSmileLeft', 'browInnerUp', 'browOuterUp', 'speaking',
+  ]);
+  const rig = inspectAvatarRig(root);
+  const profile = getAvatarExpressionProfile('speaking');
+  for (let frame = 0; frame < 24; frame += 1) {
+    applyMorphTargetInfluence(rig.mouthTargets, 0.7);
+    applyMorphTargetInfluence(rig.blinkTargets, 0.8);
+    applyMorphTargetInfluence(rig.smileTargets, profile.happy);
+    applyMorphTargetInfluence(rig.browTargets, profile.brow);
+    applyMorphTargetInfluence(rig.speakingTargets, 0.04);
+  }
+  const mesh = root.children[0];
+  assert.ok(mesh.morphTargetInfluences[0] > 0.65);
+  assert.ok(mesh.morphTargetInfluences[1] > 0.75);
+  assert.ok(mesh.morphTargetInfluences[2] > 0 && mesh.morphTargetInfluences[2] < 0.02);
+  assert.equal(mesh.morphTargetInfluences[3], 0);
+  assert.ok(mesh.morphTargetInfluences[4] > 0 && mesh.morphTargetInfluences[4] < 0.03);
+  assert.ok(mesh.morphTargetInfluences[5] > 0.03 && mesh.morphTargetInfluences[5] < 0.04);
+  applyMorphTargetInfluence([], 1);
+  applyMorphTargetInfluence(rig.smileTargets, Number.NaN, 1);
+  applyMorphTargetInfluence([{ object: mesh, index: 99 }], 1);
+  assert.equal(mesh.morphTargetInfluences[2], 0);
+
+  let value = 0;
+  const samples = [];
+  for (let frame = 0; frame < 21; frame += 1) {
+    value = dampAvatarExpression(value, 0.12, 1 / 60);
+    samples.push(value);
+  }
+  assert.ok(samples.every((sample, index) => index === 0 || sample >= samples[index - 1]));
+  assert.ok(value >= 0.10 && value <= 0.12);
+  assert.equal(dampAvatarExpression(0.3, 5, 1), 0.18);
 });
 
 test('maps live audio amplitude to a bounded mouth opening', () => {
@@ -165,17 +253,39 @@ test('frames a model around its head and falls back to model bounds', () => {
   assert.ok(Math.abs(camera.position.z - 1.7 * 1.35) < 1e-6);
 });
 
-test('adds subtle head movement without discarding the model rest pose', () => {
+test('clamps combined head motion while preserving the model rest pose', () => {
   const head = new THREE.Group();
   head.rotation.set(0.12, -0.08, 0.04);
   const baseRotation = head.rotation.clone();
 
   applyHeadMotion(head, baseRotation, 0, 0);
   assert.deepEqual(head.rotation.toArray(), baseRotation.toArray());
-  applyHeadMotion(head, baseRotation, 1, 0.045);
-  assert.equal(head.rotation.x, baseRotation.x + 0.045 + Math.sin(0.8) * 0.012);
-  assert.equal(head.rotation.y, baseRotation.y + Math.sin(0.55) * 0.025);
-  assert.equal(head.rotation.z, baseRotation.z + Math.sin(0.35) * 0.008);
+  applyHeadMotion(head, baseRotation, 1, 2, {
+    yaw: -2,
+    roll: 1.5,
+    nod: 1,
+  });
+  assert.ok(Math.abs(head.rotation.x - baseRotation.x) <= THREE.MathUtils.degToRad(1.5) + 1e-10);
+  assert.ok(Math.abs(head.rotation.y - baseRotation.y) <= THREE.MathUtils.degToRad(1.5) + 1e-10);
+  assert.ok(Math.abs(head.rotation.z - baseRotation.z) <= THREE.MathUtils.degToRad(1.1) + 1e-10);
+
+  applyHeadMotion(head, baseRotation, 1, 2, { motionScale: 0.15 });
+  assert.ok(Math.abs(head.rotation.x - baseRotation.x) <= THREE.MathUtils.degToRad(1.5) * 0.15 + 1e-10);
+  assert.ok(Math.abs(head.rotation.y - baseRotation.y) <= THREE.MathUtils.degToRad(1.5) * 0.15 + 1e-10);
+  assert.ok(Math.abs(head.rotation.z - baseRotation.z) <= THREE.MathUtils.degToRad(1.1) * 0.15 + 1e-10);
+
+  applyHeadMotion(head, baseRotation, 1, 2, { motionScale: 0 });
+  assert.deepEqual(head.rotation.toArray(), baseRotation.toArray());
+});
+
+test('caps pointer parallax and gives speech emphasis a short, smooth nod pulse', () => {
+  assert.deepEqual(clampAvatarParallax(10, -10), { x: 0.06, y: -0.04 });
+  assert.deepEqual(clampAvatarParallax(Number.NaN, Number.POSITIVE_INFINITY), { x: 0, y: 0 });
+  assert.equal(getSpeechNodPulse(-1, 220, 0.8), 0);
+  assert.equal(getSpeechNodPulse(220, 220, 0.8), 0);
+  assert.ok(Math.abs(getSpeechNodPulse(110, 220, 1)) <= THREE.MathUtils.degToRad(1.25) + 1e-10);
+  assert.ok(getSpeechNodPulse(110, 220, 1) < 0);
+  assert.ok(Math.abs(getSpeechNodPulse(110, 220, 0.5)) < Math.abs(getSpeechNodPulse(110, 220, 1)));
 });
 
 test('selects reduced avatar quality for mobile and low-power devices', () => {
@@ -279,7 +389,30 @@ test('builds the reference Avatar from one original-aspect portrait plane', () =
     const portrait = root.getObjectByName('reference-portrait-plane');
     assert.deepEqual(portrait.geometry.parameters, { width: 1.08, height: 1.08, widthSegments: 1, heightSegments: 1 });
     assert.equal(rig.referencePortrait, portrait);
-    assert.doesNotThrow(() => animateBuiltInAvatar(rig, { mouthValue: 0.2, mouthViseme: 'oh' }));
+    assert.deepEqual([rig.lids, rig.pupils, rig.brows, rig.mouth, rig.lowerLip], [[], [], [], null, null]);
+    const sourcePlaneTransform = {
+      position: portrait.position.toArray(),
+      rotation: portrait.rotation.toArray(),
+      scale: portrait.scale.toArray(),
+      vertices: Array.from(portrait.geometry.attributes.position.array),
+    };
+    for (const expression of [
+      { happy: 0.12 },
+      { attentive: 0.14 },
+      { thinking: 0.12, frown: 0.015 },
+      { mouthValue: 0.78, mouthViseme: 'aa', brow: 0.025 },
+      { frown: 0.07 },
+    ]) {
+      rig.seconds += 1;
+      assert.doesNotThrow(() => animateBuiltInAvatar(rig, expression));
+      assert.deepEqual({
+        position: portrait.position.toArray(),
+        rotation: portrait.rotation.toArray(),
+        scale: portrait.scale.toArray(),
+        vertices: Array.from(portrait.geometry.attributes.position.array),
+      }, sourcePlaneTransform);
+    }
+    assert.deepEqual(portrait.scale.toArray(), [1, 1, 1]);
   } finally {
     if (previousDocument === undefined) delete globalThis.document;
     else globalThis.document = previousDocument;
@@ -795,6 +928,138 @@ test('loads and unloads the holographic Earth through the shared renderer lifecy
     assert.equal(canvas.hidden, true);
     assert.equal(classes.has('is-3d-hidden'), false);
     assert.equal(classes.has('is-globe-active'), false);
+  } finally {
+    for (const [key, descriptor] of previousGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
+    }
+  }
+});
+
+test('unload releases projection observers, event listeners, renderer, and active visibility', () => {
+  const previousGlobals = new Map(
+    ['window', 'document', 'ResizeObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame']
+      .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+  );
+  const removed = [];
+  const windowListeners = new Map();
+  const documentListeners = new Map();
+  const stageListeners = new Map();
+  const canvasListeners = new Map();
+  const inputListeners = new Map();
+  const buttonListeners = new Map();
+  const classes = new Set();
+  let resizeDisconnects = 0;
+  let intersectionDisconnects = 0;
+  let rendererDisposals = 0;
+  let reducedMotionRemoveCount = 0;
+  const recordListener = (collection, name, callback) => collection.set(name, callback);
+  const removeListener = (collection, target, name, callback) => {
+    if (collection.get(name) === callback) {
+      collection.delete(name);
+      removed.push(`${target}:${name}`);
+    }
+  };
+  const classList = {
+    add(...names) { names.forEach((name) => classes.add(name)); },
+    remove(...names) { names.forEach((name) => classes.delete(name)); },
+  };
+  const renderer = {
+    outputColorSpace: null,
+    setPixelRatio(value) { this.pixelRatio = value; },
+    getPixelRatio() { return this.pixelRatio; },
+    setSize() {},
+    setClearColor() {},
+    render() {},
+    dispose() { rendererDisposals += 1; },
+  };
+  const stage = {
+    classList,
+    addEventListener(name, callback) { recordListener(stageListeners, name, callback); },
+    removeEventListener(name, callback) { removeListener(stageListeners, 'stage', name, callback); },
+    getBoundingClientRect() { return { left: 0, top: 0, width: 320, height: 320 }; },
+  };
+  const canvas = {
+    hidden: true,
+    addEventListener(name, callback) { recordListener(canvasListeners, name, callback); },
+    removeEventListener(name, callback) { removeListener(canvasListeners, 'canvas', name, callback); },
+    getBoundingClientRect() { return { width: 320, height: 320 }; },
+  };
+  const fileInput = {
+    files: [],
+    value: '',
+    addEventListener(name, callback) { recordListener(inputListeners, name, callback); },
+    removeEventListener(name, callback) { removeListener(inputListeners, 'input', name, callback); },
+  };
+  const modelButton = {
+    addEventListener(name, callback) { recordListener(buttonListeners, name, callback); },
+    removeEventListener(name, callback) { removeListener(buttonListeners, 'button', name, callback); },
+  };
+
+  globalThis.window = {
+    devicePixelRatio: 1,
+    matchMedia() {
+      return {
+        matches: true,
+        addEventListener() {},
+        removeEventListener() { reducedMotionRemoveCount += 1; },
+      };
+    },
+    addEventListener(name, callback) { recordListener(windowListeners, name, callback); },
+    removeEventListener(name, callback) { removeListener(windowListeners, 'window', name, callback); },
+  };
+  globalThis.document = {
+    visibilityState: 'visible',
+    addEventListener(name, callback) { recordListener(documentListeners, name, callback); },
+    removeEventListener(name, callback) { removeListener(documentListeners, 'document', name, callback); },
+  };
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() { resizeDisconnects += 1; }
+  };
+  globalThis.IntersectionObserver = class {
+    observe() {}
+    disconnect() { intersectionDisconnects += 1; }
+  };
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => {};
+
+  try {
+    const avatar = initializeAvatar3d({
+      frame: { classList, setAttribute() {} },
+      stage,
+      canvas,
+      image: { classList },
+      fileInput,
+      modelButton,
+      status: { textContent: '', dataset: {} },
+      createRenderer: () => renderer,
+    });
+
+    assert.equal(avatar.loadBuiltInGlobe(), true);
+    assert.equal(canvas.hidden, false);
+    assert.equal(classes.has('is-globe-active'), true);
+
+    avatar.unload();
+    avatar.unload();
+
+    assert.equal(rendererDisposals, 1);
+    assert.equal(resizeDisconnects, 1);
+    assert.equal(intersectionDisconnects, 1);
+    assert.equal(reducedMotionRemoveCount, 1);
+    assert.equal(canvas.hidden, true);
+    assert.equal(classes.has('is-globe-active'), false);
+    assert.equal(classes.has('is-avatar-active'), false);
+    assert.equal(windowListeners.size, 0);
+    assert.equal(documentListeners.size, 0);
+    assert.equal(stageListeners.size, 0);
+    assert.equal(canvasListeners.size, 0);
+    assert.equal(inputListeners.size, 0);
+    assert.equal(buttonListeners.size, 0);
+    assert.ok(removed.includes('window:resize'));
+    assert.ok(removed.includes('window:orientationchange'));
+    assert.ok(removed.includes('document:visibilitychange'));
+    assert.ok(removed.includes('canvas:webglcontextlost'));
   } finally {
     for (const [key, descriptor] of previousGlobals) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);

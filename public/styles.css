@@ -4532,7 +4532,7 @@ body.new-interface .right-rail .planner-panel { order: 10; }
   body.new-interface .holo-stage.is-globe-active > .avatar-canvas {
     width: 92%;
     height: 92%;
-    top: 43%;
+    top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
   }
@@ -4763,8 +4763,8 @@ body.new-interface .right-rail .planner-panel { order: 10; }
     max-height: none;
   }
   body.new-interface .holo-stage.is-globe-active > .avatar-canvas {
-    width: 104% !important;
-    height: 104% !important;
+    width: 100% !important;
+    height: 100% !important;
   }
   body.new-interface .holo-stage.is-globe-active .avatar-frame {
     width: 68% !important;
@@ -5698,10 +5698,32 @@ body.new-interface .portrait-cutout-frame > .portrait-scanline {
   display: none !important;
 }
 
-body.new-interface .holo-stage > .avatar-canvas {
+body.new-interface .holo-stage > .avatar-canvas[hidden] {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
+}
+
+body.new-interface .holo-stage.is-avatar-active > .avatar-canvas:not([hidden]),
+body.new-interface .holo-stage.is-globe-active > .avatar-canvas:not([hidden]) {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+body.new-interface .holo-stage.is-globe-active > .avatar-canvas:not([hidden]) {
+  inset: auto !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+body.new-interface .holo-stage.is-avatar-active:not(.is-globe-active) .portrait-artwork {
+  visibility: hidden;
+}
+
+body.new-interface .holo-stage.is-avatar-active:not(.is-globe-active) .portrait-cutout-image {
+  visibility: hidden !important;
 }
 
 body.new-interface .portrait-cutout-frame .portrait-head {
@@ -5746,7 +5768,7 @@ body.new-interface .portrait-head-image {
 body.new-interface .portrait-blink-image {
   z-index: 2;
   opacity: 0;
-  transition: opacity 90ms ease-out;
+  transition: opacity var(--portrait-blink-open-duration, 90ms) ease-out;
   -webkit-mask-image:
     radial-gradient(ellipse calc(var(--portrait-eye-width, 11%) / 2) calc(var(--portrait-eye-height, 5%) / 2) at var(--portrait-eye-left-x, 43.6%) var(--portrait-eye-left-y, 28.8%), #000 68%, transparent 100%),
     radial-gradient(ellipse calc(var(--portrait-eye-width, 11%) / 2) calc(var(--portrait-eye-height, 5%) / 2) at var(--portrait-eye-right-x, 58.9%) var(--portrait-eye-right-y, 27.6%), #000 68%, transparent 100%);
@@ -5759,7 +5781,7 @@ body.new-interface .portrait-blink-image {
 
 body.new-interface .portrait-cutout-frame[data-blink="closed"] .portrait-blink-image {
   opacity: 1;
-  transition-duration: 50ms;
+  transition-duration: var(--portrait-blink-close-duration, 50ms);
   transition-timing-function: ease-in;
 }
 
@@ -5785,12 +5807,6 @@ body.new-interface .portrait-debug-right-eye {
 body.new-interface .holo-sphere-shell {
   translate: none !important;
   will-change: auto;
-}
-
-body.new-interface .holo-stage .portrait-cutout-image.is-3d-hidden {
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
 }
 
 body.new-interface .holo-stage .orbit-two {

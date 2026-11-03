@@ -159,7 +159,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /cache: 'no-store'/);
   assert.match(client, /requestSequence !== healthRequestSequence/);
   assert.doesNotMatch(client, /from '\.\/avatar3d\.bundle\.js'/);
-  assert.match(worker, /\/avatar3d\.bundle\.js\?avatar=5/);
+  assert.match(worker, /\/avatar3d\.bundle\.js\?avatar=7/);
   assert.doesNotMatch(worker, /avatar-cues\.js/);
   const selectedIds = [...client.matchAll(/querySelector\('#([\w-]+)'\)/g)].map((match) => match[1]);
   const missingIds = [...new Set(selectedIds)].filter((id) => !html.includes(`id="${id}"`));
@@ -196,8 +196,11 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /--portrait-chin-x/);
   assert.doesNotMatch(client, /ensurePortraitAvatarActive/);
   assert.doesNotMatch(client, /setTimeout\(\(\) => activateHolographicEarth\(\), 120\)/);
-  assert.match(styles, /body\.new-interface \.holo-stage > \.avatar-canvas \{[\s\S]*?display: none !important/);
-  assert.match(styles, /body\.new-interface \.holo-stage \.portrait-cutout-image\.is-3d-hidden \{[\s\S]*?display: block !important/);
+  assert.match(styles, /body\.new-interface \.holo-stage > \.avatar-canvas\[hidden\] \{[\s\S]*?display: none !important/);
+  assert.match(styles, /body\.new-interface \.holo-stage\.is-avatar-active > \.avatar-canvas:not\(\[hidden\]\)[\s\S]*?visibility: visible !important/);
+  assert.match(styles, /body\.new-interface \.holo-stage\.is-globe-active > \.avatar-canvas:not\(\[hidden\]\) \{[\s\S]*?inset: auto !important;[\s\S]*?top: 50% !important;[\s\S]*?transform: translate\(-50%, -50%\) !important/);
+  assert.match(styles, /body\.new-interface \.holo-stage\.is-avatar-active:not\(\.is-globe-active\) \.portrait-artwork \{[\s\S]*?visibility: hidden/);
+  assert.doesNotMatch(styles, /portrait-cutout-image\.is-3d-hidden \{\s*display: block !important/);
   assert.match(styles, /\.portrait-cutout-frame\[data-blink="closed"\] \.portrait-blink-image/);
   assert.match(styles, /mask-image: linear-gradient\(to bottom, #000 0 52%, transparent 64%\)/);
   assert.match(styles, /\.portrait-head-content \{[\s\S]*?transform-origin: 51\.5% 58%/);
@@ -216,7 +219,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function executeSmartCommand/);
   assert.match(client, /function activate3DAvatar\(\) \{\s*return activate3DProjection\('avatar'\)/);
   assert.match(client, /function activateHolographicEarth\(\) \{\s*return activate3DProjection\('earth'\)/);
-  assert.match(client, /import\('\/avatar3d\.bundle\.js\?avatar=5'\)/);
+  assert.match(client, /import\('\/avatar3d\.bundle\.js\?avatar=7'\)/);
   assert.match(client, /if \(!avatar3dActivated\) return;/);
   assert.doesNotMatch(client, /\bsetAvatarMouth\b|toggleAudioLipSync/);
   assert.match(client, /utterance\.onpause/);
@@ -338,7 +341,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?avatar=63/);
+  assert.match(html, /app\.js\?avatar=66/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -386,7 +389,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /loadSystemMetrics/);
   assert.match(html, /id="install-button"/);
   assert.match(client, /setWorkspaceView\(state\.workspaceView, \{ remember: false \}\);[\s\S]*?initializeDeviceMonitor\(\)/);
-  assert.match(client, /import\('\/avatar3d\.bundle\.js\?avatar=5'\)/);
+  assert.match(client, /import\('\/avatar3d\.bundle\.js\?avatar=7'\)/);
   assert.doesNotMatch(client, /\bsetAvatarMouth\b|audioLipSync|avatarSpeechTimer/);
   assert.match(client, /window\.speechSynthesis\.speak\(utterance\)/);
   assert.match(client, /function startListeningFromUserGesture\(\) \{\s*startListening\('command', false, false, true\);\s*\}/);
@@ -414,7 +417,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /document\.addEventListener\('visibilitychange'/);
   assert.match(client, /window\.addEventListener\('blur', pauseVoiceForPageLifecycle\)/);
   assert.match(client, /window\.addEventListener\('focus', resumeVoiceForPageLifecycle\)/);
-  assert.match(client, /window\.addEventListener\('pagehide', pauseVoiceForPageLifecycle\)/);
+  assert.match(client, /window\.addEventListener\('pagehide', \(event\) => \{\s*pauseVoiceForPageLifecycle\(\);\s*if \(!event\.persisted\) portraitMotion\.destroy\(\);/);
   assert.match(client, /window\.addEventListener\('pageshow'/);
   assert.match(client, /function pageIsFocused\(\)/);
   assert.match(client, /if \(!isPageForeground\(document\.visibilityState, focused\)\) \{\s*pauseVoiceForPageLifecycle\(\);\s*return;/);
@@ -520,7 +523,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*width: min\(100%, 720px\);[\s\S]*?min-height: 58px;/);
   assert.match(styles, /body\.new-interface \.dashboard-command > \.dashboard-command-mic \{[^}]*width: 48px;[\s\S]*?height: 48px;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?avatar=62/);
+  assert.match(html, /styles\.css\?avatar=65/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -537,13 +540,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v90/);
-  assert.match(worker, /styles\.css\?avatar=62/);
+  assert.match(worker, /jarvis-shell-v94/);
+  assert.match(worker, /styles\.css\?avatar=65/);
   assert.doesNotMatch(worker, /jarvis-portrait\.png/);
   assert.match(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?avatar=62/);
+  assert.match(worker, /styles\.css\?avatar=65/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?avatar=63/);
+  assert.match(worker, /app\.js\?avatar=66/);
   assert.match(worker, /jarvis-portrait-eyes-closed\.webp/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
@@ -565,7 +568,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.doesNotMatch(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?avatar=63/);
+  assert.match(client, /service-worker\.js\?avatar=66/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);

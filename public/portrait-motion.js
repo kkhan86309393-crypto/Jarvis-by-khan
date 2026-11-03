@@ -2,7 +2,7 @@ export const DEFAULT_PORTRAIT_LIVELINESS = 0.6;
 export const REDUCED_MOTION_LIVELINESS = 0.15;
 
 const MAX_HEAD_ROTATION = 1.5;
-const MAX_HEAD_TRANSLATION = 2;
+const MAX_HEAD_TRANSLATION = 1.2;
 const MAX_MOUTH_OPENING = 0.7;
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 const randomBetween = (random, minimum, maximum) => minimum + random() * (maximum - minimum);
@@ -58,6 +58,8 @@ export function createPortraitMotion({
   let speechCueAt = -Infinity;
   let nodStartedAt = -Infinity;
   let nodDuration = 220;
+  let motionTime = 0;
+  const stateBlend = { listening: 0, thinking: 0, speaking: 0 };
   let nextGazeChange = 0;
   let thinkingGlanceUntil = 0;
   let thinkingGazeX = 0;
@@ -143,9 +145,14 @@ export function createPortraitMotion({
 
   function applyMotion(timestamp) {
     const scale = motionScale();
-    const delta = Math.max(1, timestamp - (lastFrameTime ?? timestamp - 16));
+    const delta = clamp(timestamp - (lastFrameTime ?? timestamp - 16), 1, 32);
     const smoothing = 1 - Math.exp(-delta / 75);
     lastFrameTime = timestamp;
+    motionTime += delta;
+    const stateSmoothing = 1 - Math.exp(-delta / 350);
+    stateBlend.listening += ((eyeMode === 'listening' ? 1 : 0) - stateBlend.listening) * stateSmoothing;
+    stateBlend.thinking += ((eyeMode === 'thinking' ? 1 : 0) - stateBlend.thinking) * stateSmoothing;
+    stateBlend.speaking += ((speaking ? 1 : 0) - stateBlend.speaking) * stateSmoothing;
 
     if (eyeMode === 'idle' && timestamp >= nextGazeChange) {
       if (targetGazeX || targetGazeY) {
@@ -166,12 +173,12 @@ export function createPortraitMotion({
     }
 
     const noise = (
-      Math.sin(timestamp * (2 * Math.PI / 7_000))
-      + Math.sin(timestamp * (2 * Math.PI / 11_000) + 1.4) * 0.7
-      + Math.sin(timestamp * (2 * Math.PI / 17_000) + 2.2) * 0.5
+      Math.sin(motionTime * (2 * Math.PI / 7_000))
+      + Math.sin(motionTime * (2 * Math.PI / 11_000) + 1.4) * 0.7
+      + Math.sin(motionTime * (2 * Math.PI / 17_000) + 2.2) * 0.5
     ) / 2.2;
-    const listeningTurn = eyeMode === 'listening' ? 0.25 : 0;
-    const thinkingTurn = eyeMode === 'thinking' ? thinkingGazeX * 0.22 : 0;
+    const listeningTurn = stateBlend.listening * 0.25;
+    const thinkingTurn = stateBlend.thinking * thinkingGazeX * 0.22;
     const nodElapsed = timestamp - nodStartedAt;
     const nod = nodElapsed >= 0 && nodElapsed < nodDuration
       ? -Math.sin((nodElapsed / nodDuration) * Math.PI) * 1
@@ -189,7 +196,8 @@ export function createPortraitMotion({
       : 0;
     const headScale = selectedQuality === 'low' ? 0 : scale;
     const targetRotation = clamp(
-      noise * 0.82 * headScale + listeningTurn * headScale + thinkingTurn * headScale + nod * headScale,
+      noise * 0.82 * headScale + listeningTurn * headScale + thinkingTurn * headScale
+        + nod * headScale * stateBlend.speaking,
       -MAX_HEAD_ROTATION,
       MAX_HEAD_ROTATION,
     );
