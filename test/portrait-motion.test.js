@@ -170,6 +170,23 @@ test('speech cues open the mouth within the cap and emphasize with a small nod',
   harness.motion.destroy();
 });
 
+test('thinking gaze briefly shifts and returns while listening keeps a subtle head tilt', () => {
+  const harness = createHarness();
+  harness.motion.setEyeMode('thinking');
+  harness.tick();
+  assert.notEqual(harness.motion.getState().gazeX, 0);
+
+  for (let frame = 0; frame < 60; frame += 1) harness.tick(16);
+  assert.ok(Math.abs(harness.motion.getState().gazeX) < 0.05);
+
+  harness.motion.setEyeMode('listening');
+  for (let frame = 0; frame < 12; frame += 1) harness.tick(16);
+  const listeningHeadDrift = harness.motion.getState().headDrift;
+  assert.ok(Math.abs(listeningHeadDrift) > 0);
+  assert.ok(Math.abs(listeningHeadDrift) <= 1.5);
+  harness.motion.destroy();
+});
+
 test('device orientation permission is requested only after a gesture when required', async () => {
   let permissionRequests = 0;
   const harness = createHarness({

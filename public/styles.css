@@ -108,9 +108,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 .portrait-artwork > .ai-avatar { width: 100%; height: 100%; }
 .portrait-animation { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
-.portrait-eye-lid { width: 9.5%; height: 3%; position: absolute; top: calc(var(--portrait-eye-y, 28.5%) - 1.5%); overflow: hidden; }
-.portrait-eye-lid-left { left: calc(var(--portrait-eye-left-x, 43.6%) - 4.75%); }
-.portrait-eye-lid-right { left: calc(var(--portrait-eye-right-x, 58.5%) - 4.75%); }
+.portrait-eye-lid { width: var(--portrait-eye-width, 9.5%); height: var(--portrait-eye-height, 3%); position: absolute; top: var(--portrait-eye-y, 28.5%); overflow: hidden; transform: translate(-50%, -50%); }
+.portrait-eye-lid-left { left: var(--portrait-eye-left-x, 43.6%); }
+.portrait-eye-lid-right { left: var(--portrait-eye-right-x, 58.5%); }
 .portrait-upper-lid,
 .portrait-lower-lid { position: absolute; inset: 0; display: block; clip-path: ellipse(49% 42% at 50% 50%); }
 .portrait-upper-lid {
@@ -134,7 +134,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .avatar-frame[data-blink="closed"] .portrait-upper-lid { transform: scaleY(1); }
 .avatar-frame[data-blink="closed"] .portrait-lower-lid { transform: scaleY(.28); }
 .portrait-mouth {
-  width: 11%;
+  width: var(--portrait-mouth-width, 11%);
   height: 4%;
   position: absolute;
   top: var(--portrait-mouth-y, 43.8%);
@@ -179,7 +179,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .portrait-debug-left-eye { left: var(--portrait-eye-left-x, 43.6%); top: var(--portrait-eye-y, 28.5%); }
 .portrait-debug-right-eye { left: var(--portrait-eye-right-x, 58.5%); top: var(--portrait-eye-y, 28.5%); }
 .portrait-debug-mouth { left: var(--portrait-mouth-x, 51.7%); top: var(--portrait-mouth-y, 41.9%); }
-.portrait-debug-chin { left: 51.7%; top: var(--portrait-chin-y, 50%); }
+.portrait-debug-chin { left: var(--portrait-chin-x, 51.7%); top: var(--portrait-chin-y, 50%); }
 .avatar-frame[data-speaking="true"][data-viseme="neutral"] .portrait-mouth {
   opacity: .85;
   animation: portrait-mouth-idle 460ms ease-in-out infinite alternate;
@@ -5770,6 +5770,30 @@ body.new-interface .portrait-artwork {
 body.new-interface .holo-sphere-shell {
   translate: var(--sphere-depth-x, 0px) var(--sphere-depth-y, 0px);
   will-change: translate;
+}
+
+body.new-interface .holo-stage > .avatar-canvas {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+body.new-interface .holo-stage .portrait-cutout-image.is-3d-hidden {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+body.new-interface .holo-stage .portrait-cutout-frame.is-3d-active .portrait-animation[hidden],
+body.new-interface .holo-stage .portrait-cutout-frame .portrait-animation[hidden],
+body.new-interface .holo-stage .portrait-cutout-frame.is-3d-active .portrait-animation {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+body.new-interface .holo-stage .orbit-two {
+  border-right-color: rgba(var(--assistant-state-rgb), .72);
 }
 
 body.new-interface .avatar-frame[data-speaking="true"] .portrait-mouth {

@@ -31,13 +31,14 @@ async function comparePixels(page, images) {
       return context.getImageData(0, 0, width, height).data;
     });
 
-    return pixelData.slice(1).map((current) => {
+    return pixelData.slice(1).map((current, pairIndex) => {
       let changedPixels = 0;
       let absoluteDifference = 0;
-      for (let index = 0; index < current.length; index += 4) {
-        const difference = Math.abs(current[index] - pixelData[0][index])
-          + Math.abs(current[index + 1] - pixelData[0][index + 1])
-          + Math.abs(current[index + 2] - pixelData[0][index + 2]);
+      for (let pixelIndex = 0; pixelIndex < current.length; pixelIndex += 4) {
+        const previous = pixelData[pairIndex];
+        const difference = Math.abs(current[pixelIndex] - previous[pixelIndex])
+          + Math.abs(current[pixelIndex + 1] - previous[pixelIndex + 1])
+          + Math.abs(current[pixelIndex + 2] - previous[pixelIndex + 2]);
         absoluteDifference += difference;
         if (difference > 24) changedPixels += 1;
       }
@@ -51,16 +52,13 @@ async function comparePixels(page, images) {
 }
 
 test('portrait speech, blink, and tilt change their screenshot regions', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await page.waitForFunction(() => Boolean(window.jarvisAvatarAnimation));
   await page.locator('#ai-avatar').evaluate((image) => image.decode());
   await expect(page.locator('#holo-stage')).toBeVisible();
-  await page.locator('#settings-button').click();
-  await page.locator('#activate-holographic-earth').waitFor({ state: 'visible' });
-  await page.locator('#activate-holographic-earth').click();
-  await expect(page.locator('#holo-stage')).toHaveClass(/is-globe-active/);
-  await page.locator('#settings-dialog [aria-label="Close settings"]').click();
+  await expect(page.locator('#avatar-canvas')).toBeHidden();
+  await expect(page.locator('#ai-avatar')).toBeVisible();
   await page.waitForFunction(() => Boolean(
     document.querySelector('.portrait-mouth')?.style.getPropertyValue('--portrait-mouth-open'),
   ));
@@ -76,22 +74,25 @@ test('portrait speech, blink, and tilt change their screenshot regions', async (
 
   await page.evaluate(() => {
     window.jarvisAvatarAnimation.setSpeaking(true);
-    window.jarvisAvatarAnimation.setSpeechCue(0.75, 'aa');
+    window.jarvisAvatarAnimation.setSpeechCue(0.9, 'aa');
   });
   const mouthImages = [];
   mouthImages.push((await captureRegion(page, mouthRegion, output('mouth-1.png'))).image);
-  await page.waitForTimeout(150);
-  await page.evaluate(() => window.jarvisAvatarAnimation.setSpeechCue(0.32, 'ih'));
+  await page.waitForTimeout(120);
+  await page.evaluate(() => window.jarvisAvatarAnimation.setSpeechCue(0.18, 'ih'));
   mouthImages.push((await captureRegion(page, mouthRegion, output('mouth-2.png'))).image);
-  await page.waitForTimeout(150);
-  await page.evaluate(() => window.jarvisAvatarAnimation.setSpeechCue(0.68, 'oh'));
+  await page.waitForTimeout(120);
+  await page.evaluate(() => window.jarvisAvatarAnimation.setSpeechCue(0.82, 'oh'));
   mouthImages.push((await captureRegion(page, mouthRegion, output('mouth-3.png'))).image);
+  await page.waitForTimeout(120);
+  await page.evaluate(() => window.jarvisAvatarAnimation.setSpeechCue(0.26, 'ee'));
+  mouthImages.push((await captureRegion(page, mouthRegion, output('mouth-4.png'))).image);
   const mouthDifferences = await comparePixels(page, mouthImages);
-  expect(mouthDifferences[0].changedPixels).toBeGreaterThan(0);
-  expect(mouthDifferences[1].changedPixels).toBeGreaterThan(0);
+  expect(mouthDifferences).toHaveLength(3);
+  for (const difference of mouthDifferences) expect(difference.changedPixels).toBeGreaterThan(0);
 
   await page.evaluate(() => window.jarvisAvatarAnimation.setSpeaking(false));
-  await page.waitForTimeout(100);
+  await expect(page.locator('.portrait-cutout-frame')).toHaveAttribute('data-blink', 'open');
   const eyeRegion = {
     x: artworkBox.x + artworkBox.width * 0.38,
     y: artworkBox.y + artworkBox.height * 0.24,

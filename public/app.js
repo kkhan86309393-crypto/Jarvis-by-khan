@@ -551,8 +551,12 @@ const portraitOverlay = PORTRAIT_OVERLAY_CONFIG.cutout;
 document.documentElement.style.setProperty('--portrait-eye-y', `${portraitOverlay.eyes.y * 100}%`);
 document.documentElement.style.setProperty('--portrait-eye-left-x', `${portraitOverlay.eyes.leftX * 100}%`);
 document.documentElement.style.setProperty('--portrait-eye-right-x', `${portraitOverlay.eyes.rightX * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-width', `${portraitOverlay.eyes.width * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-height', `${portraitOverlay.eyes.height * 100}%`);
 document.documentElement.style.setProperty('--portrait-mouth-x', `${portraitOverlay.mouth.x * 100}%`);
 document.documentElement.style.setProperty('--portrait-mouth-y', `${portraitOverlay.mouth.y * 100}%`);
+document.documentElement.style.setProperty('--portrait-mouth-width', `${portraitOverlay.mouth.width * 100}%`);
+document.documentElement.style.setProperty('--portrait-chin-x', `${portraitOverlay.chin.x * 100}%`);
 document.documentElement.style.setProperty('--portrait-chin-y', `${portraitOverlay.chin.y * 100}%`);
 document.documentElement.style.setProperty('--portrait-debug', new URLSearchParams(location.search).get('debug') === '1' ? 'flex' : 'none');
 window.jarvisAvatarAnimation = {
@@ -572,11 +576,6 @@ window.addEventListener('jarvis:hologram-quality-change', ({ detail }) => {
   portraitMotion.setQuality(detail?.quality);
 });
 createMobileHome();
-if (window.matchMedia('(max-width: 780px)').matches) {
-  window.requestAnimationFrame(() => {
-    window.setTimeout(() => activateHolographicEarth(), 120);
-  });
-}
 elements.avatarImage.addEventListener(PORTRAIT_ANIMATION_EVENT, ({ detail }) => {
   elements.avatarFrame.dataset.blink = detail.blink;
   elements.avatarFrame.dataset.viseme = detail.viseme;
@@ -1278,11 +1277,6 @@ function activate3DAvatar() {
 
 function activateHolographicEarth() {
   return activate3DProjection('earth');
-}
-
-function ensurePortraitAvatarActive() {
-  if (avatar3dActiveMode === 'avatar' || avatar3dActivationPending) return;
-  void activate3DAvatar();
 }
 
 function setDashboardChatState(mode, message = '', canRetry = false) {
@@ -4959,7 +4953,6 @@ initializeAppHubs({
 });
 updateSearchMode();
 setWorkspaceView(state.workspaceView, { remember: false });
-if (state.workspaceView === 'dashboard') ensurePortraitAvatarActive();
 initializeDeviceMonitor();
 updateLocalDateTime();
 window.setInterval(() => {
@@ -4972,7 +4965,11 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?avatar=61', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?avatar=62', { updateViaCache: 'none' }).then((registration) => {
+    if (!registration || typeof registration.update !== 'function') {
+      console.warn('J.A.R.V.I.S. could not check for an application update because this browser did not provide a service worker registration.');
+      return;
+    }
     const updateWorker = () => {
       registration.update().catch((error) => {
         console.warn('J.A.R.V.I.S. could not check for an application update.', error);

@@ -191,6 +191,12 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(html, /class="portrait-animation" aria-hidden="true"/);
   assert.match(html, /class="portrait-eye-lid portrait-eye-lid-left"/);
   assert.match(html, /class="portrait-mouth"/);
+  assert.match(client, /--portrait-eye-width/);
+  assert.match(client, /--portrait-chin-x/);
+  assert.doesNotMatch(client, /ensurePortraitAvatarActive/);
+  assert.doesNotMatch(client, /setTimeout\(\(\) => activateHolographicEarth\(\), 120\)/);
+  assert.match(styles, /body\.new-interface \.holo-stage > \.avatar-canvas \{[\s\S]*?display: none !important/);
+  assert.match(styles, /body\.new-interface \.holo-stage \.portrait-cutout-image\.is-3d-hidden \{[\s\S]*?display: block !important/);
   assert.match(styles, /\.avatar-frame\[data-blink="closed"\] \.portrait-upper-lid/);
   assert.match(styles, /\.avatar-frame\[data-viseme="aa"\] \.portrait-mouth/);
   assert.match(styles, /\.avatar-frame\[data-speaking="true"\]\[data-viseme="neutral"\] \.portrait-mouth/);
@@ -332,7 +338,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(client, /function summarizeSearchResults\(data, prompt\)/);
   const captureHandler = client.slice(client.indexOf('async function captureScreenFrame'), client.indexOf('async function sendVisionFrame'));
   assert.doesNotMatch(captureHandler, /\/api\/vision|fetch\(/);
-  assert.match(html, /app\.js\?avatar=61/);
+  assert.match(html, /app\.js\?avatar=62/);
   assert.match(html, /APKs (?:and|or) native (?:apps|applications) cannot run/);
   assert.match(html, /Only HTTP\/HTTPS websites and explicit Android intent links are accepted/);
   assert.match(html, /class="voice-console"/);
@@ -514,7 +520,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(styles, /body\.new-interface \.dashboard-commandbar \{[^}]*width: min\(100%, 720px\);[\s\S]*?min-height: 58px;/);
   assert.match(styles, /body\.new-interface \.dashboard-command > \.dashboard-command-mic \{[^}]*width: 48px;[\s\S]*?height: 48px;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(html, /styles\.css\?avatar=60/);
+  assert.match(html, /styles\.css\?avatar=61/);
   assert.match(html, /diagnostics\.js\?hud=28/);
   assert.match(html, /id="runtime-diagnostics"/);
   assert.match(html, /Temporary Android Speech Diagnostics/);
@@ -531,13 +537,13 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(diagnostics, /jarvis:speech-diagnostic/);
   assert.match(diagnostics, /query and fragment omitted/);
   assert.match(diagnostics, /speech text is not recorded/);
-  assert.match(worker, /jarvis-shell-v88/);
-  assert.match(worker, /styles\.css\?avatar=60/);
+  assert.match(worker, /jarvis-shell-v89/);
+  assert.match(worker, /styles\.css\?avatar=61/);
   assert.doesNotMatch(worker, /jarvis-portrait\.png/);
   assert.match(worker, /reference-face\.jpg/);
-  assert.match(worker, /styles\.css\?avatar=60/);
+  assert.match(worker, /styles\.css\?avatar=61/);
   assert.match(worker, /diagnostics\.js\?hud=28/);
-  assert.match(worker, /app\.js\?avatar=61/);
+  assert.match(worker, /app\.js\?avatar=62/);
   assert.match(worker, /local-planner\.js/);
   assert.match(worker, /smart-command-router\.js/);
   assert.match(worker, /lab-personalize\.js/);
@@ -558,7 +564,7 @@ test('provides every client-selected element and the avatar/mobile controls', as
   assert.match(worker, /device-monitor\.js/);
   assert.doesNotMatch(worker, /interface-switcher\.js/);
   assert.match(worker, /const response = await fetch\(event\.request, \{ signal: controller\.signal \}\)/);
-  assert.match(client, /service-worker\.js\?avatar=61/);
+  assert.match(client, /service-worker\.js\?avatar=62/);
   assert.match(client, /AI reply reaches speak\(\)/);
   assert.match(client, /SpeechRecognition error/);
   assert.match(client, /TTS utterance onstart/);
