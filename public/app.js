@@ -4948,7 +4948,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   try {
     sessionStorage.removeItem('jarvis:sw-reloaded');
   } catch {}
-  navigator.serviceWorker.register('/service-worker.js?avatar=58', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?avatar=59', { updateViaCache: 'none' }).then((registration) => {
     registration.update().catch(() => {});
     const activateWaitingWorker = () => {
       if (!registration.waiting) return;

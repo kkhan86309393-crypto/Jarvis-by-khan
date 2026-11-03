@@ -52,7 +52,7 @@ Technical cards, including Real-Time Info, Server RAM, Server Storage, Quick Act
 
 ## Release state
 
-- Service worker cache: `jarvis-shell-v86`
+- Service worker cache: `jarvis-shell-v87`
 - Final audit baseline restored: `087c0b4`
 - Automated Node regression suite: 275 tests passing
 - Avatar build and repository syntax checks: passing

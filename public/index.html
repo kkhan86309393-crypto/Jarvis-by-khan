@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?avatar=58">
+    <link rel="stylesheet" href="/styles.css?avatar=59">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body class="new-interface">
@@ -102,6 +102,15 @@
             <div class="holo-waveform" id="holo-waveform" role="img" aria-label="Voice activity idle">
               <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
+            <section class="dashboard-panel state-panel" data-lab-widget="status" aria-label="Assistant status">
+              <span class="sr-only" id="state-panel-live">STANDBY</span>
+              <div class="holo-state-strip" id="holo-state-strip" role="group" aria-label="Assistant states">
+                <button class="holo-state" type="button" data-holo-state="listening" data-mobile-state="listening"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Listening</span><small>Awaiting voice</small></button>
+                <button class="holo-state" type="button" data-holo-state="thinking" data-mobile-state="thinking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 18h5m-4.5 3h4m-5.7-6.2A6.5 6.5 0 1 1 15.7 15c-.8.6-1.2 1.4-1.2 2h-5c0-.8-.4-1.6-1.2-2.2Z"/><path d="M12 2V1m8 11h1M3 12H2m15.7-6.7.7-.7M5.6 5.6l-.7-.7"/></svg><span>Thinking</span><small>Analyzing...</small></button>
+                <button class="holo-state" type="button" data-holo-state="speaking" data-mobile-state="speaking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span>Speaking</span><small>Responding...</small></button>
+                <button class="holo-state" type="button" data-holo-state="online" data-mobile-state="online"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7"/><circle cx="12" cy="12" r="9"/></svg><span>Online</span><small>Ready</small></button>
+              </div>
+            </section>
             <div class="presence-copy">
               <p class="eyebrow" id="assistant-state">SYSTEM STANDBY</p>
               <h1 id="presence-title">At your service.</h1>
@@ -114,15 +123,6 @@
             </div>
           </section>
 
-        <section class="dashboard-panel state-panel" data-lab-widget="status" aria-labelledby="state-panel-title">
-          <span class="sr-only" id="state-panel-live">STANDBY</span>
-          <div class="holo-state-strip" id="holo-state-strip" role="group" aria-label="Assistant states">
-            <button class="holo-state" type="button" data-holo-state="listening" data-mobile-state="listening"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span>Listening</span><small>Waiting for your voice...</small></button>
-            <button class="holo-state" type="button" data-holo-state="thinking" data-mobile-state="thinking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 18h5m-4.5 3h4m-5.7-6.2A6.5 6.5 0 1 1 15.7 15c-.8.6-1.2 1.4-1.2 2h-5c0-.8-.4-1.6-1.2-2.2Z"/><path d="M12 2V1m8 11h1M3 12H2m15.7-6.7.7-.7M5.6 5.6l-.7-.7"/></svg><span>Thinking</span><small>Analyzing...</small></button>
-            <button class="holo-state" type="button" data-holo-state="speaking" data-mobile-state="speaking"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M17 9a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/></svg><span>Speaking</span><small>Generating response...</small></button>
-            <button class="holo-state" type="button" data-holo-state="online" data-mobile-state="online"><svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7"/><circle cx="12" cy="12" r="9"/></svg><span>Online</span><small>Ready</small></button>
-          </div>
-        </section>
         <div class="dashboard-commandbar">
           <form class="dashboard-command" id="dashboard-command-form">
             <button class="voice-console-button primary dashboard-command-mic" id="dashboard-mic-button" type="button" aria-label="Start voice input" aria-pressed="false" title="Start voice input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg><span class="sr-only">Talk to J.A.R.V.I.S.</span></button>
