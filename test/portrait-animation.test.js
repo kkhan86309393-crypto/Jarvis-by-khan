@@ -60,19 +60,14 @@ function createHarness({ reducedMotion = false, random = () => 0 } = {}) {
   };
 }
 
-test('blinking runs independently of speech with a short, staged closure', () => {
+test('blinking runs independently of speech with a 90 ms closed phase', () => {
   const harness = createHarness();
 
   assert.equal(harness.current.blink, 'open');
   assert.equal(harness.current.speaking, false);
   harness.advance(2_500);
-  assert.equal(harness.current.blink, 'half');
-  assert.equal(harness.current.speaking, false);
-  harness.advance(45);
   assert.equal(harness.current.blink, 'closed');
-  harness.advance(65);
-  assert.equal(harness.current.blink, 'half');
-  harness.advance(55);
+  harness.advance(90);
   assert.equal(harness.current.blink, 'open');
 
   harness.animation.destroy();
@@ -84,18 +79,16 @@ test('blinking occasionally double-blinks and can be forced by the avatar hook',
   const harness = createHarness({ random: () => randomValues.shift() ?? 0.5 });
 
   harness.advance(2_500);
-  assert.equal(harness.current.blink, 'half');
-  harness.advance(45);
-  harness.advance(65);
-  harness.advance(55);
+  assert.equal(harness.current.blink, 'closed');
+  harness.advance(90);
   assert.equal(harness.current.blink, 'open');
   harness.advance(180);
-  assert.equal(harness.current.blink, 'half');
+  assert.equal(harness.current.blink, 'closed');
 
   assert.equal(harness.animation.blink(), true);
-  assert.equal(harness.current.blink, 'half');
-  harness.advance(45);
   assert.equal(harness.current.blink, 'closed');
+  harness.advance(90);
+  assert.equal(harness.current.blink, 'open');
 
   harness.animation.destroy();
   assert.equal(harness.timers.size, 0);
@@ -141,21 +134,18 @@ test('stale playback callbacks cannot replace or clear the current mouth state',
   animation.destroy();
 });
 
-test('reduced motion disables blink and mouth movement, including when enabled mid-playback', () => {
+test('reduced-motion preference does not disable functional blink or speech hooks', () => {
   const harness = createHarness({ reducedMotion: true });
 
-  assert.equal(harness.timers.size, 0);
-  assert.equal(harness.animation.startSpeech(3), true);
-  assert.equal(harness.animation.setViseme(3, 'aa'), false);
-  harness.setReducedMotion(false);
   assert.equal(harness.timers.size, 1);
+  assert.equal(harness.animation.startSpeech(3), true);
   assert.equal(harness.animation.setViseme(3, 'aa'), true);
-  harness.setReducedMotion(true);
-  assert.equal(harness.current.blink, 'open');
-  assert.equal(harness.current.viseme, 'neutral');
-  assert.equal(harness.animation.setViseme(3, 'oh'), false);
+  assert.equal(harness.current.viseme, 'aa');
+  assert.equal(harness.animation.blink(), true);
+  assert.equal(harness.current.blink, 'closed');
+  assert.equal(harness.animation.setViseme(3, 'oh'), true);
   harness.advance(10_000);
-  assert.equal(harness.current.blink, 'open');
+  assert.ok(['open', 'closed'].includes(harness.current.blink));
 
   harness.animation.destroy();
   assert.equal(harness.timers.size, 0);

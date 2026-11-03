@@ -7,37 +7,37 @@ import {
   REDUCED_MOTION_LIVELINESS,
 } from '../public/portrait-motion.js';
 
-function createHarness({ reducedMotion = false, quality = 'high', random = () => 0.5, orientationApi } = {}) {
+function createHarness({ reducedMotion = false, quality = 'high', random = () => 0.5 } = {}) {
   let time = 0;
   let nextFrameId = 0;
   const frames = new Map();
-  const createTarget = (bounds = { left: 0, top: 0, width: 100, height: 100 }) => {
-    const listeners = new Map();
-    const styles = new Map();
-    return {
-      listeners,
-      styles,
-      style: { setProperty: (name, value) => styles.set(name, value) },
-      getBoundingClientRect: () => bounds,
-      addEventListener(type, listener) {
-        const values = listeners.get(type) || new Set();
-        values.add(listener);
-        listeners.set(type, values);
-      },
-      removeEventListener(type, listener) {
-        listeners.get(type)?.delete(listener);
-      },
-      dispatch(type, event = {}) {
-        for (const listener of listeners.get(type) || []) listener(event);
-      },
-    };
-  };
-  const stage = createTarget();
-  const portraitFrame = createTarget();
-  const portraitArtwork = createTarget();
-  const sphere = createTarget();
-  const mouth = createTarget();
   const queryListeners = new Set();
+  const documentListeners = new Map();
+  const styles = new Map();
+  const noop = () => {};
+  const gradient = { addColorStop: noop };
+  const context = {
+    clearRect: noop,
+    save: noop,
+    restore: noop,
+    translate: noop,
+    beginPath: noop,
+    ellipse: noop,
+    moveTo: noop,
+    quadraticCurveTo: noop,
+    stroke: noop,
+    fill: noop,
+    createLinearGradient: () => gradient,
+  };
+  const portraitFrame = { style: { setProperty: (name, value) => styles.set(name, value) } };
+  const portraitHead = { style: { setProperty: (name, value) => styles.set(name, value) } };
+  const portraitArtwork = {};
+  const portraitImage = {};
+  const mouthCanvas = {
+    width: 800,
+    height: 875,
+    getContext: () => context,
+  };
   const reducedMotionQuery = {
     matches: reducedMotion,
     addEventListener(type, listener) {
@@ -47,10 +47,7 @@ function createHarness({ reducedMotion = false, quality = 'high', random = () =>
       if (type === 'change') queryListeners.delete(listener);
     },
   };
-  const windowListeners = new Map();
-  const documentListeners = new Map();
   const windowRef = {
-    DeviceOrientationEvent: orientationApi,
     document: {
       hidden: false,
       addEventListener(type, listener) {
@@ -62,21 +59,16 @@ function createHarness({ reducedMotion = false, quality = 'high', random = () =>
         documentListeners.get(type)?.delete(listener);
       },
     },
-    addEventListener(type, listener) {
-      const values = windowListeners.get(type) || new Set();
-      values.add(listener);
-      windowListeners.set(type, values);
-    },
-    removeEventListener(type, listener) {
-      windowListeners.get(type)?.delete(listener);
-    },
+    addEventListener: noop,
+    removeEventListener: noop,
   };
   const motion = createPortraitMotion({
-    stage,
     portraitFrame,
+    portraitHead,
     portraitArtwork,
-    sphere,
-    mouth,
+    portraitImage,
+    mouthCanvas,
+    mouthConfig: { x: 0.517, y: 0.419, width: 0.11 },
     windowRef,
     reducedMotionQuery,
     quality,
@@ -99,22 +91,14 @@ function createHarness({ reducedMotion = false, quality = 'high', random = () =>
     pending.forEach((callback) => callback(time));
   }
 
-  function setReducedMotion(matches) {
-    reducedMotionQuery.matches = matches;
-    queryListeners.forEach((listener) => listener({ matches }));
-  }
-
   return {
     motion,
-    stage,
-    portraitFrame,
-    portraitArtwork,
-    sphere,
-    mouth,
-    windowRef,
-    windowListeners,
+    styles,
     tick,
-    setReducedMotion,
+    setReducedMotion(matches) {
+      reducedMotionQuery.matches = matches;
+      queryListeners.forEach((listener) => listener({ matches }));
+    },
   };
 }
 
@@ -123,6 +107,7 @@ test('portrait liveliness uses the default and reduced-motion values', () => {
   assert.equal(REDUCED_MOTION_LIVELINESS, 0.15);
   assert.equal(getPortraitLiveliness(), 0.6);
   assert.equal(getPortraitLiveliness(true), 0.15);
+  assert.equal(getPortraitLiveliness(false, 0.9), 0.9);
 
   const harness = createHarness({ reducedMotion: true });
   assert.equal(harness.motion.liveliness, 0.15);
@@ -131,46 +116,44 @@ test('portrait liveliness uses the default and reduced-motion values', () => {
   harness.motion.destroy();
 });
 
-test('pointer tilt is bounded, depth offsets oppose, and low quality disables the effect', () => {
-  const harness = createHarness();
-  harness.stage.dispatch('pointermove', {
-    pointerType: 'mouse',
-    clientX: 100,
-    clientY: 0,
-  });
-  for (let frame = 0; frame < 24; frame += 1) harness.tick();
+test('only the head layer moves and its motion stays within the requested bounds', () => {
+  const harness = createHarness({ random: () => 0.5 });
+  for (let frame = 0; frame < 180; frame += 1) harness.tick(16);
 
   const state = harness.motion.getState();
-  assert.ok(Math.abs(state.tiltX) <= 3);
-  assert.ok(Math.abs(state.tiltY) <= 3);
-  assert.ok(state.tiltX > 2.8);
-  assert.ok(state.depthX > 4);
-  assert.ok(state.sphereDepthX < -2.8);
+  assert.ok(Math.abs(state.headRotation) <= 1.5);
+  assert.ok(Math.abs(state.headTranslation) <= 2);
+  assert.ok(Math.abs(state.headRotation) > 0);
+  assert.ok(Math.abs(state.headTranslation) > 0);
+  assert.equal(harness.styles.has('--portrait-breath'), false);
+  assert.equal(harness.styles.has('--portrait-depth-x'), false);
 
   harness.motion.setQuality('low');
-  harness.tick();
-  assert.equal(harness.motion.getState().tiltX, 0);
-  assert.equal(harness.motion.getState().tiltY, 0);
-  assert.equal(harness.motion.getState().depthX, 0);
+  for (let frame = 0; frame < 180; frame += 1) harness.tick(16);
+  assert.ok(Math.abs(harness.motion.getState().headRotation) < 0.01);
+  assert.ok(Math.abs(harness.motion.getState().headTranslation) < 0.01);
   harness.motion.destroy();
 });
 
-test('speech cues open the mouth within the cap and emphasize with a small nod', () => {
+test('speech boundaries ease mouth movement to the 0.7 cap and add a subtle nod', () => {
   const harness = createHarness();
   harness.motion.setSpeaking(true);
-  assert.equal(harness.motion.setSpeechCue(0.9, 'aa', { emphasis: true }), true);
-  harness.tick();
-  assert.ok(harness.motion.getState().mouthOpening > 0.2);
-  assert.ok(harness.motion.getState().mouthOpening <= 0.42);
-  for (let frame = 0; frame < 6; frame += 1) harness.tick(30);
-  assert.ok(Math.abs(harness.motion.getState().nod) <= 1.5);
+  assert.equal(harness.motion.setSpeechCue(0.9, 'ou', { emphasis: true }), true);
+  for (let frame = 0; frame < 20; frame += 1) harness.tick(16);
+
+  const state = harness.motion.getState();
+  assert.ok(state.mouthOpening > 0.2);
+  assert.ok(state.mouthOpening <= 0.7);
+  assert.ok(Math.abs(state.headRotation) <= 1.5);
+  assert.equal(harness.styles.get('--portrait-mouth-open'), `${state.mouthOpening.toFixed(3)}`);
+
   harness.motion.setSpeaking(false);
-  harness.tick();
-  assert.equal(harness.motion.getState().mouthOpening, 0);
+  for (let frame = 0; frame < 40; frame += 1) harness.tick(16);
+  assert.ok(harness.motion.getState().mouthOpening < 0.01);
   harness.motion.destroy();
 });
 
-test('thinking gaze briefly shifts and returns while listening keeps a subtle head tilt', () => {
+test('thinking glance returns to center and listening applies only a tiny head tilt', () => {
   const harness = createHarness();
   harness.motion.setEyeMode('thinking');
   harness.tick();
@@ -181,31 +164,6 @@ test('thinking gaze briefly shifts and returns while listening keeps a subtle he
 
   harness.motion.setEyeMode('listening');
   for (let frame = 0; frame < 12; frame += 1) harness.tick(16);
-  const listeningHeadDrift = harness.motion.getState().headDrift;
-  assert.ok(Math.abs(listeningHeadDrift) > 0);
-  assert.ok(Math.abs(listeningHeadDrift) <= 1.5);
-  harness.motion.destroy();
-});
-
-test('device orientation permission is requested only after a gesture when required', async () => {
-  let permissionRequests = 0;
-  const harness = createHarness({
-    orientationApi: {
-      requestPermission() {
-        permissionRequests += 1;
-        return Promise.resolve('granted');
-      },
-    },
-  });
-
-  assert.equal(permissionRequests, 0);
-  harness.stage.dispatch('pointerdown', {
-    pointerType: 'touch',
-    clientX: 50,
-    clientY: 50,
-  });
-  await Promise.resolve();
-  assert.equal(permissionRequests, 1);
-  assert.equal(harness.windowListeners.get('deviceorientation')?.size, 1);
+  assert.ok(Math.abs(harness.motion.getState().headRotation) <= 1.5);
   harness.motion.destroy();
 });

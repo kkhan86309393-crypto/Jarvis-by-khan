@@ -4,7 +4,7 @@ test('keeps exactly one portrait face visible in the phone hero', async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await expect(page.locator('#holo-stage')).toBeVisible();
-  await page.waitForTimeout(2_000);
+  await page.waitForFunction(() => Boolean(window.jarvisAvatarAnimation));
 
   const layers = await page.locator('.avatar-hero img, .avatar-hero canvas, .avatar-hero *').evaluateAll((elements) => (
     elements.filter((element) => {
@@ -54,13 +54,14 @@ test('keeps exactly one portrait face visible in the phone hero', async ({ page 
     }, previousDisplay);
   }
 
-  expect(candidates).toHaveLength(1);
-  expect(candidates[0]).toMatchObject({
-    id: 'ai-avatar',
-    src: expect.stringMatching(/\/jarvis-portrait\.webp$/),
-  });
+  const visibleFullFaces = await page.locator('.portrait-artwork > .portrait-cutout-image:visible').count();
+  expect(visibleFullFaces).toBe(1);
+  expect(candidates.some((candidate) => candidate.id === 'ai-avatar')).toBe(true);
+  expect(candidates.some((candidate) => candidate.className.includes('portrait-head-image'))).toBe(true);
   await expect(page.locator('#avatar-canvas')).toBeHidden();
   await expect(page.locator('#ai-avatar')).toBeVisible();
+  await expect(page.locator('.portrait-head')).toBeVisible();
+  await expect(page.locator('.portrait-blink-image')).toHaveCSS('opacity', '0');
   const sphereBackground = await page.locator('.holo-sphere-shell').evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(sphereBackground).not.toContain('url(');
 
@@ -71,8 +72,8 @@ test('keeps exactly one portrait face visible in the phone hero', async ({ page 
     const image = artwork.querySelector('#ai-avatar');
     const customProperties = getComputedStyle(document.documentElement);
     const markers = [
-      ['leftEye', '.portrait-debug-left-eye', '--portrait-eye-left-x', '--portrait-eye-y'],
-      ['rightEye', '.portrait-debug-right-eye', '--portrait-eye-right-x', '--portrait-eye-y'],
+      ['leftEye', '.portrait-debug-left-eye', '--portrait-eye-left-x', '--portrait-eye-left-y'],
+      ['rightEye', '.portrait-debug-right-eye', '--portrait-eye-right-x', '--portrait-eye-right-y'],
       ['mouth', '.portrait-debug-mouth', '--portrait-mouth-x', '--portrait-mouth-y'],
       ['chin', '.portrait-debug-chin', '--portrait-chin-x', '--portrait-chin-y'],
     ];
@@ -87,7 +88,7 @@ test('keeps exactly one portrait face visible in the phone hero', async ({ page 
       const markerBox = marker.getBoundingClientRect();
       return {
         name,
-        nestedInCutout: marker.parentElement.parentElement === artwork,
+        nestedInCutout: Boolean(marker.closest('.portrait-head-content')) && marker.closest('.portrait-head-content').parentElement.parentElement === artwork,
         x: (markerBox.left + markerBox.width / 2 - box.left) / box.width,
         y: (markerBox.top + markerBox.height / 2 - box.top) / box.height,
         expectedX: Number.parseFloat(customProperties.getPropertyValue(xProperty)) / 100,

@@ -1,5 +1,7 @@
 const BLINK_MIN_INTERVAL_MS = 2_500;
 const BLINK_INTERVAL_RANGE_MS = 3_500;
+const SPEAKING_BLINK_FACTOR = 0.8;
+const DOUBLE_BLINK_CHANCE = 1 / 6;
 const VISMESES = new Set(['neutral', 'aa', 'ee', 'ih', 'oh', 'ou']);
 export const PORTRAIT_ANIMATION_EVENT = 'jarvis:portrait-animation';
 
@@ -10,16 +12,14 @@ export const PORTRAIT_OVERLAY_CONFIG = Object.freeze({
     chin: { y: 0.52 },
   },
   cutout: {
-    eyes: { y: 0.285, leftX: 0.436, rightX: 0.585, width: 0.095, height: 0.030 },
-    mouth: { x: 0.517, y: 0.419, width: 0.11 },
+    eyes: { y: 0.288, leftX: 0.436, rightX: 0.589, rightY: 0.276, width: 0.11, height: 0.05 },
+    mouth: { x: 0.529, y: 0.423, width: 0.11 },
     chin: { x: 0.517, y: 0.50 },
   },
 });
 
 export function createPortraitAnimation({
   onChange = () => {},
-  reducedMotionQuery = globalThis.window?.matchMedia?.('(prefers-reduced-motion: reduce)')
-    || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)'),
   random = Math.random,
   schedule = globalThis.setTimeout,
   cancel = globalThis.clearTimeout,
@@ -33,13 +33,13 @@ export function createPortraitAnimation({
   const blinkTimers = new Set();
 
   function emit() {
-    if (!destroyed)     onChange({ blink, viseme, speaking, eyeMode });
+    if (!destroyed) onChange({ blink, viseme, speaking, eyeMode });
   }
 
   function scheduleBlink(callback, delay) {
     const timer = schedule(() => {
       blinkTimers.delete(timer);
-      if (!destroyed && !reducedMotionQuery?.matches) callback();
+      if (!destroyed) callback();
     }, delay);
     blinkTimers.add(timer);
   }
@@ -50,47 +50,27 @@ export function createPortraitAnimation({
   }
 
   function runBlink() {
-    blink = 'half';
+    blink = 'closed';
     emit();
     scheduleBlink(() => {
-      blink = 'closed';
-      emit();
-      scheduleBlink(() => {
-        blink = 'half';
-        emit();
-        scheduleBlink(() => {
-          blink = 'open';
-          emit();
-          if (random() < 0.18) {
-            scheduleNextBlink(180 + random() * 140);
-          } else {
-            scheduleNextBlink();
-          }
-        }, 55);
-      }, 65);
-    }, 45);
-  }
-
-  function scheduleNextBlink(delay = BLINK_MIN_INTERVAL_MS + random() * BLINK_INTERVAL_RANGE_MS) {
-    if (destroyed || reducedMotionQuery?.matches) return;
-    scheduleBlink(runBlink, delay);
-  }
-
-  function handleReducedMotionChange() {
-    clearBlinkTimers();
-    if (reducedMotionQuery?.matches) {
       blink = 'open';
-      viseme = 'neutral';
       emit();
-    } else {
-      scheduleNextBlink();
-    }
+      if (random() < DOUBLE_BLINK_CHANCE) {
+        scheduleNextBlink(180 + random() * 70);
+      } else {
+        scheduleNextBlink();
+      }
+    }, 90);
   }
 
-  reducedMotionQuery?.addEventListener?.('change', handleReducedMotionChange);
-  if (!reducedMotionQuery?.addEventListener) {
-    reducedMotionQuery?.addListener?.(handleReducedMotionChange);
+  function scheduleNextBlink(delay) {
+    if (destroyed) return;
+    const speakingRange = BLINK_INTERVAL_RANGE_MS * SPEAKING_BLINK_FACTOR;
+    const interval = delay ?? BLINK_MIN_INTERVAL_MS + random()
+      * (speaking ? speakingRange : BLINK_INTERVAL_RANGE_MS);
+    scheduleBlink(runBlink, interval);
   }
+
   emit();
   scheduleNextBlink();
 
@@ -110,24 +90,25 @@ export function createPortraitAnimation({
     blink = 'open';
     emit();
     destroyed = true;
-    reducedMotionQuery?.removeEventListener?.('change', handleReducedMotionChange);
-    if (!reducedMotionQuery?.removeEventListener) {
-      reducedMotionQuery?.removeListener?.(handleReducedMotionChange);
-    }
   }
 
   return {
     blink() {
-      if (destroyed || reducedMotionQuery?.matches) return false;
+      if (destroyed) return false;
       clearBlinkTimers();
       runBlink();
       return true;
     },
     setSpeaking(active) {
       if (destroyed) return false;
+      const wasSpeaking = speaking;
       speaking = Boolean(active);
       if (!speaking) viseme = 'neutral';
       emit();
+      if (speaking !== wasSpeaking && blink === 'open') {
+        clearBlinkTimers();
+        scheduleNextBlink();
+      }
       return true;
     },
     setEyeMode(nextMode = 'idle') {
@@ -149,7 +130,6 @@ export function createPortraitAnimation({
         destroyed
         || playbackId !== activePlaybackId
         || !speaking
-        || reducedMotionQuery?.matches
         || !VISMESES.has(nextViseme)
       ) return false;
       viseme = nextViseme;

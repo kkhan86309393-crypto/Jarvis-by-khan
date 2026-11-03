@@ -1,62 +1,60 @@
 export const DEFAULT_PORTRAIT_LIVELINESS = 0.6;
 export const REDUCED_MOTION_LIVELINESS = 0.15;
 
-const MAX_TILT_DEGREES = 3;
-const MAX_MOUTH_OPENING = 0.42;
+const MAX_HEAD_ROTATION = 1.5;
+const MAX_HEAD_TRANSLATION = 2;
+const MAX_MOUTH_OPENING = 0.7;
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 const randomBetween = (random, minimum, maximum) => minimum + random() * (maximum - minimum);
 
-export function getPortraitLiveliness(reducedMotion = false) {
-  return reducedMotion ? REDUCED_MOTION_LIVELINESS : DEFAULT_PORTRAIT_LIVELINESS;
+export function getPortraitLiveliness(reducedMotion = false, configured = DEFAULT_PORTRAIT_LIVELINESS) {
+  if (reducedMotion) return REDUCED_MOTION_LIVELINESS;
+  return Number.isFinite(configured) ? clamp(configured, 0, 1) : DEFAULT_PORTRAIT_LIVELINESS;
 }
 
 export function createPortraitMotion({
-  stage = globalThis.document?.querySelector('#holo-stage'),
   portraitFrame = globalThis.document?.querySelector('.portrait-cutout-frame'),
+  portraitHead = portraitFrame?.querySelector('.portrait-head-content'),
   portraitArtwork = globalThis.document?.querySelector('.portrait-artwork'),
-  sphere = globalThis.document?.querySelector('.holo-sphere-shell'),
-  mouth = globalThis.document?.querySelector('.portrait-mouth'),
+  portraitImage = globalThis.document?.querySelector('#ai-avatar'),
+  mouthCanvas = portraitFrame?.querySelector('.portrait-mouth-canvas'),
+  mouthConfig = { x: 0.517, y: 0.419, width: 0.11 },
   windowRef = globalThis.window,
   reducedMotionQuery = windowRef?.matchMedia?.('(prefers-reduced-motion: reduce)'),
   quality = 'auto',
+  liveliness = DEFAULT_PORTRAIT_LIVELINESS,
   random = Math.random,
   requestFrame = windowRef?.requestAnimationFrame?.bind(windowRef),
   cancelFrame = windowRef?.cancelAnimationFrame?.bind(windowRef),
   now = () => globalThis.performance?.now?.() ?? Date.now(),
 } = {}) {
-  if (!stage || !portraitFrame || !portraitArtwork || !sphere || !mouth) {
-    throw new TypeError('Portrait motion requires the existing portrait and hologram layers.');
+  if (!portraitFrame || !portraitHead || !portraitArtwork || !portraitImage || !mouthCanvas) {
+    throw new TypeError('Portrait motion requires the head layer, portrait image, and mouth canvas.');
   }
+  const context = mouthCanvas.getContext('2d');
+  if (!context) throw new TypeError('Portrait motion requires a 2D mouth canvas context.');
 
   const scheduleFrame = requestFrame || ((callback) => setTimeout(() => callback(now()), 16));
   const stopFrame = cancelFrame || clearTimeout;
   const current = {
-    tiltX: 0,
-    tiltY: 0,
-    depthX: 0,
-    depthY: 0,
-    sphereDepthX: 0,
-    sphereDepthY: 0,
+    headRotation: 0,
+    headTranslation: 0,
+    nod: 0,
     gazeX: 0,
     gazeY: 0,
-    headDrift: 0,
-    nod: 0,
     mouthOpening: 0,
   };
   let running = false;
   let frameId = 0;
   let lastFrameTime = null;
-  let pointer = null;
-  let dragging = false;
-  let orientation = null;
-  let orientationListening = false;
-  let orientationPermissionRequested = false;
   let reducedMotion = Boolean(reducedMotionQuery?.matches);
   let selectedQuality = quality;
+  let configuredLiveliness = liveliness;
   let eyeMode = 'idle';
   let speaking = false;
   let audioLevel = null;
   let speechCue = 0;
+  let speechViseme = 'neutral';
   let speechCueAt = -Infinity;
   let nodStartedAt = -Infinity;
   let nodDuration = 220;
@@ -68,7 +66,7 @@ export function createPortraitMotion({
   let destroyed = false;
 
   function motionScale() {
-    return getPortraitLiveliness(reducedMotion) / DEFAULT_PORTRAIT_LIVELINESS;
+    return getPortraitLiveliness(reducedMotion, configuredLiveliness) / DEFAULT_PORTRAIT_LIVELINESS;
   }
 
   function readAudioLevel() {
@@ -80,18 +78,73 @@ export function createPortraitMotion({
     target.style.setProperty(name, `${value.toFixed(3)}${unit}`);
   }
 
+  function drawMouth(opening, viseme) {
+    context.clearRect(0, 0, mouthCanvas.width, mouthCanvas.height);
+    if (opening <= 0.005) return;
+
+    const centerX = mouthConfig.x * mouthCanvas.width;
+    const centerY = mouthConfig.y * mouthCanvas.height;
+    const width = Math.min(mouthConfig.width * mouthCanvas.width * 0.72, 66)
+      * (viseme === 'ou' ? 0.82 : 1);
+    const height = 3 + opening * 25;
+
+    context.save();
+    context.translate(centerX, centerY);
+    context.beginPath();
+    context.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+    const interior = context.createLinearGradient(0, -height / 2, 0, height / 2);
+    interior.addColorStop(0, '#24121a');
+    interior.addColorStop(0.58, '#180b11');
+    interior.addColorStop(1, '#713846');
+    context.fillStyle = interior;
+    context.fill();
+
+    context.beginPath();
+    context.ellipse(0, -height * 0.34, width * 0.43, Math.max(1, height * 0.1), 0, 0, Math.PI);
+    context.strokeStyle = 'rgba(201, 111, 121, .78)';
+    context.lineWidth = 2.2;
+    context.stroke();
+
+    if (opening > 0.48) {
+      context.beginPath();
+      context.ellipse(0, -height * 0.24, width * 0.34, Math.max(1, height * 0.09), 0, 0, Math.PI);
+      context.fillStyle = 'rgba(255, 231, 218, .92)';
+      context.fill();
+    }
+
+    if (portraitImage.complete && portraitImage.naturalWidth > 0) {
+      context.save();
+      context.beginPath();
+      context.ellipse(0, height * 0.28 + opening * 2, width * 0.48, height * 0.42, 0, 0, Math.PI);
+      context.clip();
+      context.globalAlpha = 0.9;
+      context.drawImage(
+        portraitImage,
+        centerX - width / 2,
+        centerY + 2,
+        width,
+        12,
+        -width / 2,
+        height * 0.28 + opening * 2,
+        width,
+        12,
+      );
+      context.restore();
+    }
+
+    context.beginPath();
+    context.moveTo(-width * 0.35, height * 0.31);
+    context.quadraticCurveTo(0, height * 0.62, width * 0.35, height * 0.31);
+    context.strokeStyle = 'rgba(180, 91, 104, .82)';
+    context.lineWidth = 2;
+    context.stroke();
+    context.restore();
+  }
+
   function applyMotion(timestamp) {
     const scale = motionScale();
-    const input = pointer || orientation;
-    const tiltScale = selectedQuality === 'low' ? 0 : scale;
-    const targetTiltX = input ? clamp(-input.y * MAX_TILT_DEGREES * tiltScale, -MAX_TILT_DEGREES, MAX_TILT_DEGREES) : 0;
-    const targetTiltY = input ? clamp(input.x * MAX_TILT_DEGREES * tiltScale, -MAX_TILT_DEGREES, MAX_TILT_DEGREES) : 0;
-    const depthScale = selectedQuality === 'low' ? 0 : scale;
-    const targetDepthX = input ? input.x * 5 * depthScale : 0;
-    const targetDepthY = input ? input.y * 4 * depthScale : 0;
-    const targetSphereDepthX = -targetDepthX * 0.7;
-    const targetSphereDepthY = -targetDepthY * 0.7;
-    const smoothing = 1 - Math.exp(-Math.max(1, timestamp - (lastFrameTime ?? timestamp - 16)) / 85);
+    const delta = Math.max(1, timestamp - (lastFrameTime ?? timestamp - 16));
+    const smoothing = 1 - Math.exp(-delta / 75);
     lastFrameTime = timestamp;
 
     if (eyeMode === 'idle' && timestamp >= nextGazeChange) {
@@ -105,64 +158,56 @@ export function createPortraitMotion({
         nextGazeChange = timestamp + randomBetween(random, 220, 420);
       }
     } else if (eyeMode === 'thinking') {
-      if (timestamp < thinkingGlanceUntil) {
-        targetGazeX = thinkingGazeX * scale;
-        targetGazeY = -1.15 * scale;
-      } else {
-        targetGazeX = 0;
-        targetGazeY = 0;
-      }
+      targetGazeX = timestamp < thinkingGlanceUntil ? thinkingGazeX * scale : 0;
+      targetGazeY = timestamp < thinkingGlanceUntil ? -0.8 * scale : 0;
     } else {
       targetGazeX = 0;
       targetGazeY = 0;
     }
 
-    const breath = 1 + Math.sin(timestamp * (2 * Math.PI / 4_600)) * 0.006 * scale;
-    const drift = (
-      Math.sin(timestamp / 3_100 + 0.8) * 0.9
-      + Math.sin(timestamp / 5_200 + 2.1) * 0.6
-    ) * scale;
-    const listeningTilt = eyeMode === 'listening' ? 0.35 * scale : 0;
+    const noise = (
+      Math.sin(timestamp * (2 * Math.PI / 7_000))
+      + Math.sin(timestamp * (2 * Math.PI / 11_000) + 1.4) * 0.7
+      + Math.sin(timestamp * (2 * Math.PI / 17_000) + 2.2) * 0.5
+    ) / 2.2;
+    const listeningTurn = eyeMode === 'listening' ? 0.25 : 0;
+    const thinkingTurn = eyeMode === 'thinking' ? thinkingGazeX * 0.22 : 0;
     const nodElapsed = timestamp - nodStartedAt;
     const nod = nodElapsed >= 0 && nodElapsed < nodDuration
-      ? -Math.sin((nodElapsed / nodDuration) * Math.PI) * 1.5 * scale
+      ? -Math.sin((nodElapsed / nodDuration) * Math.PI) * 1
       : 0;
-    const audio = speaking ? readAudioLevel() : null;
-    const fallbackEnvelope = 0.08 + ((Math.sin(timestamp / 95) + 1) / 2) * 0.12;
     const cueAge = timestamp - speechCueAt;
-    const activeCue = cueAge < 420 ? speechCue * (1 - cueAge / 420) : 0;
-    const speechSignal = audio === null
-      ? activeCue * 0.72 + fallbackEnvelope * 0.28
-      : Math.max(activeCue * 0.35, audio * 0.42);
+    const cueEnvelope = cueAge < 360 ? speechCue * (1 - cueAge / 360) : 0;
+    const pseudoEnvelope = (
+      Math.sin(timestamp / 83) * 0.15
+      + Math.sin(timestamp / 137 + 1.9) * 0.11
+      + Math.sin(timestamp / 211 + 0.6) * 0.08
+    );
+    const audio = speaking ? readAudioLevel() : null;
     const targetMouth = speaking
-      ? clamp(speechSignal * scale, 0, MAX_MOUTH_OPENING)
+      ? clamp((audio === null ? 0.12 + Math.max(0, pseudoEnvelope) + cueEnvelope : audio * 0.62 + cueEnvelope), 0, MAX_MOUTH_OPENING)
       : 0;
+    const headScale = selectedQuality === 'low' ? 0 : scale;
+    const targetRotation = clamp(
+      noise * 0.82 * headScale + listeningTurn * headScale + thinkingTurn * headScale + nod * headScale,
+      -MAX_HEAD_ROTATION,
+      MAX_HEAD_ROTATION,
+    );
+    const targetTranslation = noise * MAX_HEAD_TRANSLATION * headScale;
 
-    current.tiltX += (targetTiltX - current.tiltX) * smoothing;
-    current.tiltY += (targetTiltY - current.tiltY) * smoothing;
-    current.depthX += (targetDepthX - current.depthX) * smoothing;
-    current.depthY += (targetDepthY - current.depthY) * smoothing;
-    current.sphereDepthX += (targetSphereDepthX - current.sphereDepthX) * smoothing;
-    current.sphereDepthY += (targetSphereDepthY - current.sphereDepthY) * smoothing;
+    current.headRotation += (targetRotation - current.headRotation) * smoothing;
+    current.headTranslation += (targetTranslation - current.headTranslation) * smoothing;
+    current.nod += (nod - current.nod) * smoothing;
     current.gazeX += (targetGazeX - current.gazeX) * smoothing;
     current.gazeY += (targetGazeY - current.gazeY) * smoothing;
-    const targetHeadDrift = clamp(drift + listeningTilt, -1.5 * scale, 1.5 * scale);
-    current.headDrift += (targetHeadDrift - current.headDrift) * smoothing;
-    current.nod += (nod - current.nod) * smoothing;
-    current.mouthOpening = targetMouth;
+    current.mouthOpening += (targetMouth - current.mouthOpening) * smoothing;
 
-    applyStyle(portraitFrame, '--portrait-tilt-x', current.tiltX, 'deg');
-    applyStyle(portraitFrame, '--portrait-tilt-y', current.tiltY, 'deg');
-    applyStyle(portraitFrame, '--portrait-head-drift', current.headDrift, 'deg');
-    applyStyle(portraitFrame, '--portrait-nod', current.nod, 'deg');
-    applyStyle(portraitFrame, '--portrait-breath', breath);
-    applyStyle(portraitFrame, '--portrait-depth-x', current.depthX, 'px');
-    applyStyle(portraitFrame, '--portrait-depth-y', current.depthY, 'px');
-    applyStyle(portraitArtwork, '--portrait-gaze-x', current.gazeX, 'px');
-    applyStyle(portraitArtwork, '--portrait-gaze-y', current.gazeY, 'px');
-    applyStyle(sphere, '--sphere-depth-x', current.sphereDepthX, 'px');
-    applyStyle(sphere, '--sphere-depth-y', current.sphereDepthY, 'px');
-    applyStyle(mouth, '--portrait-mouth-open', current.mouthOpening);
+    applyStyle(portraitHead, '--portrait-head-rotation', current.headRotation, 'deg');
+    applyStyle(portraitHead, '--portrait-head-y', current.headTranslation, 'px');
+    applyStyle(portraitHead, '--portrait-gaze-x', current.gazeX, 'px');
+    applyStyle(portraitHead, '--portrait-gaze-y', current.gazeY, 'px');
+    applyStyle(portraitFrame, '--portrait-mouth-open', current.mouthOpening);
+    drawMouth(current.mouthOpening, cueAge < 360 ? speechViseme : 'neutral');
   }
 
   function animate(timestamp) {
@@ -185,68 +230,6 @@ export function createPortraitMotion({
     lastFrameTime = null;
   }
 
-  function updatePointer(event) {
-    if (selectedQuality === 'low') return;
-    const bounds = stage.getBoundingClientRect();
-    if (!bounds.width || !bounds.height) return;
-    pointer = {
-      x: clamp(((event.clientX - bounds.left) / bounds.width) * 2 - 1, -1, 1),
-      y: clamp(((event.clientY - bounds.top) / bounds.height) * 2 - 1, -1, 1),
-    };
-  }
-
-  function handlePointerMove(event) {
-    if (event.pointerType === 'mouse' || dragging) updatePointer(event);
-  }
-
-  function handlePointerDown(event) {
-    if (selectedQuality === 'low') return;
-    requestDeviceOrientation();
-    if (event.pointerType !== 'mouse') dragging = true;
-    updatePointer(event);
-  }
-
-  function handlePointerEnd() {
-    dragging = false;
-    pointer = null;
-  }
-
-  function handlePointerLeave() {
-    if (!dragging) pointer = null;
-  }
-
-  function handleOrientation(event) {
-    if (selectedQuality === 'low') return;
-    if (!Number.isFinite(event.beta) || !Number.isFinite(event.gamma)) return;
-    orientation = {
-      x: clamp(event.gamma / 25, -1, 1),
-      y: clamp(event.beta / 25, -1, 1),
-    };
-  }
-
-  function addOrientationListener() {
-    if (orientationListening || !windowRef?.addEventListener) return;
-    windowRef.addEventListener('deviceorientation', handleOrientation);
-    orientationListening = true;
-  }
-
-  async function requestDeviceOrientation() {
-    if (orientationPermissionRequested) return;
-    const orientationApi = windowRef?.DeviceOrientationEvent;
-    if (typeof orientationApi?.requestPermission !== 'function') {
-      addOrientationListener();
-      orientationPermissionRequested = true;
-      return;
-    }
-    orientationPermissionRequested = true;
-    try {
-      const permission = await orientationApi.requestPermission();
-      if (permission === 'granted') addOrientationListener();
-    } catch (error) {
-      windowRef?.console?.warn?.('J.A.R.V.I.S. could not enable device orientation.', error);
-    }
-  }
-
   function handleReducedMotionChange(event) {
     reducedMotion = Boolean(event.matches);
   }
@@ -256,15 +239,9 @@ export function createPortraitMotion({
     else start();
   }
 
-  stage.addEventListener('pointermove', handlePointerMove, { passive: true });
-  stage.addEventListener('pointerdown', handlePointerDown, { passive: true });
-  stage.addEventListener('pointerleave', handlePointerLeave, { passive: true });
-  windowRef?.addEventListener?.('pointerup', handlePointerEnd, { passive: true });
-  windowRef?.addEventListener?.('pointercancel', handlePointerEnd, { passive: true });
   windowRef?.document?.addEventListener?.('visibilitychange', handleVisibilityChange);
   if (reducedMotionQuery?.addEventListener) reducedMotionQuery.addEventListener('change', handleReducedMotionChange);
   else reducedMotionQuery?.addListener?.(handleReducedMotionChange);
-  if (typeof windowRef?.DeviceOrientationEvent?.requestPermission !== 'function') addOrientationListener();
   start();
 
   return {
@@ -273,6 +250,7 @@ export function createPortraitMotion({
       if (!speaking) {
         audioLevel = null;
         speechCue = 0;
+        speechViseme = 'neutral';
         speechCueAt = -Infinity;
         nodStartedAt = -Infinity;
       }
@@ -281,16 +259,17 @@ export function createPortraitMotion({
       eyeMode = ['idle', 'thinking', 'listening'].includes(mode) ? mode : 'idle';
       nextGazeChange = 0;
       if (eyeMode === 'thinking') {
-        thinkingGazeX = random() < 0.5 ? -1.15 : 1.15;
+        thinkingGazeX = random() < 0.5 ? -1 : 1;
         thinkingGlanceUntil = now() + 700;
       } else {
         targetGazeX = 0;
         targetGazeY = 0;
       }
     },
-    setSpeechCue(opening, _viseme, { emphasis = false } = {}) {
+    setSpeechCue(opening, viseme, { emphasis = false } = {}) {
       if (!speaking || !Number.isFinite(opening)) return false;
-      speechCue = clamp(opening, 0, 0.9) * MAX_MOUTH_OPENING;
+      speechCue = clamp(opening, 0, 1) * MAX_MOUTH_OPENING;
+      speechViseme = ['aa', 'ee', 'ih', 'oh', 'ou'].includes(viseme) ? viseme : 'neutral';
       speechCueAt = now();
       if (emphasis) {
         nodStartedAt = speechCueAt;
@@ -303,24 +282,17 @@ export function createPortraitMotion({
     },
     setQuality(nextQuality) {
       selectedQuality = ['auto', 'high', 'medium', 'low'].includes(nextQuality) ? nextQuality : 'auto';
-      if (selectedQuality === 'low') {
-        pointer = null;
-        orientation = null;
-        current.tiltX = 0;
-        current.tiltY = 0;
-        current.depthX = 0;
-        current.depthY = 0;
-        current.sphereDepthX = 0;
-        current.sphereDepthY = 0;
-      }
+    },
+    setLiveliness(value) {
+      if (Number.isFinite(value)) configuredLiveliness = clamp(value, 0, 1);
     },
     get liveliness() {
-      return getPortraitLiveliness(reducedMotion);
+      return getPortraitLiveliness(reducedMotion, configuredLiveliness);
     },
     getState() {
       return {
         quality: selectedQuality,
-        liveliness: getPortraitLiveliness(reducedMotion),
+        liveliness: getPortraitLiveliness(reducedMotion, configuredLiveliness),
         eyeMode,
         speaking,
         ...current,
@@ -330,12 +302,6 @@ export function createPortraitMotion({
       if (destroyed) return;
       destroyed = true;
       stop();
-      stage.removeEventListener('pointermove', handlePointerMove);
-      stage.removeEventListener('pointerdown', handlePointerDown);
-      stage.removeEventListener('pointerleave', handlePointerLeave);
-      windowRef?.removeEventListener?.('pointerup', handlePointerEnd);
-      windowRef?.removeEventListener?.('pointercancel', handlePointerEnd);
-      windowRef?.removeEventListener?.('deviceorientation', handleOrientation);
       windowRef?.document?.removeEventListener?.('visibilitychange', handleVisibilityChange);
       if (reducedMotionQuery?.removeEventListener) reducedMotionQuery.removeEventListener('change', handleReducedMotionChange);
       else reducedMotionQuery?.removeListener?.(handleReducedMotionChange);

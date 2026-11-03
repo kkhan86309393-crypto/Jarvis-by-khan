@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/jarvis.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/jarvis-192.png">
-    <link rel="stylesheet" href="/styles.css?avatar=61">
+    <link rel="stylesheet" href="/styles.css?avatar=62">
     <title>J.A.R.V.I.S. | Personal AI</title>
   </head>
   <body class="new-interface">
@@ -81,17 +81,19 @@
                 <div class="avatar-frame portrait-cutout-frame" data-blink="open" data-viseme="neutral" data-speaking="false">
                   <div class="portrait-artwork">
                     <img class="ai-avatar is-normal portrait-cutout-image" id="ai-avatar" src="/jarvis-portrait.webp" alt="J.A.R.V.I.S. female assistant portrait" width="800" height="875" fetchpriority="high" decoding="async" draggable="false">
-                    <span class="portrait-animation" aria-hidden="true">
-                      <i class="portrait-eye-lid portrait-eye-lid-left"><i class="portrait-upper-lid"></i><i class="portrait-lower-lid"></i></i>
-                      <i class="portrait-eye-lid portrait-eye-lid-right"><i class="portrait-upper-lid"></i><i class="portrait-lower-lid"></i></i>
-                      <i class="portrait-mouth"></i>
-                    </span>
-                    <span class="portrait-debug-markers" aria-hidden="true">
-                      <i class="portrait-debug-marker portrait-debug-left-eye"></i>
-                      <i class="portrait-debug-marker portrait-debug-right-eye"></i>
-                      <i class="portrait-debug-marker portrait-debug-mouth"></i>
-                      <i class="portrait-debug-marker portrait-debug-chin"></i>
-                    </span>
+                    <div class="portrait-head" aria-hidden="true">
+                      <div class="portrait-head-content">
+                        <img class="portrait-head-image" src="/jarvis-portrait.webp" width="800" height="875" decoding="async" draggable="false">
+                        <img class="portrait-blink-image" src="/jarvis-portrait-eyes-closed.webp" width="800" height="875" decoding="async" draggable="false">
+                        <canvas class="portrait-mouth-canvas" width="800" height="875"></canvas>
+                        <span class="portrait-debug-markers">
+                          <i class="portrait-debug-marker portrait-debug-left-eye"></i>
+                          <i class="portrait-debug-marker portrait-debug-right-eye"></i>
+                          <i class="portrait-debug-marker portrait-debug-mouth"></i>
+                          <i class="portrait-debug-marker portrait-debug-chin"></i>
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <span class="portrait-scanline" aria-hidden="true"></span>
                 </div>
@@ -846,6 +848,6 @@
       <pre id="runtime-diagnostics-output" aria-live="polite"></pre>
     </aside>
     <script src="/diagnostics.js?hud=28"></script>
-    <script src="/app.js?avatar=62" type="module"></script>
+    <script src="/app.js?avatar=63" type="module"></script>
   </body>
 </html>

@@ -538,19 +538,22 @@ const portraitAnimation = createPortraitAnimation({
     elements.avatarImage.dispatchEvent(new CustomEvent(PORTRAIT_ANIMATION_EVENT, { detail }));
   },
 });
+const portraitOverlay = PORTRAIT_OVERLAY_CONFIG.cutout;
 const portraitMotion = createPortraitMotion({
-  stage: elements.holoStage,
   portraitFrame: elements.avatarFrame,
+  portraitHead: elements.avatarFrame.querySelector('.portrait-head'),
   portraitArtwork: elements.avatarFrame.querySelector('.portrait-artwork'),
-  sphere: elements.holoStage.querySelector('.holo-sphere-shell'),
-  mouth: elements.avatarFrame.querySelector('.portrait-mouth'),
+  portraitImage: elements.avatarImage,
+  mouthCanvas: elements.avatarFrame.querySelector('.portrait-mouth-canvas'),
+  mouthConfig: portraitOverlay.mouth,
+  liveliness: 0.6,
 });
 portraitMotion.setQuality(elements.hologramQuality?.value);
 
-const portraitOverlay = PORTRAIT_OVERLAY_CONFIG.cutout;
-document.documentElement.style.setProperty('--portrait-eye-y', `${portraitOverlay.eyes.y * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-left-y', `${portraitOverlay.eyes.y * 100}%`);
 document.documentElement.style.setProperty('--portrait-eye-left-x', `${portraitOverlay.eyes.leftX * 100}%`);
 document.documentElement.style.setProperty('--portrait-eye-right-x', `${portraitOverlay.eyes.rightX * 100}%`);
+document.documentElement.style.setProperty('--portrait-eye-right-y', `${portraitOverlay.eyes.rightY * 100}%`);
 document.documentElement.style.setProperty('--portrait-eye-width', `${portraitOverlay.eyes.width * 100}%`);
 document.documentElement.style.setProperty('--portrait-eye-height', `${portraitOverlay.eyes.height * 100}%`);
 document.documentElement.style.setProperty('--portrait-mouth-x', `${portraitOverlay.mouth.x * 100}%`);
@@ -570,7 +573,9 @@ window.jarvisAvatarAnimation = {
   },
   setSpeechCue: (opening, viseme, options) => portraitMotion.setSpeechCue(opening, viseme, options),
   setAudioLevel: (level) => portraitMotion.setAudioLevel(level),
+  setLiveliness: (value) => portraitMotion.setLiveliness(value),
   blink: () => portraitAnimation.blink(),
+  getMotionState: () => portraitMotion.getState(),
 };
 window.addEventListener('jarvis:hologram-quality-change', ({ detail }) => {
   portraitMotion.setQuality(detail?.quality);
@@ -4965,7 +4970,7 @@ updateInstallButton();
 
 if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', updateVoiceList);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('/service-worker.js?avatar=62', { updateViaCache: 'none' }).then((registration) => {
+  navigator.serviceWorker.register('/service-worker.js?avatar=63', { updateViaCache: 'none' }).then((registration) => {
     if (!registration || typeof registration.update !== 'function') {
       console.warn('J.A.R.V.I.S. could not check for an application update because this browser did not provide a service worker registration.');
       return;
