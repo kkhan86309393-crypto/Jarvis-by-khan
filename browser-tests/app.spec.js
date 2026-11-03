@@ -266,6 +266,22 @@ test('responsive layouts, dialogs, chat tools, and navigation fit desktop, table
   await expectNoBrowserOrNetworkErrors(state);
 });
 
+test('reload opens the app shell and keeps dashboard assets available', async ({ page }) => {
+  const state = await installApiMocks(page);
+  await page.goto('/');
+  await expect(page.locator('#conversation-view')).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('#conversation-view')).toBeVisible();
+  await activate(page, page.locator('[data-nav="dashboard"]:visible').first());
+  await expect(page.locator('#dashboard-layout')).toBeVisible();
+  await expect.poll(() => page.locator('#ai-avatar').evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect(page.locator('[data-holo-state]')).toHaveCount(4);
+  await expect(page.locator('#holo-waveform')).toBeVisible();
+  await expect(page.locator('#system-panel')).toBeVisible();
+  await expectNoBrowserOrNetworkErrors(state);
+});
+
 test('provider settings remain keyboard-operable in desktop and mobile browsers', async ({ page }) => {
   const state = await installApiMocks(page);
   await page.goto('/');

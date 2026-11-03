@@ -71,7 +71,10 @@ after(async () => {
 test('serves the app shell with restrictive browser security headers', async () => {
   const response = await fetch(baseUrl);
   const html = await response.text();
+  const portraitResponse = await fetch(`${baseUrl}/jarvis-portrait.webp`);
   assert.equal(response.status, 200);
+  assert.equal(portraitResponse.status, 200);
+  assert.match(portraitResponse.headers.get('content-type'), /image\/webp/);
   assert.match(response.headers.get('content-type'), /text\/html/);
   assert.match(response.headers.get('cache-control'), /no-cache/);
   assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
